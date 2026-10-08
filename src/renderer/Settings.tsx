@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react"
-import { FONT_SIZE, type Appearance, type AppState } from "../shared/types"
+import { useEffect, useRef, useState } from "react"
+import { FONT_SIZE, type Appearance, type AppState, type ModelChoices } from "../shared/types"
 import { Icon } from "./icons"
+import { ModelPicker } from "./ModelPicker"
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "system", label: "System" },
@@ -17,6 +18,19 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
 
   // Take focus away from the terminal so keystrokes don't leak into the TUI.
   useEffect(() => root.current?.focus(), [])
+
+  const [choices, setChoices] = useState<ModelChoices | null>(null)
+  const [modelError, setModelError] = useState<string>()
+  useEffect(() => {
+    let live = true
+    window.ctrl.listModels().then(
+      (c) => live && setChoices(c),
+      (err) => live && setModelError(err instanceof Error ? err.message : String(err)),
+    )
+    return () => {
+      live = false
+    }
+  }, [])
 
   return (
     <div
@@ -116,6 +130,27 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
                 +
               </button>
             </div>
+          </div>
+        </div>
+
+        <h2>Sessions</h2>
+        <div className="settings-card">
+          <div className="setting">
+            <div>
+              <div className="setting-title">Default model</div>
+              <div className="setting-desc">
+                {modelError
+                  ? `Couldn't load models: ${modelError}`
+                  : "For new sessions started from ctrl. A space can pick its own in space settings."}
+              </div>
+            </div>
+            <ModelPicker
+              choices={choices}
+              error={modelError}
+              value={settings.defaultModel}
+              onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
+              defaultOption={{ label: "opencode default", detail: choices?.default?.name }}
+            />
           </div>
         </div>
 

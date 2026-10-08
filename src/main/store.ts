@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: Settings = {
   dockBadge: true,
   notifications: true,
   fontSize: FONT_SIZE.default,
+  defaultModel: null,
 }
 
 type Persisted = {

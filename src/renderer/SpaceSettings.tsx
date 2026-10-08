@@ -2,11 +2,18 @@ import { useEffect, useRef, useState } from "react"
 import type { ModelChoices, ModelRef, Space } from "../shared/types"
 import { shortPath } from "./format"
 import { Icon } from "./icons"
+import { ModelPicker, modelLabel } from "./ModelPicker"
 
-const DEFAULT = "__default__"
-const modelKey = (m: ModelRef) => `${m.providerID}::${m.id}`
-
-export function SpaceSettings({ space, onClose }: { space: Space; onClose(): void }) {
+export function SpaceSettings({
+  space,
+  appDefault,
+  onClose,
+}: {
+  space: Space
+  /** Settings → default model, used when the space doesn't pick one */
+  appDefault: ModelRef | null
+  onClose(): void
+}) {
   const root = useRef<HTMLDivElement>(null)
   const [name, setName] = useState(space.name)
   const [instructions, setInstructions] = useState(space.instructions ?? "")
@@ -46,11 +53,6 @@ export function SpaceSettings({ space, onClose }: { space: Space; onClose(): voi
     saveInstructions()
   }
   useEffect(() => () => flush.current(), [])
-
-  const models = choices?.models ?? []
-  const providers = [...new Set(models.map((m) => m.providerID))]
-  const saved = space.model
-  const missing = saved && choices && !models.some((m) => modelKey(m) === modelKey(saved))
 
   return (
     <div
@@ -121,32 +123,17 @@ export function SpaceSettings({ space, onClose }: { space: Space; onClose(): voi
                 {modelError ? `Couldn't load models: ${modelError}` : "You can still switch models inside a session."}
               </div>
             </div>
-            <select
-              disabled={!choices}
-              value={saved ? modelKey(saved) : DEFAULT}
-              onChange={(e) => {
-                const m = models.find((x) => modelKey(x) === e.target.value)
-                void window.ctrl.updateSpace(space.id, {
-                  model: m ? { providerID: m.providerID, id: m.id } : null,
-                })
-              }}
-            >
-              <option value={DEFAULT}>
-                {choices ? `Default${choices.default ? ` (${choices.default.name})` : ""}` : "Loading…"}
-              </option>
-              {missing && <option value={modelKey(saved)}>{saved.id} (unavailable)</option>}
-              {providers.map((p) => (
-                <optgroup key={p} label={p}>
-                  {models
-                    .filter((m) => m.providerID === p)
-                    .map((m) => (
-                      <option key={modelKey(m)} value={modelKey(m)}>
-                        {m.name}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
+            <ModelPicker
+              choices={choices}
+              error={modelError}
+              value={space.model ?? null}
+              onChange={(model) => void window.ctrl.updateSpace(space.id, { model })}
+              defaultOption={
+                appDefault
+                  ? { label: "App default", detail: modelLabel(appDefault, choices) }
+                  : { label: "opencode default", detail: choices?.default?.name }
+              }
+            />
           </div>
         </div>
 

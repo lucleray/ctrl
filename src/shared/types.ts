@@ -11,11 +11,20 @@ export type Space = {
   instructions?: string
 }
 
-export type ModelOption = ModelRef & { name: string }
+export type ModelOption = ModelRef & {
+  name: string
+  /** Provider display name, e.g. "Vercel AI Gateway" */
+  providerName: string
+  /** Model maker for gateway-style ids ("anthropic" in "anthropic/claude-…") */
+  vendor?: string
+  released: number
+}
 
 export type ModelChoices = {
+  /** In display order: grouped by provider, then vendor, newest first */
   models: ModelOption[]
-  /** opencode's default model for the space's folder */
+  providers: { id: string; name: string }[]
+  /** opencode's own default model for the folder */
   default?: ModelOption
 }
 
@@ -66,6 +75,8 @@ export type Settings = {
   notifications: boolean
   /** Terminal font size in px */
   fontSize: number
+  /** Model for new sessions (spaces can override); null = opencode's default */
+  defaultModel: ModelRef | null
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }

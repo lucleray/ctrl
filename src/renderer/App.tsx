@@ -10,7 +10,7 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
   ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -135,7 +135,14 @@ export function App() {
           }}
         />
         {settings && <Settings state={state} onClose={closeSettings} />}
-        {editingSpace && <SpaceSettings key={editingSpace.id} space={editingSpace} onClose={closeSpaceSettings} />}
+        {editingSpace && (
+          <SpaceSettings
+            key={editingSpace.id}
+            space={editingSpace}
+            appDefault={state.settings.defaultModel}
+            onClose={closeSpaceSettings}
+          />
+        )}
       </main>
       {palette && (
         <Palette state={state} onClose={closePalette} onOpen={open} onNew={create} onRevealSpace={revealSpace} />

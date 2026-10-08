@@ -216,8 +216,20 @@ export class OpenCodeService {
 
   async listModels(directory?: string): Promise<ModelChoices> {
     const location = directory ? { directory } : undefined
-    const option = (m: ModelInfo): ModelOption => ({ providerID: m.providerID, id: m.id, name: m.name })
     const client = await this.ready
+    const providers = await client.provider.list({ location }).then(
+      (r) => r.data.map((p) => ({ id: p.id, name: p.name })),
+      () => [],
+    )
+    const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? id
+    const option = (m: ModelInfo): ModelOption => ({
+      providerID: m.providerID,
+      id: m.id,
+      name: m.name,
+      providerName: providerName(m.providerID),
+      vendor: m.id.includes("/") ? m.id.split("/")[0] : undefined,
+      released: m.time.released,
+    })
     // A folder opencode hasn't loaded yet can briefly report no models.
     let list = await client.model.list({ location })
     for (let i = 0; i < 5 && list.data.length === 0; i++) {
@@ -225,8 +237,24 @@ export class OpenCodeService {
       list = await client.model.list({ location })
     }
     const def = await client.model.default({ location }).catch(() => ({ data: null }))
+    const rank = (id: string) => {
+      const i = providers.findIndex((p) => p.id === id)
+      return i === -1 ? providers.length : i
+    }
+    const models = list.data
+      .map(option)
+      .sort(
+        (a, b) =>
+          rank(a.providerID) - rank(b.providerID) ||
+          a.providerID.localeCompare(b.providerID) ||
+          (a.vendor ?? "").localeCompare(b.vendor ?? "") ||
+          b.released - a.released ||
+          a.name.localeCompare(b.name),
+      )
+    const used = new Set(models.map((m) => m.providerID))
     return {
-      models: list.data.map(option).sort((a, b) => a.providerID.localeCompare(b.providerID) || a.name.localeCompare(b.name)),
+      models,
+      providers: [...used].sort((a, b) => rank(a) - rank(b)).map((id) => ({ id, name: providerName(id) })),
       default: def.data ? option(def.data) : undefined,
     }
   }

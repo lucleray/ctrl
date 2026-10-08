@@ -148,7 +148,7 @@ const openSession = (sessionID: string) => {
 const newSession = async (spaceID: string | null) => {
   const space = spaceID ? store.space(spaceID) : undefined
   const id = await opencode.createSession(space?.directory || homedir(), {
-    model: space?.model,
+    model: space?.model ?? store.data.settings.defaultModel ?? undefined,
     instructions: space?.instructions,
   })
   if (spaceID) store.assign(id, spaceID)
