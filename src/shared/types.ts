@@ -1,3 +1,5 @@
+import type { CommandID, ShortcutOverrides } from "./shortcuts"
+
 /** variant: opencode model variant (e.g. reasoning effort "high"); unset = the model's default */
 export type ModelRef = { providerID: string; id: string; variant?: string }
 
@@ -83,6 +85,8 @@ export type Settings = {
   defaultModel: ModelRef | null
   /** Off: ctrl passes no model and opencode's default applies */
   defaultModelEnabled: boolean
+  /** Rebound shortcuts; commands not listed use their defaults */
+  shortcuts: ShortcutOverrides
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }
@@ -110,7 +114,20 @@ export type AppState = {
   error?: string
 }
 
-export type Shortcut = "palette" | "new-chat" | "settings"
+export type Shortcut = CommandID
+
+/** Transient notice after an action, optionally undoable (Codex-style). */
+export type Toast = {
+  id: string
+  icon: "archive" | "trash"
+  message: string
+  /** Show an Undo button */
+  undo: boolean
+  /** Show a View button that opens this session */
+  viewSessionID?: string
+  /** How long it stays up, in ms */
+  duration: number
+}
 
 export type CtrlApi = {
   getState(): Promise<AppState>
@@ -119,6 +136,15 @@ export type CtrlApi = {
   onRenameSpace(cb: (spaceID: string) => void): () => void
   onRenameSession(cb: (sessionID: string) => void): () => void
   onShortcut(cb: (name: Shortcut) => void): () => void
+  onToast(cb: (toast: Toast) => void): () => void
+  /** A toast was handled elsewhere (⌘Z); undefined = whichever is showing */
+  onToastDismiss(cb: (toastID?: string) => void): () => void
+  undo(toastID: string): Promise<void>
+  /** While on, key presses are reported to onRecordedKey instead of running shortcuts */
+  recordShortcut(on: boolean): Promise<void>
+  onRecordedKey(cb: (accel: string) => void): () => void
+  newSessionHere(): Promise<void>
+  archiveCurrent(): Promise<void>
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
   onSpaceSettings(cb: (spaceID: string) => void): () => void

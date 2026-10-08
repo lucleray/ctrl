@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: FONT_SIZE.default,
   defaultModel: null,
   defaultModelEnabled: false,
+  shortcuts: {},
 }
 
 type Persisted = {
@@ -113,6 +114,14 @@ export class Store {
     for (const [sessionID, spaceID] of Object.entries(this.data.assignments)) {
       if (spaceID === id) delete this.data.assignments[sessionID]
     }
+    this.save()
+  }
+
+  /** Puts a deleted space back where it was, with its sessions. */
+  restoreSpace(space: Space, index: number, sessionIDs: string[]) {
+    if (this.space(space.id)) return
+    this.data.spaces.splice(Math.min(index, this.data.spaces.length), 0, space)
+    for (const id of sessionIDs) this.data.assignments[id] = space.id
     this.save()
   }
 

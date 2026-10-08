@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react"
+import { shortcutLabel } from "../shared/shortcuts"
 import type { AppState, SessionItem, Space } from "../shared/types"
 import { Icon } from "./icons"
 import { SESSION_DRAG } from "./ReferenceDrop"
@@ -172,16 +173,20 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: P
       <div className="brand">
         <span>ctrl</span>
         <span className="brand-actions">
-          <button className="icon-btn" title="Settings (⌘,)" onClick={onSettings}>
+          <button className="icon-btn" title={withShortcut("Settings", shortcutLabel("settings", state.settings.shortcuts))} onClick={onSettings}>
             <Icon name="settings" />
           </button>
-          <button className="icon-btn" title="Search (⌘P)" onClick={onSearch}>
+          <button className="icon-btn" title={withShortcut("Search", shortcutLabel("palette", state.settings.shortcuts))} onClick={onSearch}>
             <Icon name="search" />
           </button>
         </span>
       </div>
 
-      <button className="row action" onClick={() => onNew(null)}>
+      <button
+        className="row action"
+        title={withShortcut("New chat", shortcutLabel("new-chat", state.settings.shortcuts))}
+        onClick={() => onNew(null)}
+      >
         <Icon name="compose" />
         <span className="label">New chat</span>
       </button>
@@ -269,6 +274,8 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: P
     </aside>
   )
 }
+
+const withShortcut = (label: string, shortcut: string) => (shortcut ? `${label} (${shortcut})` : label)
 
 function Section(props: { title: string; action?: ReactNode; children: ReactNode }) {
   return (

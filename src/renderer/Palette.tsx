@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { shortcutLabel } from "../shared/shortcuts"
 import type { AppState } from "../shared/types"
 import { Icon } from "./icons"
 import { shortPath } from "./format"
@@ -85,7 +86,7 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
     }
 
     const actions: Item[] = [
-      { key: "a:new", section: "Quick actions", icon: <Icon name="compose" />, label: "New chat", shortcut: "⌘N", run: () => onNew(null) },
+      { key: "a:new", section: "Quick actions", icon: <Icon name="compose" />, label: "New chat", shortcut: shortcutLabel("new-chat", state.settings.shortcuts) || undefined, run: () => onNew(null) },
     ]
     if (q && !state.spaces.some((s) => s.name.toLowerCase() === q.toLowerCase())) {
       actions.push({

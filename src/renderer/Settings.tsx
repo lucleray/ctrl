@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { FONT_SIZE, type Appearance, type AppState, type ModelChoices } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
+import { ShortcutSettings } from "./ShortcutSettings"
+import { shortcutLabel } from "../shared/shortcuts"
 import { Toggle } from "./Toggle"
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
@@ -14,6 +16,8 @@ const DEFAULT = "__default__"
 
 export function Settings({ state, onClose }: { state: AppState; onClose(): void }) {
   const { settings, themes } = state
+  const key = (id: Parameters<typeof shortcutLabel>[0]) => shortcutLabel(id, settings.shortcuts)
+  const zoomKeys = [key("zoom-in"), key("zoom-out"), key("zoom-reset")]
 
   const root = useRef<HTMLDivElement>(null)
 
@@ -106,11 +110,14 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
           <div className="setting">
             <div>
               <div className="setting-title">Text size</div>
-              <div className="setting-desc">Font size of the terminal. Also ⌘+, ⌘− and ⌘0 to reset.</div>
+              <div className="setting-desc">
+                Font size of the terminal.
+                {zoomKeys.every(Boolean) && ` Also ${zoomKeys[0]}, ${zoomKeys[1]} and ${zoomKeys[2]} to reset.`}
+              </div>
             </div>
             <div className="stepper">
               <button
-                title="Smaller (⌘−)"
+                title={`Smaller${zoomKeys[1] ? ` (${zoomKeys[1]})` : ""}`}
                 disabled={settings.fontSize <= FONT_SIZE.min}
                 onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize - 1 })}
               >
@@ -118,13 +125,13 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
               </button>
               <button
                 className="stepper-value"
-                title="Reset to default (⌘0)"
+                title={`Reset to default${zoomKeys[2] ? ` (${zoomKeys[2]})` : ""}`}
                 onClick={() => void window.ctrl.setSettings({ fontSize: FONT_SIZE.default })}
               >
                 {settings.fontSize}px
               </button>
               <button
-                title="Larger (⌘+)"
+                title={`Larger${zoomKeys[0] ? ` (${zoomKeys[0]})` : ""}`}
                 disabled={settings.fontSize >= FONT_SIZE.max}
                 onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize + 1 })}
               >
@@ -159,6 +166,9 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
             />
           </div>
         </div>
+
+        <h2>Shortcuts</h2>
+        <ShortcutSettings overrides={settings.shortcuts} />
 
         <h2>Notifications</h2>
         <div className="settings-card">

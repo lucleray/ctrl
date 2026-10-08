@@ -10,8 +10,10 @@ import {
   type Space,
   type SpacePatch,
   type ThemeInfo,
+  type Toast,
   type UiState,
 } from "../shared/types"
+import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
 import { loadShellEnv } from "./shell-env"
@@ -90,7 +92,7 @@ const state = (): AppState => ({
   settings: store.data.settings,
   themes,
   dark: nativeTheme.shouldUseDarkColors,
-  sessions: opencode.sessions,
+  sessions: pendingDeletes.size ? opencode.sessions.filter((s) => !pendingDeletes.has(s.id)) : opencode.sessions,
   currentSessionID,
   bridgeConnected,
   problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
@@ -176,14 +178,137 @@ const modelFor = (space?: Space) => {
   return (defaultModelEnabled && defaultModel) || undefined
 }
 
-const newSession = async (spaceID: string | null) => {
+const newSession = async (spaceID: string | null, directory?: string) => {
   const space = spaceID ? store.space(spaceID) : undefined
-  const id = await opencode.createSession(space?.directory || homedir(), {
+  const id = await opencode.createSession(directory || space?.directory || homedir(), {
     model: modelFor(space),
     instructions: space?.instructions,
   })
   if (spaceID) store.assign(id, spaceID)
   openSession(id)
+}
+
+/** New session in the current session's folder and space; a plain new chat when none is open. */
+const newSessionHere = () => {
+  const current = opencode.sessions.find((s) => s.id === currentSessionID)
+  if (!current) return newSession(null)
+  return newSession(store.data.assignments[current.id] ?? null, current.directory)
+}
+
+// ---------- toasts & undo ----------
+
+const TOAST_MS = 8000
+const undos = new Map<string, { run(): void; expires: number }>()
+
+const toast = (t: Omit<Toast, "id" | "undo" | "duration">, undo?: () => void) => {
+  const id = `tst_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  if (undo) undos.set(id, { run: undo, expires: Date.now() + TOAST_MS })
+  send("toast", { ...t, id, undo: !!undo, duration: TOAST_MS } satisfies Toast)
+  setTimeout(() => undos.delete(id), TOAST_MS + 1000)
+}
+
+const runUndo = (id: string) => {
+  const entry = undos.get(id)
+  undos.delete(id)
+  entry?.run()
+  push()
+}
+
+/** Most recent undo that's still on screen (for ⌘Z). */
+const latestUndo = () => {
+  const now = Date.now()
+  return [...undos].reverse().find(([, u]) => u.expires > now)?.[0]
+}
+
+const archive = (sessionIDs: string[]) => {
+  const ids = sessionIDs.filter((id) => !store.data.archived[id])
+  if (!ids.length) return
+  const wasCurrent = currentSessionID && ids.includes(currentSessionID) ? currentSessionID : null
+  store.setArchived(ids, true)
+  if (wasCurrent) terminal.home()
+  push()
+  const title = ids.length === 1 ? opencode.sessions.find((s) => s.id === ids[0])?.title : undefined
+  toast(
+    {
+      icon: "archive",
+      message: ids.length === 1 ? (title ? `Archived “${title}”` : "Archived chat") : `Archived ${ids.length} chats`,
+      viewSessionID: ids.length === 1 ? ids[0] : undefined,
+    },
+    () => {
+      store.setArchived(ids, false)
+      if (wasCurrent && !currentSessionID) openSession(wasCurrent)
+    },
+  )
+}
+
+// Deleting is permanent in opencode, so hide the session right away and only
+// delete it once the undo window has passed (or when ctrl quits).
+const pendingDeletes = new Map<string, ReturnType<typeof setTimeout>>()
+
+const deleteSession = (sessionID: string) => {
+  const title = opencode.sessions.find((s) => s.id === sessionID)?.title
+  if (currentSessionID === sessionID) terminal.home()
+  pendingDeletes.set(
+    sessionID,
+    setTimeout(() => void commitDelete(sessionID), TOAST_MS),
+  )
+  push()
+  toast({ icon: "trash", message: title ? `Deleted “${title}”` : "Deleted chat" }, () => {
+    clearTimeout(pendingDeletes.get(sessionID))
+    pendingDeletes.delete(sessionID)
+  })
+}
+
+const commitDelete = async (sessionID: string) => {
+  if (!pendingDeletes.has(sessionID)) return
+  clearTimeout(pendingDeletes.get(sessionID))
+  try {
+    await opencode.removeSession(sessionID)
+    store.assign(sessionID, null)
+    delete store.data.archived[sessionID]
+    store.save()
+  } catch (err) {
+    report(err)
+  } finally {
+    pendingDeletes.delete(sessionID)
+    push()
+  }
+}
+
+const deleteSpace = (id: string) => {
+  const index = store.data.spaces.findIndex((s) => s.id === id)
+  const space = store.data.spaces[index]
+  if (!space) return
+  const sessionIDs = Object.entries(store.data.assignments)
+    .filter(([, spaceID]) => spaceID === id)
+    .map(([sessionID]) => sessionID)
+  store.deleteSpace(id)
+  push()
+  toast({ icon: "trash", message: `Deleted space “${space.name}”` }, () => store.restoreSpace(space, index, sessionIDs))
+}
+
+// ---------- shortcuts ----------
+
+let recordingShortcut = false
+
+const runCommand = (id: CommandID) => {
+  const size = store.data.settings.fontSize
+  if (id === "zoom-in") return setFontSize(size + 1)
+  if (id === "zoom-out") return setFontSize(size - 1)
+  if (id === "zoom-reset") return setFontSize(FONT_SIZE.default)
+  if (id === "undo") {
+    const undo = latestUndo()
+    if (undo) runUndo(undo)
+    send("toast:dismiss", undo)
+    return
+  }
+  if (id === "archive-session") {
+    if (currentSessionID) archive([currentSessionID])
+    return
+  }
+  if (id === "new-session-here") void newSessionHere().catch(report)
+  // The renderer closes overlays and handles palette/settings/new-chat.
+  send("shortcut", id)
 }
 
 function registerIpc() {
@@ -235,8 +360,17 @@ function registerIpc() {
     push()
   })
   ipcMain.handle("session:archive", (_e, sessionID: string, archived: boolean) => {
-    store.setArchived([sessionID], archived)
+    if (archived) return archive([sessionID])
+    store.setArchived([sessionID], false)
     push()
+  })
+  ipcMain.handle("session:archive-current", () => {
+    if (currentSessionID) archive([currentSessionID])
+  })
+  ipcMain.handle("session:new-here", () => newSessionHere())
+  ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
+  ipcMain.handle("shortcut:record", (_e, on: boolean) => {
+    recordingShortcut = on
   })
   ipcMain.handle("space:toggle", (_e, id: string) => {
     store.updateSpace(id, { collapsed: !store.space(id)?.collapsed })
@@ -253,30 +387,10 @@ function registerIpc() {
       { type: "separator" },
       {
         label: "Archive all sessions",
-        click: () => {
-          const ids = opencode.sessions
-            .filter((s) => store.data.assignments[s.id] === id && !store.data.archived[s.id])
-            .map((s) => s.id)
-          store.setArchived(ids, true)
-          push()
-        },
+        click: () =>
+          archive(opencode.sessions.filter((s) => store.data.assignments[s.id] === id).map((s) => s.id)),
       },
-      {
-        label: "Delete space",
-        click: async () => {
-          const res = await dialog.showMessageBox(win!, {
-            type: "warning",
-            message: `Delete "${space.name}"?`,
-            detail: "Sessions are kept and stay in Recents.",
-            buttons: ["Delete", "Cancel"],
-            defaultId: 1,
-            cancelId: 1,
-          })
-          if (res.response !== 0) return
-          store.deleteSpace(id)
-          push()
-        },
-      },
+      { label: "Delete space", click: () => deleteSpace(id) },
     ]).popup({ window: win })
   })
   ipcMain.handle("session:menu", (_e, sessionID: string) => {
@@ -287,7 +401,7 @@ function registerIpc() {
       { label: "Rename", click: () => send("session:rename", sessionID) },
       store.data.archived[sessionID]
         ? { label: "Unarchive", click: () => (store.setArchived([sessionID], false), push()) }
-        : { label: "Archive", click: () => (store.setArchived([sessionID], true), push()) },
+        : { label: "Archive", click: () => archive([sessionID]) },
       {
         label: "Move to",
         submenu: [
@@ -301,23 +415,7 @@ function registerIpc() {
         ],
       },
       { type: "separator" },
-      {
-        label: "Delete session",
-        click: async () => {
-          const res = await dialog.showMessageBox(win!, {
-            type: "warning",
-            message: "Delete this session?",
-            detail: "This permanently deletes it from opencode.",
-            buttons: ["Delete", "Cancel"],
-            defaultId: 1,
-            cancelId: 1,
-          })
-          if (res.response !== 0) return
-          await opencode.removeSession(sessionID).catch(report)
-          store.assign(sessionID, null)
-          push()
-        },
-      },
+      { label: "Delete session", click: () => deleteSession(sessionID) },
     ]).popup({ window: win })
   })
   const move = (sessionID: string, spaceID: string | null) => {
@@ -369,33 +467,26 @@ function createWindow() {
       w.setFullScreen(false)
     } else w.hide()
   })
-  // Intercept app shortcuts before they reach the focused terminal.
+  // Intercept app shortcuts before they reach the focused terminal (or the app
+  // menu, so ⌘W archives instead of closing). While a shortcut is being
+  // recorded in settings, every key press goes to the recorder instead.
   win.webContents.on("before-input-event", (event, input) => {
-    if (input.type !== "keyDown" || !input.meta || input.control || input.alt) return
-    // ⌘+ is shift+= on most layouts, so check text size keys before the shift guard.
-    const size = store.data.settings.fontSize
-    const fontSize =
-      input.key === "=" || input.key === "+"
-        ? size + 1
-        : input.key === "-"
-          ? size - 1
-          : input.key === "0"
-            ? FONT_SIZE.default
-            : null
-    if (fontSize !== null) {
+    if (input.type !== "keyDown") return
+    const accel = accelFromInput(input)
+    if (!accel) return
+    if (recordingShortcut) {
       event.preventDefault()
-      setFontSize(fontSize)
+      send("shortcut:recorded", accel)
       return
     }
-    if (input.shift) return
-    const key = input.key.toLowerCase()
-    // ⌘1–9 is handled in the renderer: swallowing a key here makes Chromium drop
-    // the following key-ups, which would leave the ⌘ hints stuck on screen.
-    const name =
-      key === "p" || key === "k" ? "palette" : key === "n" ? "new-chat" : key === "," ? "settings" : null
-    if (!name) return
+    const id = commandFor(accel, store.data.settings.shortcuts)
+    if (!id) return
+    // ⌘Z only means undo while there's something to undo.
+    if (id === "undo" && !latestUndo()) return
+    // Nothing to archive: let the menu's Close Window hide ctrl as usual.
+    if (id === "archive-session" && !currentSessionID) return
     event.preventDefault()
-    send("shortcut", name)
+    runCommand(id)
   })
 
   if (process.env.VITE_DEV_URL) win.loadURL(process.env.VITE_DEV_URL)
@@ -485,8 +576,12 @@ app.on("activate", () => {
   win.show()
 })
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   quitting = true
+  // Finish deletions that were waiting out their undo window first.
+  if (!pendingDeletes.size) return
+  event.preventDefault()
+  void Promise.allSettled([...pendingDeletes.keys()].map(commitDelete)).then(() => app.quit())
 })
 
 app.on("window-all-closed", () => app.quit())

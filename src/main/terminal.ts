@@ -177,6 +177,21 @@ export class Terminal {
     this.pendingSession = sessionID
   }
 
+  /** Shows the TUI's new-session screen. */
+  home() {
+    this.pendingSession = null
+    if (this.bridge) {
+      this.bridge.send(JSON.stringify({ type: "home" }))
+      return
+    }
+    if (!this.proc) return
+    const proc = this.proc
+    this.proc = undefined
+    proc.kill()
+    this.events.onReset()
+    this.spawn()
+  }
+
   private navigate(sessionID: string) {
     this.bridge?.send(JSON.stringify({ type: "navigate", sessionID }))
   }

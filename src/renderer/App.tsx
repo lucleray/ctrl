@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { shortcutLabel } from "../shared/shortcuts"
 import { FONT_SIZE, type AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Palette } from "./Palette"
@@ -7,10 +8,11 @@ import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
 import { TerminalView, type TerminalHandle } from "./TerminalView"
+import { Toasts } from "./Toast"
 
 const EMPTY: AppState = {
   ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false, shortcuts: {} },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -105,6 +107,13 @@ export function App() {
           setPalette(false)
           void create(null)
         }
+        // Main creates the session; just get out of the way.
+        if (name === "new-session-here") {
+          setPalette(false)
+          setSettings(false)
+          setSpaceSettingsID(null)
+          terminal.current?.focus()
+        }
       }),
     [create, cancelHints],
   )
@@ -135,6 +144,7 @@ export function App() {
           }}
         />
         {settings && <Settings state={state} onClose={closeSettings} />}
+        <Toasts onView={open} undoLabel={shortcutLabel("undo", state.settings.shortcuts)} />
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}

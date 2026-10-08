@@ -55,7 +55,12 @@ so both can run side by side.
 - Drag a session onto the terminal to reference it: ctrl pastes `@session[Title](ses_…)` and
   the `read-session` skill (`skills/read-session`, symlinked into `~/.agents/skills`) lets the
   agent read its context via `node digest.mjs <id>`
-- ⌘P search · ⌘N new chat · ⌘, settings
+- ⌘P search · ⌘N new chat · ⌘T new session in the current session's folder and space ·
+  ⌘W archive the current session · ⌘, settings. All rebindable in **Settings → Shortcuts**
+  (`src/shared/shortcuts.ts`)
+- Archive, archive all, delete space and delete session show an undo toast (⌘Z while it's up).
+  Session deletes are held back until the toast expires (or ctrl quits), since opencode can't
+  restore them
 
 ## Debug hooks
 

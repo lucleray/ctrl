@@ -1261,3 +1261,116 @@ body.resizing .terminal-wrap {
   font-size: 12.5px;
   margin-top: 2px;
 }
+
+/* ---------- shortcuts ---------- */
+
+.setting-desc.error {
+  color: #d9534f;
+}
+
+.shortcut-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 56px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shortcut-keys:not(.static):hover {
+  background: var(--hover-strong);
+}
+
+.shortcut-keys.recording {
+  border-color: var(--accent);
+  background: var(--input-bg);
+}
+
+.shortcut-keys kbd {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--hover-strong);
+  border-radius: 6px;
+  padding: 2px 7px;
+  min-width: 26px;
+  text-align: center;
+}
+
+.shortcut-prompt {
+  padding: 0 4px;
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100% - 48px));
+  padding: 7px 8px 7px 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.06);
+  animation: toast-in 160ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+.toast > .icon {
+  color: var(--icon);
+  flex-shrink: 0;
+}
+
+.toast-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-right: 4px;
+}
+
+.toast-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--hover-strong);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.toast-btn:hover {
+  background: var(--active);
+}
+
+.toast-btn.primary {
+  background: var(--text);
+  color: var(--sidebar-bg);
+}
+
+.toast-btn.primary:hover {
+  opacity: 0.88;
+}
