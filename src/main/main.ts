@@ -14,6 +14,7 @@ const root = join(fileURLToPath(import.meta.url), "../..")
 const LIGHT_BG = "#f7f7f6"
 const DARK_BG = "#1c1c1b"
 
+app.setName("ctrl")
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
 
 // Test runs (CTRL_HEADLESS=1, implied by the debug hooks) never show the window or take focus.

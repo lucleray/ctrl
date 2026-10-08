@@ -9,8 +9,9 @@
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
-    "icon": "node scripts/icon.mjs"
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true; node scripts/brand-electron.mjs",
+    "icon": "node scripts/icon.mjs",
+    "brand": "node scripts/brand-electron.mjs"
   },
   "dependencies": {
     "@opencode/client": "^2.0.25",
@@ -35,5 +36,6 @@
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.4"
-  }
+  },
+  "productName": "ctrl"
 }
