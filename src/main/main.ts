@@ -19,7 +19,12 @@ let bridgeConnected = false
 let error: string | undefined
 
 const send = (channel: string, ...args: unknown[]) => {
-  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  try {
+    win.webContents.send(channel, ...args)
+  } catch {
+    // Frame can be gone mid-reload/shutdown; the next push resyncs.
+  }
 }
 
 const state = (): AppState => ({
