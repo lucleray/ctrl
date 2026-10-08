@@ -19,7 +19,7 @@ single embedded opencode TUI on the right.
 - Switching sessions sends `{type:"navigate"}` to the bridge, so the TUI swaps in place (no restart).
 - The bridge reports route changes back, so the sidebar highlight follows navigation done inside the TUI.
 - The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs are turned off there too).
-- Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space show under **Recents** (foldable; fold state is saved).
+- Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
 ## Run
 

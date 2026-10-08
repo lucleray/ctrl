@@ -6,8 +6,7 @@ import { age } from "./format"
 const SESSION_DRAG = "application/x-ctrl-session"
 const SPACE_DRAG = "application/x-ctrl-space"
 const RECENTS = "__recents__"
-const LIST_LIMIT = 40
-const ARCHIVED_PAGE = 10
+const PAGE_SIZE = 10
 
 type Props = {
   state: AppState
@@ -24,7 +23,6 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [reorder, setReorder] = useState<Reorder | null>(null)
-  const [archivedShown, setArchivedShown] = useState(ARCHIVED_PAGE)
   const draggingSpace = useRef<string | null>(null)
 
   useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
@@ -40,12 +38,14 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
         archived.push(session)
         continue
       }
+      // Recents is a view over every live session; spaces are just a grouping on top.
+      recents.push(session)
       const spaceID = state.assignments[session.id]
       if (spaceID && valid.has(spaceID)) {
         const list = bySpace.get(spaceID) ?? []
         list.push(session)
         bySpace.set(spaceID, list)
-      } else recents.push(session)
+      }
     }
     archived.sort((a, b) => state.archived[b.id] - state.archived[a.id])
     return { bySpace, recents, archived }
@@ -211,17 +211,15 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
           ))}
         </Section>
 
-        {/* Recents stays a drop target even when folded, to pull sessions out of a space. */}
+        {/* Dropping onto Recents (even folded) takes a session out of its space. */}
         <div className={`drop-zone ${dropTarget === RECENTS ? "over" : ""}`} {...sessionDrop(RECENTS, null)}>
           <FoldSection
             title="Recents"
             collapsed={state.ui.recentsCollapsed}
             onToggle={() => void window.ctrl.setUi({ recentsCollapsed: !state.ui.recentsCollapsed })}
           >
-            {grouped.recents.slice(0, LIST_LIMIT).map(sessionRow)}
-            {grouped.recents.length === 0 && (
-              <div className="empty">Drop a session here to remove it from its space</div>
-            )}
+            <PagedList items={grouped.recents} render={sessionRow} />
+            {grouped.recents.length === 0 && <div className="empty">No sessions yet</div>}
           </FoldSection>
         </div>
 
@@ -232,12 +230,7 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
             collapsed={state.ui.archivedCollapsed}
             onToggle={() => void window.ctrl.setUi({ archivedCollapsed: !state.ui.archivedCollapsed })}
           >
-            {grouped.archived.slice(0, archivedShown).map(sessionRow)}
-            {grouped.archived.length > archivedShown && (
-              <button className="row show-more" onClick={() => setArchivedShown((n) => n + ARCHIVED_PAGE)}>
-                <span className="label">Show more</span>
-              </button>
-            )}
+            <PagedList items={grouped.archived} render={sessionRow} />
           </FoldSection>
         )}
       </div>
@@ -254,6 +247,20 @@ function Section(props: { title: string; action?: ReactNode; children: ReactNode
       </div>
       {props.children}
     </section>
+  )
+}
+
+function PagedList(props: { items: SessionItem[]; render(s: SessionItem): ReactNode }) {
+  const [shown, setShown] = useState(PAGE_SIZE)
+  return (
+    <>
+      {props.items.slice(0, shown).map(props.render)}
+      {props.items.length > shown && (
+        <button className="row show-more" onClick={() => setShown((n) => n + PAGE_SIZE)}>
+          <span className="label">Show more</span>
+        </button>
+      )}
+    </>
   )
 }
 

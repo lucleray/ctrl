@@ -142,7 +142,7 @@ function registerIpc() {
           const res = await dialog.showMessageBox(win!, {
             type: "warning",
             message: `Delete "${space.name}"?`,
-            detail: "Sessions are kept and moved back to Recents.",
+            detail: "Sessions are kept and stay in Recents.",
             buttons: ["Delete", "Cancel"],
             defaultId: 1,
             cancelId: 1,
@@ -166,7 +166,7 @@ function registerIpc() {
       {
         label: "Move to",
         submenu: [
-          { label: "Recents", type: "radio", checked: current === null, click: () => move(sessionID, null) },
+          { label: "No space", type: "radio", checked: current === null, click: () => move(sessionID, null) },
           ...store.data.spaces.map((s) => ({
             label: s.name,
             type: "radio" as const,
