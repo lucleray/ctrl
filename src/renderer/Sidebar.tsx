@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react"
 import type { AppState, SessionItem, Space } from "../shared/types"
 import { Icon } from "./icons"
-import { age } from "./format"
+import { age, shortPath, statusText } from "./format"
+import { StatusIcon, topStatus } from "./StatusIcon"
 import { useSidebarWidth } from "./ResizeHandle"
 
 const SESSION_DRAG = "application/x-ctrl-session"
@@ -137,10 +138,10 @@ export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
           e.preventDefault()
           void window.ctrl.showSessionMenu(s.id)
         }}
-        title={`${s.title}\n${s.directory}`}
+        title={[statusText(s), s.title, shortPath(s.directory)].filter(Boolean).join("\n")}
       >
         <span className="label">{s.title}</span>
-        {s.running ? <span className="spinner" /> : <span className="meta">{age(s.updated)}</span>}
+        {s.status === "idle" ? <span className="meta">{age(s.updated)}</span> : <StatusIcon status={s.status} />}
         <button
           className="icon-btn row-action"
           title={state.archived[s.id] ? "Unarchive" : "Archive"}
@@ -307,6 +308,7 @@ function SpaceGroup(props: {
 }) {
   const { space } = props
   const open = !space.collapsed
+  const rollup = open ? undefined : topStatus(props.sessions)
   const classes = ["space", props.highlight && "over", props.reorder && `drop-${props.reorder}`]
   return (
     <div className={classes.filter(Boolean).join(" ")} data-space-id={space.id} {...props.dropProps}>
@@ -335,6 +337,11 @@ function SpaceGroup(props: {
         >
           <Icon name={open ? "folder-open" : "folder"} />
           <span className="label">{space.name}</span>
+          {!open && rollup && (
+            <span className="rollup" title={`${rollup.title}\n${statusText(rollup) ?? ""}`}>
+              <StatusIcon status={rollup.status} />
+            </span>
+          )}
           <span className="hover-actions">
             <button
               className="icon-btn"

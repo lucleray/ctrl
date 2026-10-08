@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import type { AppState } from "../shared/types"
 import { Icon } from "./icons"
 import { shortPath } from "./format"
+import { StatusIcon } from "./StatusIcon"
 
 type Item = {
   key: string
@@ -57,7 +58,7 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
       out.push({
         key: `s:${s.id}`,
         section: "Chats",
-        icon: s.running ? <span className="spinner" /> : s.id === state.currentSessionID ? <span className="dot" /> : null,
+        icon: <StatusIcon status={s.status} />,
         label: s.title,
         hint: state.archived[s.id]
           ? "Archived"

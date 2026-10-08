@@ -3,7 +3,7 @@ import { dirname } from "node:path"
 import type { Settings, Space, UiState } from "../shared/types"
 
 const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 }
-const DEFAULT_SETTINGS: Settings = { appearance: "system", tuiTheme: null }
+const DEFAULT_SETTINGS: Settings = { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true }
 
 type Persisted = {
   spaces: Space[]

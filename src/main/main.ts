@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AppState, Settings, ThemeInfo, UiState } from "../shared/types"
+import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
@@ -14,6 +15,10 @@ const LIGHT_BG = "#f7f7f6"
 const DARK_BG = "#1c1c1b"
 
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
+
+// Test runs (CTRL_HEADLESS=1, implied by the debug hooks) never show the window or take focus.
+const headless =
+  process.env.CTRL_HEADLESS === "1" || !!process.env.CTRL_EVAL || !!process.env.CTRL_SCREENSHOT
 
 let win: BrowserWindow | undefined
 const store = new Store(join(app.getPath("userData"), "state.json"))
@@ -50,17 +55,30 @@ const push = () => {
   pushQueued = true
   queueMicrotask(() => {
     pushQueued = false
+    attention.refreshBadge(opencode.sessions)
     send("state", state())
   })
 }
 
-const opencode = new OpenCodeService(push)
+const opencode = new OpenCodeService(() => {
+  attention.update(opencode.sessions)
+  push()
+})
+
+const attention = new Attention({
+  window: () => win,
+  settings: () => store.data.settings,
+  isArchived: (id) => !!store.data.archived[id],
+  open: (id) => openSession(id),
+  quiet: headless,
+})
 
 const terminal = new Terminal(join(root, "bridge"), {
   onData: (data) => send("pty:data", data),
   onReset: () => send("pty:reset"),
   onRoute: (id) => {
     currentSessionID = id
+    opencode.setCurrent(id)
     push()
   },
   onBridge: (connected) => {
@@ -88,6 +106,7 @@ const applyTheme = () => {
 
 const openSession = (sessionID: string) => {
   currentSessionID = sessionID
+  opencode.setCurrent(sessionID)
   terminal.open(sessionID)
   push()
 }
@@ -243,10 +262,6 @@ function report(err: unknown) {
   error = err instanceof Error ? err.message : String(err)
   push()
 }
-
-// Test runs (CTRL_HEADLESS=1, implied by the debug hooks) never show the window or take focus.
-const headless =
-  process.env.CTRL_HEADLESS === "1" || !!process.env.CTRL_EVAL || !!process.env.CTRL_SCREENSHOT
 
 function createWindow() {
   win = new BrowserWindow({

@@ -5,12 +5,25 @@ export type Space = {
   collapsed?: boolean
 }
 
+/** Ordered by urgency: the first one that applies wins. */
+export type SessionStatus = "needs-input" | "running" | "failed" | "unread" | "idle"
+
+export const STATUS_RANK: Record<SessionStatus, number> = {
+  "needs-input": 4,
+  running: 3,
+  failed: 2,
+  unread: 1,
+  idle: 0,
+}
+
 export type SessionItem = {
   id: string
   title: string
   directory: string
   updated: number
-  running: boolean
+  status: SessionStatus
+  /** Human-readable explanation for the tooltip, e.g. "Waiting for permission: bash" */
+  statusDetail?: string
 }
 
 export type UiState = {
@@ -25,6 +38,10 @@ export type Settings = {
   appearance: Appearance
   /** opencode theme for the embedded TUI; null = whatever cli.json says */
   tuiTheme: string | null
+  /** Dock badge with the number of sessions waiting on you */
+  dockBadge: boolean
+  /** macOS notifications when a background session needs you or finishes */
+  notifications: boolean
 }
 
 export type ThemeInfo = {

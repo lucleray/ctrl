@@ -8,7 +8,7 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
   ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
-  settings: { appearance: "system", tuiTheme: null },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],

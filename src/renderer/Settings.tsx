@@ -88,7 +88,41 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
             </select>
           </div>
         </div>
+
+        <h2>Notifications</h2>
+        <div className="settings-card">
+          <div className="setting">
+            <div>
+              <div className="setting-title">Dock badge</div>
+              <div className="setting-desc">Show how many sessions are waiting for your input.</div>
+            </div>
+            <Toggle
+              on={settings.dockBadge}
+              onChange={(dockBadge) => void window.ctrl.setSettings({ dockBadge })}
+            />
+          </div>
+          <div className="setting">
+            <div>
+              <div className="setting-title">System notifications</div>
+              <div className="setting-desc">
+                When a session needs your input, finishes or fails while ctrl isn't focused.
+              </div>
+            </div>
+            <Toggle
+              on={settings.notifications}
+              onChange={(notifications) => void window.ctrl.setSettings({ notifications })}
+            />
+          </div>
+        </div>
       </div>
     </div>
+  )
+}
+
+function Toggle({ on, onChange }: { on: boolean; onChange(on: boolean): void }) {
+  return (
+    <button role="switch" aria-checked={on} className={`switch ${on ? "on" : ""}`} onClick={() => onChange(!on)}>
+      <span />
+    </button>
   )
 }
