@@ -16,11 +16,13 @@ type Props = {
   onNew(spaceID: string | null): void
   onSearch(): void
   onSettings(): void
+  /** sessionID → ⌘ number while ⌘ is held */
+  hints: Map<string, number> | null
 }
 
 type Reorder = { id: string; pos: "before" | "after" }
 
-export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
+export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: Props) {
   const [creating, setCreating] = useState(false)
   const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
@@ -125,6 +127,7 @@ export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
     ) : (
       <div
         key={s.id}
+        data-session-id={s.id}
         className={`row session ${s.id === state.currentSessionID ? "active" : ""}`}
         draggable
         onDragStart={(e) => {
@@ -141,7 +144,13 @@ export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
         title={[statusText(s), s.title, shortPath(s.directory)].filter(Boolean).join("\n")}
       >
         <span className="label">{s.title}</span>
-        {s.status === "idle" ? <span className="meta">{age(s.updated)}</span> : <StatusIcon status={s.status} />}
+        {hints?.has(s.id) ? (
+          <kbd className="jump-hint">⌘{hints.get(s.id)}</kbd>
+        ) : s.status === "idle" ? (
+          <span className="meta">{age(s.updated)}</span>
+        ) : (
+          <StatusIcon status={s.status} />
+        )}
         <button
           className="icon-btn row-action"
           title={state.archived[s.id] ? "Unarchive" : "Archive"}

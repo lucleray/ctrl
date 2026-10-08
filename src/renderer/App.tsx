@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { AppState } from "../shared/types"
+import { jumpTargets, useJumpHints } from "./jump"
 import { Palette } from "./Palette"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
@@ -22,6 +23,11 @@ export function App() {
   const [state, setState] = useState<AppState>(EMPTY)
   const [palette, setPalette] = useState(false)
   const [settings, setSettings] = useState(false)
+  // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
+  const { hints, cancel: cancelHints } = useJumpHints((n) => {
+    const id = jumpTargets()[n - 1]
+    if (id) open(id)
+  })
   const terminal = useRef<TerminalHandle>(null)
   const stateRef = useRef(state)
   stateRef.current = state
@@ -68,6 +74,7 @@ export function App() {
   useEffect(
     () =>
       window.ctrl.onShortcut((name) => {
+        cancelHints()
         if (name === "palette") setPalette((p) => !p)
         if (name === "settings") {
           setPalette(false)
@@ -78,13 +85,14 @@ export function App() {
           void create(null)
         }
       }),
-    [create],
+    [create, cancelHints],
   )
 
   return (
     <div className="app">
       <Sidebar
         state={state}
+        hints={hints}
         onOpen={open}
         onNew={create}
         onSearch={() => setPalette(true)}

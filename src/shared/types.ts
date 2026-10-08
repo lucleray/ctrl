@@ -67,13 +67,15 @@ export type AppState = {
   error?: string
 }
 
+export type Shortcut = "palette" | "new-chat" | "settings"
+
 export type CtrlApi = {
   getState(): Promise<AppState>
   dismissError(): Promise<void>
   onState(cb: (state: AppState) => void): () => void
   onRenameSpace(cb: (spaceID: string) => void): () => void
   onRenameSession(cb: (sessionID: string) => void): () => void
-  onShortcut(cb: (name: "palette" | "new-chat" | "settings") => void): () => void
+  onShortcut(cb: (name: Shortcut) => void): () => void
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
   moveSpace(id: string, index: number): Promise<void>

@@ -304,6 +304,8 @@ function createWindow() {
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown" || !input.meta || input.control || input.alt || input.shift) return
     const key = input.key.toLowerCase()
+    // ⌘1–9 is handled in the renderer: swallowing a key here makes Chromium drop
+    // the following key-ups, which would leave the ⌘ hints stuck on screen.
     const name =
       key === "p" || key === "k" ? "palette" : key === "n" ? "new-chat" : key === "," ? "settings" : null
     if (!name) return
@@ -327,6 +329,24 @@ function createWindow() {
         }
       }, 3000)
     })
+  }
+
+  // Debug helper: replay real keyboard input, e.g.
+  // CTRL_INPUT='[[4000,"keyDown","Meta",["meta"]],[4100,"keyDown","2",["meta"]]]'
+  const input = process.env.CTRL_INPUT
+  if (input) {
+    const events = JSON.parse(input) as [number, "keyDown" | "keyUp", string, string[]?][]
+    for (const [at, type, keyCode, modifiers = []] of events) {
+      setTimeout(
+        () =>
+          win?.webContents.sendInputEvent({
+            type,
+            keyCode,
+            modifiers: modifiers as Electron.InputEvent["modifiers"],
+          }),
+        at,
+      )
+    }
   }
 
   const shot = process.env.CTRL_SCREENSHOT

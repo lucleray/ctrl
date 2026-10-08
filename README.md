@@ -37,6 +37,8 @@ npm start       # production build + electron
 - Double-click a space to rename
 - Right-click a session: move to / delete
 - A space's folder is the directory new sessions start in (defaults to `~`)
+- ⌘1–9 jumps to the Nth visible session; hold ⌘ to see the numbers
+- ⌘P search · ⌘N new chat · ⌘, settings
 
 ## Debug hooks
 
@@ -46,3 +48,4 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load
 - `CTRL_SCREENSHOT=/tmp/shot.png CTRL_SCREENSHOT_DELAY=8000` capture the window
+- `CTRL_INPUT='[[4000,"keyDown","Meta",["meta"]]]'` replay real keyboard input (ms after window creation)
