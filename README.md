@@ -38,6 +38,9 @@ npm start       # production build + electron
 - Right-click a session: move to / delete
 - A space's folder is the directory new sessions start in (defaults to `~`)
 - ⌘1–9 jumps to the Nth visible session; hold ⌘ to see the numbers
+- Drag a session onto the terminal to reference it: ctrl pastes `@session[Title](ses_…)` and
+  the `read-session` skill (`skills/read-session`, symlinked into `~/.agents/skills`) lets the
+  agent read its context via `node digest.mjs <id>`
 - ⌘P search · ⌘N new chat · ⌘, settings
 
 ## Debug hooks

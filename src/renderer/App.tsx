@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Palette } from "./Palette"
+import { ReferenceDrop } from "./ReferenceDrop"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { TerminalView, type TerminalHandle } from "./TerminalView"
@@ -101,6 +102,15 @@ export function App() {
       <main className="main">
         <div className="main-drag" />
         <TerminalView ref={terminal} dark={state.dark} />
+        <ReferenceDrop
+          sessions={state.sessions}
+          currentSessionID={state.currentSessionID}
+          onReference={(mention) => {
+            // Bracketed paste so the TUI inserts it as text (no submit, no @file search).
+            window.ctrl.ptyWrite(`\x1b[200~${mention} \x1b[201~`)
+            terminal.current?.focus()
+          }}
+        />
         {settings && <Settings state={state} onClose={closeSettings} />}
       </main>
       {palette && (

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react"
 import type { AppState, SessionItem, Space } from "../shared/types"
 import { Icon } from "./icons"
+import { SESSION_DRAG } from "./ReferenceDrop"
 import { age, shortPath, statusText } from "./format"
 import { StatusIcon, topStatus } from "./StatusIcon"
 import { useSidebarWidth } from "./ResizeHandle"
 
-const SESSION_DRAG = "application/x-ctrl-session"
 const SPACE_DRAG = "application/x-ctrl-space"
 const RECENTS = "__recents__"
 const PAGE_SIZE = 10
@@ -132,7 +132,8 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: P
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(SESSION_DRAG, s.id)
-          e.dataTransfer.effectAllowed = "move"
+          // move = into a space, copy = reference it in the terminal
+          e.dataTransfer.effectAllowed = "copyMove"
         }}
         onDragEnd={clearDrag}
         onClick={() => onOpen(s.id)}
