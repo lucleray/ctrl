@@ -40,6 +40,9 @@ npm start       # production build + electron
 
 ## Debug hooks
 
+Any of these runs the app headless: hidden window, no dock icon, never takes focus
+(force it with `CTRL_HEADLESS=1`).
+
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load
 - `CTRL_SCREENSHOT=/tmp/shot.png CTRL_SCREENSHOT_DELAY=8000` capture the window

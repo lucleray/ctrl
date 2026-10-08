@@ -211,8 +211,14 @@ function report(err: unknown) {
   push()
 }
 
+// Test runs (CTRL_HEADLESS=1, implied by the debug hooks) never show the window or take focus.
+const headless =
+  process.env.CTRL_HEADLESS === "1" || !!process.env.CTRL_EVAL || !!process.env.CTRL_SCREENSHOT
+
 function createWindow() {
   win = new BrowserWindow({
+    show: !headless,
+    paintWhenInitiallyHidden: true,
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -257,6 +263,11 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (headless && process.platform === "darwin") {
+    // No dock icon, no activation: the app stays in the background.
+    app.setActivationPolicy("accessory")
+    app.dock?.hide()
+  }
   registerIpc()
   await terminal.init()
   createWindow()
