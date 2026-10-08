@@ -288,6 +288,7 @@ function createWindow() {
   win = new BrowserWindow({
     show: !headless,
     paintWhenInitiallyHidden: true,
+    icon: join(root, "build/icon.png"),
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -360,6 +361,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // In dev Electron shows its own icon; packaged builds use build/icon.icns.
+  if (!headless && process.platform === "darwin") app.dock?.setIcon(join(root, "build/icon.png"))
   if (headless && process.platform === "darwin") {
     // No dock icon, no activation: the app stays in the background.
     app.setActivationPolicy("accessory")

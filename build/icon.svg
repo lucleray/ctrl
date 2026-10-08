@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- deep ocean → teal -->
+    <linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#16325c"/>
+      <stop offset="0.55" stop-color="#0f4c75"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <!-- soft light, top-right -->
+    <radialGradient id="glow" cx="0.8" cy="0.12" r="0.65">
+      <stop offset="0" stop-color="#bae6fd" stop-opacity="0.32"/>
+      <stop offset="0.55" stop-color="#7dd3fc" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#7dd3fc" stop-opacity="0"/>
+    </radialGradient>
+    <!-- subtle top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="glyph" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#04131f" flood-opacity="0.35"/>
+    </filter>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="186"/>
+    </clipPath>
+  </defs>
+
+  <!-- macOS icon grid: 824px body centred on a 1024 canvas -->
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  </g>
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+    <!-- gentle wave across the bottom -->
+    <path d="M100 760 C 260 700, 380 820, 540 770 S 820 700, 924 750 L 924 924 L 100 924 Z" fill="#5eead4" fill-opacity="0.10"/>
+    <path d="M100 820 C 250 780, 400 870, 560 830 S 830 770, 924 815 L 924 924 L 100 924 Z" fill="#5eead4" fill-opacity="0.10"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#sheen)"/>
+  </g>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#ffffff" stroke-opacity="0.12"/>
+
+  <!-- ⌃_ : the control key + a terminal cursor -->
+  <g filter="url(#glyph)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M330 548 L474 382 L618 548" stroke="#ffffff" stroke-width="76"/>
+    <path d="M604 650 L730 650" stroke="#5eead4" stroke-width="64"/>
+  </g>
+</svg>
