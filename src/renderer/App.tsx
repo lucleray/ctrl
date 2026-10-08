@@ -139,7 +139,6 @@ export function App() {
           <SpaceSettings
             key={editingSpace.id}
             space={editingSpace}
-            sessions={state.sessions}
             appDefault={state.settings.defaultModelEnabled ? state.settings.defaultModel : null}
             onClose={closeSpaceSettings}
           />

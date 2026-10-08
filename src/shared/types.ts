@@ -11,12 +11,7 @@ export type Space = {
   modelEnabled?: boolean
   /** Extra instructions attached to every new session in this space */
   instructions?: string
-  /** Sessions referenced in every new session's instructions, so the agent can read them for context */
-  pinned?: PinnedSession[]
 }
-
-/** Title is saved at pin time as a fallback; the live session title wins when known. */
-export type PinnedSession = { id: string; title: string }
 
 export type ModelOption = ModelRef & {
   name: string
@@ -126,7 +121,6 @@ export type CtrlApi = {
   onSpaceSettings(cb: (spaceID: string) => void): () => void
   updateSpace(id: string, patch: SpacePatch): Promise<void>
   pickSpaceFolder(id: string): Promise<void>
-  unpinSession(spaceID: string, sessionID: string): Promise<void>
   listModels(directory?: string): Promise<ModelChoices>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>

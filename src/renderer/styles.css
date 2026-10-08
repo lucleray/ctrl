@@ -685,43 +685,6 @@ button {
   font-size: 12px;
 }
 
-.setting-textarea[readonly] {
-  color: var(--muted);
-  min-height: 0;
-  resize: none;
-}
-
-.pinned-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-}
-
-.pinned-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 10px;
-  font-size: 12.5px;
-}
-
-.pinned-row + .pinned-row {
-  border-top: 1px solid var(--border);
-}
-
-.pinned-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pinned-empty {
-  color: var(--dim);
-}
-
 .setting.setting-with-sub {
   padding-bottom: 10px;
 }

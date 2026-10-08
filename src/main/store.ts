@@ -1,13 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import {
-  FONT_SIZE,
-  type PinnedSession,
-  type Settings,
-  type Space,
-  type SpacePatch,
-  type UiState,
-} from "../shared/types"
+import { FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
 
 const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 }
 const DEFAULT_SETTINGS: Settings = {
@@ -104,22 +97,6 @@ export class Store {
       } else Object.assign(space, { [key]: key === "name" ? String(value).trim() : value })
     }
     this.save()
-  }
-
-  setPinned(spaceID: string, session: PinnedSession, pinned: boolean) {
-    const space = this.space(spaceID)
-    if (!space) return
-    const rest = (space.pinned ?? []).filter((p) => p.id !== session.id)
-    space.pinned = pinned ? [...rest, session] : rest
-    if (!space.pinned.length) delete space.pinned
-    this.save()
-  }
-
-  /** Drops a session from every space's pins, e.g. after it was deleted. */
-  unpinEverywhere(sessionID: string) {
-    for (const space of this.data.spaces) {
-      if (space.pinned?.some((p) => p.id === sessionID)) this.setPinned(space.id, { id: sessionID, title: "" }, false)
-    }
   }
 
   /** Moves a space so it sits at `index` in the final list. */

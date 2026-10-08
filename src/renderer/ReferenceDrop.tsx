@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react"
-import { sessionMention } from "../shared/mentions"
 import type { SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 
 export const SESSION_DRAG = "application/x-ctrl-session"
 
-export { sessionMention }
+/** `@session[Title](ses_…)`: resolved by the read-session skill on the agent side. */
+export function sessionMention(s: Pick<SessionItem, "id" | "title">) {
+  const title = s.title.replace(/[[\]()\n\r]/g, " ").replace(/\s+/g, " ").trim()
+  return `@session[${title}](${s.id})`
+}
 
 /**
  * Drop zone over the terminal, shown while a session is dragged from the sidebar.
