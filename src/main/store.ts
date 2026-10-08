@@ -1,8 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { Space, UiState } from "../shared/types"
+import type { Settings, Space, UiState } from "../shared/types"
 
-const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true }
+const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 }
+const DEFAULT_SETTINGS: Settings = { appearance: "system", tuiTheme: null }
 
 type Persisted = {
   spaces: Space[]
@@ -10,6 +11,7 @@ type Persisted = {
   /** sessionID → archived-at timestamp */
   archived: Record<string, number>
   ui: UiState
+  settings: Settings
 }
 
 export class Store {
@@ -20,7 +22,19 @@ export class Store {
     try {
       loaded = JSON.parse(readFileSync(file, "utf8"))
     } catch {}
-    this.data = { spaces: [], assignments: {}, archived: {}, ...loaded, ui: { ...DEFAULT_UI, ...loaded.ui } }
+    this.data = {
+      spaces: [],
+      assignments: {},
+      archived: {},
+      ...loaded,
+      ui: { ...DEFAULT_UI, ...loaded.ui },
+      settings: { ...DEFAULT_SETTINGS, ...loaded.settings },
+    }
+  }
+
+  setSettings(patch: Partial<Settings>) {
+    Object.assign(this.data.settings, patch)
+    this.save()
   }
 
   setUi(patch: Partial<UiState>) {

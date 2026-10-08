@@ -4,7 +4,11 @@ import { FitAddon } from "@xterm/addon-fit"
 import { WebglAddon } from "@xterm/addon-webgl"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
 
-export const TERM_BG = "#eff1f5"
+// Fallback colors before the TUI paints; the padding then tracks the TUI's own background.
+const PALETTE = {
+  light: { background: "#eff1f5", foreground: "#4c4f69", cursor: "#4c4f69" },
+  dark: { background: "#1e1e2e", foreground: "#cdd6f4", cursor: "#cdd6f4" },
+}
 
 // xterm.js doesn't encode these the way native macOS terminals do, so translate
 // them into sequences opencode understands.
@@ -26,10 +30,12 @@ function translateKey(e: KeyboardEvent): string | null {
 
 export type TerminalHandle = { focus(): void }
 
-export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_props, ref) {
+export const TerminalView = forwardRef<TerminalHandle, { dark: boolean }>(function TerminalView({ dark }, ref) {
   const el = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal>(null)
   const wrap = useRef<HTMLDivElement>(null)
+  const fallback = useRef(PALETTE.light)
+  fallback.current = dark ? PALETTE.dark : PALETTE.light
 
   useImperativeHandle(ref, () => ({ focus: () => term.current?.focus() }), [])
 
@@ -42,7 +48,7 @@ export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_pr
       macOptionIsMeta: true,
       cursorBlink: true,
       scrollback: 0,
-      theme: { background: TERM_BG, foreground: "#4c4f69", cursor: "#4c4f69" },
+      theme: fallback.current,
     })
     term.current = t
     const fit = new FitAddon()
@@ -67,7 +73,7 @@ export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_pr
     let sampleTimer: ReturnType<typeof setTimeout> | undefined
     const sampleBg = () => {
       const cell = t.buffer.active.getLine(t.buffer.active.viewportY)?.getCell(0)
-      const color = cell?.isBgRGB() ? `#${cell.getBgColor().toString(16).padStart(6, "0")}` : TERM_BG
+      const color = cell?.isBgRGB() ? `#${cell.getBgColor().toString(16).padStart(6, "0")}` : fallback.current.background
       wrap.current!.style.background = color
     }
     const offData = window.ctrl.onPtyData((d) =>
@@ -100,8 +106,12 @@ export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_pr
     }
   }, [])
 
+  useEffect(() => {
+    if (term.current) term.current.options.theme = fallback.current
+  }, [dark])
+
   return (
-    <div className="terminal-wrap" ref={wrap} style={{ background: TERM_BG }}>
+    <div className="terminal-wrap" ref={wrap} style={{ background: fallback.current.background }}>
       <div className="terminal" ref={el} />
     </div>
   )

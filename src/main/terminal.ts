@@ -35,6 +35,7 @@ export class Terminal {
   private bridgeUrl = ""
   private size = { cols: 120, rows: 40 }
   private pendingSession: string | null = null
+  private cliOverrides: Record<string, unknown> = {}
 
   constructor(
     private pluginDir: string,
@@ -87,6 +88,7 @@ export class Terminal {
       COLORTERM: "truecolor",
       CTRL_BRIDGE_URL: this.bridgeUrl,
       OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({
+        ...this.cliOverrides,
         plugins: [this.pluginDir],
         tabs: { mode: "off" },
       }),
@@ -111,6 +113,22 @@ export class Terminal {
       this.proc = undefined
       this.events.onData("\r\n\x1b[2m[opencode exited — select a session to restart]\x1b[0m\r\n")
     })
+  }
+
+  /**
+   * Inline CLI settings only apply at launch, so changing them restarts the TUI
+   * on the same session.
+   */
+  setCliOverrides(overrides: Record<string, unknown>, currentSessionID: string | null) {
+    const changed = JSON.stringify(overrides) !== JSON.stringify(this.cliOverrides)
+    this.cliOverrides = overrides
+    if (!changed || !this.proc) return
+    const proc = this.proc
+    this.proc = undefined
+    this.bridge?.close()
+    proc.kill()
+    this.events.onReset()
+    this.spawn(currentSessionID ?? undefined)
   }
 
   open(sessionID: string) {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttribut
 import type { AppState, SessionItem, Space } from "../shared/types"
 import { Icon } from "./icons"
 import { age } from "./format"
+import { useSidebarWidth } from "./ResizeHandle"
 
 const SESSION_DRAG = "application/x-ctrl-session"
 const SPACE_DRAG = "application/x-ctrl-space"
@@ -13,17 +14,19 @@ type Props = {
   onOpen(id: string): void
   onNew(spaceID: string | null): void
   onSearch(): void
+  onSettings(): void
 }
 
 type Reorder = { id: string; pos: "before" | "after" }
 
-export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
+export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
   const [creating, setCreating] = useState(false)
   const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [reorder, setReorder] = useState<Reorder | null>(null)
   const draggingSpace = useRef<string | null>(null)
+  const { width, handle } = useSidebarWidth(state.ui.sidebarWidth)
 
   useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
   useEffect(() => window.ctrl.onRenameSession(setRenamingSession), [])
@@ -152,13 +155,19 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
     )
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width }}>
+      {handle}
       <div className="sidebar-drag" />
       <div className="brand">
         <span>ctrl</span>
-        <button className="icon-btn" title="Search (⌘P)" onClick={onSearch}>
-          <Icon name="search" />
-        </button>
+        <span className="brand-actions">
+          <button className="icon-btn" title="Settings (⌘,)" onClick={onSettings}>
+            <Icon name="settings" />
+          </button>
+          <button className="icon-btn" title="Search (⌘P)" onClick={onSearch}>
+            <Icon name="search" />
+          </button>
+        </span>
       </div>
 
       <button className="row action" onClick={() => onNew(null)}>

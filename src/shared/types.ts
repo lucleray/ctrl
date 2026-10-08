@@ -16,10 +16,28 @@ export type SessionItem = {
 export type UiState = {
   recentsCollapsed: boolean
   archivedCollapsed: boolean
+  sidebarWidth: number
+}
+
+export type Appearance = "system" | "light" | "dark"
+
+export type Settings = {
+  appearance: Appearance
+  /** opencode theme for the embedded TUI; null = whatever cli.json says */
+  tuiTheme: string | null
+}
+
+export type ThemeInfo = {
+  builtin: string[]
+  custom: string[]
+  cliDefault?: string
 }
 
 export type AppState = {
   ui: UiState
+  settings: Settings
+  themes: ThemeInfo
+  dark: boolean
   spaces: Space[]
   assignments: Record<string, string>
   archived: Record<string, number>
@@ -34,13 +52,14 @@ export type CtrlApi = {
   onState(cb: (state: AppState) => void): () => void
   onRenameSpace(cb: (spaceID: string) => void): () => void
   onRenameSession(cb: (sessionID: string) => void): () => void
-  onShortcut(cb: (name: "palette" | "new-chat") => void): () => void
+  onShortcut(cb: (name: "palette" | "new-chat" | "settings") => void): () => void
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
   setArchived(sessionID: string, archived: boolean): Promise<void>
   setUi(patch: Partial<UiState>): Promise<void>
+  setSettings(patch: Partial<Settings>): Promise<void>
   toggleSpace(id: string): Promise<void>
   showSpaceMenu(id: string): Promise<void>
   showSessionMenu(sessionID: string): Promise<void>

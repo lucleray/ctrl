@@ -1,14 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron"
 import { writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { AppState, UiState } from "../shared/types"
+import type { AppState, Settings, ThemeInfo, UiState } from "../shared/types"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
+import { cliThemeName, listThemes } from "./themes"
 
 const root = join(fileURLToPath(import.meta.url), "../..")
+const LIGHT_BG = "#f7f7f6"
+const DARK_BG = "#1c1c1b"
 
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
 
@@ -32,6 +35,9 @@ const state = (): AppState => ({
   assignments: store.data.assignments,
   archived: store.data.archived,
   ui: store.data.ui,
+  settings: store.data.settings,
+  themes,
+  dark: nativeTheme.shouldUseDarkColors,
   sessions: opencode.sessions,
   currentSessionID,
   bridgeConnected,
@@ -62,6 +68,23 @@ const terminal = new Terminal(join(root, "bridge"), {
     push()
   },
 })
+
+let themes: ThemeInfo = { builtin: [], custom: [] }
+const loadThemes = () => (themes = { ...listThemes(), cliDefault: cliThemeName() })
+
+/** Applies appearance to the app chrome and the matching theme/mode to the embedded TUI. */
+const applyTheme = () => {
+  const { appearance, tuiTheme } = store.data.settings
+  nativeTheme.themeSource = appearance
+  const dark = nativeTheme.shouldUseDarkColors
+  win?.setBackgroundColor(dark ? DARK_BG : LIGHT_BG)
+  // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
+  terminal.setCliOverrides(
+    { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } },
+    currentSessionID,
+  )
+  push()
+}
 
 const openSession = (sessionID: string) => {
   currentSessionID = sessionID
@@ -94,6 +117,11 @@ function registerIpc() {
   ipcMain.handle("session:rename", (_e, sessionID: string, title: string) =>
     opencode.renameSession(sessionID, title).catch(report),
   )
+  ipcMain.handle("settings:set", (_e, patch: Partial<Settings>) => {
+    store.setSettings(patch)
+    loadThemes()
+    applyTheme()
+  })
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)
     push()
@@ -230,7 +258,7 @@ function createWindow() {
     minHeight: 500,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
-    backgroundColor: "#f7f7f6",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG,
     webPreferences: {
       preload: join(root, "dist/preload.cjs"),
       sandbox: false,
@@ -240,7 +268,8 @@ function createWindow() {
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown" || !input.meta || input.control || input.alt || input.shift) return
     const key = input.key.toLowerCase()
-    const name = key === "p" || key === "k" ? "palette" : key === "n" ? "new-chat" : null
+    const name =
+      key === "p" || key === "k" ? "palette" : key === "n" ? "new-chat" : key === "," ? "settings" : null
     if (!name) return
     event.preventDefault()
     send("shortcut", name)
@@ -282,6 +311,12 @@ app.whenReady().then(async () => {
   }
   registerIpc()
   await terminal.init()
+  loadThemes()
+  applyTheme()
+  // When following the OS, re-theme (and restart the TUI) as the OS flips light/dark.
+  nativeTheme.on("updated", () => {
+    if (store.data.settings.appearance === "system") applyTheme()
+  })
   createWindow()
   opencode.start().catch(report)
 })

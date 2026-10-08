@@ -21,6 +21,7 @@ const api: CtrlApi = {
   renameSession: (sessionID, title) => ipcRenderer.invoke("session:rename", sessionID, title),
   setArchived: (sessionID, archived) => ipcRenderer.invoke("session:archive", sessionID, archived),
   setUi: (patch) => ipcRenderer.invoke("ui:set", patch),
+  setSettings: (patch) => ipcRenderer.invoke("settings:set", patch),
   toggleSpace: (id) => ipcRenderer.invoke("space:toggle", id),
   showSpaceMenu: (id) => ipcRenderer.invoke("space:menu", id),
   showSessionMenu: (id) => ipcRenderer.invoke("session:menu", id),
