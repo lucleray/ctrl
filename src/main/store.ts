@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   fontSize: FONT_SIZE.default,
   defaultModel: null,
+  defaultModelEnabled: false,
 }
 
 type Persisted = {
@@ -35,7 +36,12 @@ export class Store {
       archived: {},
       ...loaded,
       ui: { ...DEFAULT_UI, ...loaded.ui },
-      settings: { ...DEFAULT_SETTINGS, ...loaded.settings },
+      settings: {
+        ...DEFAULT_SETTINGS,
+        // State from before the toggle: a saved default model meant "on".
+        defaultModelEnabled: !!loaded.settings?.defaultModel,
+        ...loaded.settings,
+      },
     }
   }
 

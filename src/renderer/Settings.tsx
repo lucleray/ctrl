@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { FONT_SIZE, type Appearance, type AppState, type ModelChoices } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
+import { Toggle } from "./Toggle"
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "system", label: "System" },
@@ -141,16 +142,34 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
               <div className="setting-desc">
                 {modelError
                   ? `Couldn't load models: ${modelError}`
-                  : "For new sessions started from ctrl. A space can pick its own in space settings."}
+                  : settings.defaultModelEnabled
+                    ? "For new sessions started from ctrl. A space can pick its own in space settings."
+                    : "Off: ctrl doesn't pick a model, opencode uses its own default."}
               </div>
             </div>
-            <ModelPicker
-              choices={choices}
-              error={modelError}
-              value={settings.defaultModel}
-              onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
-              defaultOption={{ label: "opencode default", detail: choices?.default?.name }}
-            />
+            <div className="setting-actions">
+              <ModelPicker
+                choices={choices}
+                error={modelError}
+                value={settings.defaultModel}
+                enabled={settings.defaultModelEnabled}
+                onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
+                fallback={{ label: "opencode default", detail: choices?.default?.name }}
+              />
+              <Toggle
+                title={settings.defaultModelEnabled ? "Use opencode's default instead" : "Pick a default model"}
+                on={settings.defaultModelEnabled}
+                onChange={(on) =>
+                  void window.ctrl.setSettings({
+                    defaultModelEnabled: on,
+                    // First time on: start from what opencode would pick anyway.
+                    ...(on && !settings.defaultModel && choices?.default
+                      ? { defaultModel: { providerID: choices.default.providerID, id: choices.default.id } }
+                      : {}),
+                  })
+                }
+              />
+            </div>
           </div>
         </div>
 
@@ -181,13 +200,5 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
         </div>
       </div>
     </div>
-  )
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange(on: boolean): void }) {
-  return (
-    <button role="switch" aria-checked={on} className={`switch ${on ? "on" : ""}`} onClick={() => onChange(!on)}>
-      <span />
-    </button>
   )
 }

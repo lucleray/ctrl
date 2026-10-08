@@ -5,8 +5,10 @@ export type Space = {
   name: string
   directory?: string
   collapsed?: boolean
-  /** Model new sessions in this space start with; unset = opencode's default */
+  /** Model new sessions in this space start with (when modelEnabled isn't false) */
   model?: ModelRef
+  /** Off: the space doesn't set a model and the app default applies. Unset = on, for older state. */
+  modelEnabled?: boolean
   /** Extra instructions attached to every new session in this space */
   instructions?: string
 }
@@ -33,6 +35,7 @@ export type SpacePatch = {
   name?: string
   directory?: string | null
   model?: ModelRef | null
+  modelEnabled?: boolean
   instructions?: string | null
 }
 
@@ -75,8 +78,10 @@ export type Settings = {
   notifications: boolean
   /** Terminal font size in px */
   fontSize: number
-  /** Model for new sessions (spaces can override); null = opencode's default */
+  /** Model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
+  /** Off: ctrl passes no model and opencode's default applies */
+  defaultModelEnabled: boolean
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }

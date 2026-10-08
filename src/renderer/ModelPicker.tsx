@@ -9,25 +9,24 @@ export function modelLabel(ref: ModelRef, choices: ModelChoices | null) {
   const m = choices?.models.find((x) => keyOf(x) === keyOf(ref))
   return m ? `${m.name} · ${m.providerName}` : ref.id
 }
-const DEFAULT_KEY = "__default__"
 const WIDTH = 440
 
 type Props = {
   choices: ModelChoices | null
   error?: string
   value: ModelRef | null
-  onChange(model: ModelRef | null): void
-  /** The "no override" row, e.g. { label: "opencode default", detail: "Claude Opus 5.5" } */
-  defaultOption: { label: string; detail?: string }
+  onChange(model: ModelRef): void
+  /** Off: the picker is greyed out and shows `fallback`, what applies instead */
+  enabled: boolean
+  fallback: { label: string; detail?: string }
 }
 
 type Row =
   | { kind: "provider"; key: string; label: string; count: number }
   | { kind: "vendor"; key: string; label: string }
-  | { kind: "default"; key: string }
   | { kind: "model"; key: string; model: ModelOption }
 
-export function ModelPicker({ choices, error, value, onChange, defaultOption }: Props) {
+export function ModelPicker({ choices, error, value, onChange, enabled, fallback }: Props) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const current = value && choices?.models.find((m) => keyOf(m) === keyOf(value))
@@ -37,13 +36,13 @@ export function ModelPicker({ choices, error, value, onChange, defaultOption }: 
       <button
         ref={trigger}
         className={`model-trigger ${open ? "open" : ""}`}
-        disabled={!choices && !error}
+        disabled={!enabled || !choices}
         onClick={() => setOpen((o) => !o)}
       >
         <span className="model-trigger-text">
           {!choices ? (
             <span className="model-trigger-name muted">{error ? "Couldn't load models" : "Loading models…"}</span>
-          ) : value ? (
+          ) : enabled && value ? (
             <>
               <span className="model-trigger-name">{current?.name ?? value.id}</span>
               <span className="model-trigger-provider">
@@ -52,19 +51,18 @@ export function ModelPicker({ choices, error, value, onChange, defaultOption }: 
             </>
           ) : (
             <>
-              <span className="model-trigger-name">{defaultOption.label}</span>
-              {defaultOption.detail && <span className="model-trigger-provider">{defaultOption.detail}</span>}
+              <span className="model-trigger-name">{enabled ? "Choose a model…" : fallback.label}</span>
+              {!enabled && fallback.detail && <span className="model-trigger-provider">{fallback.detail}</span>}
             </>
           )}
         </span>
         <Icon name="chevron-down" />
       </button>
-      {open && choices && (
+      {open && enabled && choices && (
         <Popover
           anchor={trigger.current!}
           choices={choices}
           value={value}
-          defaultOption={defaultOption}
           onPick={(m) => {
             setOpen(false)
             onChange(m)
@@ -89,15 +87,13 @@ function Popover({
   anchor,
   choices,
   value,
-  defaultOption,
   onPick,
   onClose,
 }: {
   anchor: HTMLElement
   choices: ModelChoices
   value: ModelRef | null
-  defaultOption: Props["defaultOption"]
-  onPick(m: ModelRef | null): void
+  onPick(m: ModelRef): void
   onClose(): void
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -105,7 +101,7 @@ function Popover({
   const input = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
   const [provider, setProvider] = useState<string | null>(null)
-  const selectedKey = value ? keyOf(value) : DEFAULT_KEY
+  const selectedKey = value ? keyOf(value) : ""
   const [active, setActive] = useState(selectedKey)
 
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
@@ -122,7 +118,6 @@ function Popover({
 
   const rows = useMemo(() => {
     const out: Row[] = []
-    if (terms.length === 0 && !provider) out.push({ kind: "default", key: DEFAULT_KEY })
     let lastProvider = ""
     let lastVendor = ""
     for (const m of filtered) {
@@ -145,7 +140,7 @@ function Popover({
     return out
   }, [filtered, counts, provider, query])
 
-  const pickable = rows.filter((r) => r.kind === "default" || r.kind === "model")
+  const pickable = rows.filter((r) => r.kind === "model")
 
   // Keep the highlight on a visible row as the filter changes.
   useEffect(() => {
@@ -211,7 +206,6 @@ function Popover({
   }, [anchor, onClose])
 
   const pick = (key: string) => {
-    if (key === DEFAULT_KEY) return onPick(null)
     const m = choices.models.find((x) => keyOf(x) === key)
     if (m) onPick({ providerID: m.providerID, id: m.id })
   }
@@ -303,17 +297,8 @@ function Popover({
               onClick={() => pick(r.key)}
             >
               <span className="model-check">{selected && <Icon name="check" />}</span>
-              {r.kind === "default" ? (
-                <>
-                  <span className="model-name">{defaultOption.label}</span>
-                  {defaultOption.detail && <span className="model-id">{defaultOption.detail}</span>}
-                </>
-              ) : (
-                <>
-                  <span className="model-name">{r.model.name}</span>
-                  <span className="model-id">{r.model.vendor ? r.model.id.slice(r.model.vendor.length + 1) : r.model.id}</span>
-                </>
-              )}
+              <span className="model-name">{r.model.name}</span>
+              <span className="model-id">{r.model.vendor ? r.model.id.slice(r.model.vendor.length + 1) : r.model.id}</span>
             </div>
           )
         })}

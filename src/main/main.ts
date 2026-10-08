@@ -7,6 +7,7 @@ import {
   FONT_SIZE,
   type AppState,
   type Settings,
+  type Space,
   type SpacePatch,
   type ThemeInfo,
   type UiState,
@@ -145,10 +146,17 @@ const openSession = (sessionID: string) => {
   push()
 }
 
+/** Space model if it sets one, else the app default if on, else none (opencode decides). */
+const modelFor = (space?: Space) => {
+  if (space?.model && space.modelEnabled !== false) return space.model
+  const { defaultModel, defaultModelEnabled } = store.data.settings
+  return (defaultModelEnabled && defaultModel) || undefined
+}
+
 const newSession = async (spaceID: string | null) => {
   const space = spaceID ? store.space(spaceID) : undefined
   const id = await opencode.createSession(space?.directory || homedir(), {
-    model: space?.model ?? store.data.settings.defaultModel ?? undefined,
+    model: modelFor(space),
     instructions: space?.instructions,
   })
   if (spaceID) store.assign(id, spaceID)

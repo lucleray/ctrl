@@ -38,7 +38,8 @@ npm start       # production build + electron
 - Right-click a session: move to / delete
 - **Space settings** apply to new sessions started from ctrl in that space:
   - folder: where they start (defaults to `~`)
-  - model: passed to `session.create`; falls back to **Settings → Default model**, then opencode's default
+  - model (toggle): passed to `session.create`. Off falls back to **Settings → Default model**; when that's
+    off too, ctrl passes no model and opencode picks
   - instructions: attached as a session instruction entry (`ctrl.space`), invisible in the chat
     but part of the model's context on every turn
 - ⌘1–9 jumps to the Nth visible session; hold ⌘ to see the numbers

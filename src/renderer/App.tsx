@@ -10,7 +10,7 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
   ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -139,7 +139,7 @@ export function App() {
           <SpaceSettings
             key={editingSpace.id}
             space={editingSpace}
-            appDefault={state.settings.defaultModel}
+            appDefault={state.settings.defaultModelEnabled ? state.settings.defaultModel : null}
             onClose={closeSpaceSettings}
           />
         )}
