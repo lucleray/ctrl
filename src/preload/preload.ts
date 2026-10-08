@@ -21,6 +21,7 @@ const api: CtrlApi = {
   onSpaceSettings: on("space:settings"),
   updateSpace: (id, patch) => ipcRenderer.invoke("space:update", id, patch),
   pickSpaceFolder: (id) => ipcRenderer.invoke("space:pick-folder", id),
+  unpinSession: (spaceID, sessionID) => ipcRenderer.invoke("space:unpin", spaceID, sessionID),
   listModels: (directory) => ipcRenderer.invoke("models:list", directory),
   moveSpace: (id, index) => ipcRenderer.invoke("space:move", id, index),
   renameSession: (sessionID, title) => ipcRenderer.invoke("session:rename", sessionID, title),

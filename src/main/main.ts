@@ -12,6 +12,7 @@ import {
   type ThemeInfo,
   type UiState,
 } from "../shared/types"
+import { pinnedInstructions } from "../shared/mentions"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
@@ -153,11 +154,14 @@ const modelFor = (space?: Space) => {
   return (defaultModelEnabled && defaultModel) || undefined
 }
 
+const titleOf = (sessionID: string) => opencode.sessions.find((s) => s.id === sessionID)?.title
+
 const newSession = async (spaceID: string | null) => {
   const space = spaceID ? store.space(spaceID) : undefined
   const id = await opencode.createSession(space?.directory || homedir(), {
     model: modelFor(space),
     instructions: space?.instructions,
+    pinned: pinnedInstructions(space?.pinned?.map((p) => ({ id: p.id, title: titleOf(p.id) ?? p.title }))),
   })
   if (spaceID) store.assign(id, spaceID)
   openSession(id)
@@ -191,6 +195,10 @@ function registerIpc() {
     })
     if (res.canceled || !res.filePaths[0]) return
     store.patchSpace(id, { directory: res.filePaths[0] })
+    push()
+  })
+  ipcMain.handle("space:unpin", (_e, spaceID: string, sessionID: string) => {
+    store.setPinned(spaceID, { id: sessionID, title: "" }, false)
     push()
   })
   ipcMain.handle("models:list", (_e, directory?: string) => opencode.listModels(directory))
@@ -277,6 +285,22 @@ function registerIpc() {
           })),
         ],
       },
+      {
+        label: "Pin to space",
+        enabled: store.data.spaces.length > 0,
+        submenu: store.data.spaces.map((s) => {
+          const pinned = !!s.pinned?.some((p) => p.id === sessionID)
+          return {
+            label: s.name,
+            type: "checkbox" as const,
+            checked: pinned,
+            click: () => {
+              store.setPinned(s.id, { id: sessionID, title: titleOf(sessionID) ?? sessionID }, !pinned)
+              push()
+            },
+          }
+        }),
+      },
       { type: "separator" },
       {
         label: "Delete session",
@@ -292,6 +316,7 @@ function registerIpc() {
           if (res.response !== 0) return
           await opencode.removeSession(sessionID).catch(report)
           store.assign(sessionID, null)
+          store.unpinEverywhere(sessionID)
           push()
         },
       },

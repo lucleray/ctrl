@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import type { ModelChoices, ModelRef, Space } from "../shared/types"
+import { pinnedInstructions } from "../shared/mentions"
+import type { ModelChoices, ModelRef, SessionItem, Space } from "../shared/types"
 import { shortPath } from "./format"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -7,10 +8,13 @@ import { Toggle } from "./Toggle"
 
 export function SpaceSettings({
   space,
+  sessions,
   appDefault,
   onClose,
 }: {
   space: Space
+  /** For live titles of pinned sessions */
+  sessions: SessionItem[]
   /** Settings → default model, used when the space doesn't pick one */
   appDefault: ModelRef | null
   onClose(): void
@@ -35,6 +39,11 @@ export function SpaceSettings({
       live = false
     }
   }, [space.directory])
+
+  const pins = (space.pinned ?? []).map((p) => ({
+    id: p.id,
+    title: sessions.find((s) => s.id === p.id)?.title ?? p.title,
+  }))
 
   // Older state has a model but no flag: that meant on.
   const modelOn = space.modelEnabled ?? !!space.model
@@ -169,6 +178,40 @@ export function SpaceSettings({
               onBlur={saveInstructions}
               rows={8}
             />
+          </div>
+        </div>
+
+        <h2>Pinned sessions</h2>
+        <div className="settings-card">
+          <div className="setting setting-stack">
+            <div className="setting-desc wide">
+              New sessions in this space can read these sessions for context, using the read-session skill. Pin one from
+              a session's right-click menu.
+            </div>
+            {pins.length ? (
+              <>
+                <div className="pinned-list">
+                  {pins.map((p) => (
+                    <div className="pinned-row" key={p.id}>
+                      <span className="pinned-title" title={p.id}>
+                        {p.title}
+                      </span>
+                      <button
+                        className="icon-btn"
+                        title="Unpin"
+                        onClick={() => void window.ctrl.unpinSession(space.id, p.id)}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="setting-desc wide">Added to the instructions:</div>
+                <textarea className="setting-textarea" value={pinnedInstructions(pins)} readOnly rows={pins.length + 4} />
+              </>
+            ) : (
+              <div className="setting-desc wide pinned-empty">No pinned sessions yet.</div>
+            )}
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { Service } from "@opencode/client/service"
 import type { ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
+const PINNED_INSTRUCTIONS_KEY = "ctrl.space.pinned"
 
 type Client = ReturnType<typeof OpenCode.make>
 
@@ -200,15 +201,16 @@ export class OpenCodeService {
     }
   }
 
-  async createSession(directory: string, opts: { model?: ModelRef; instructions?: string } = {}) {
+  async createSession(directory: string, opts: { model?: ModelRef; instructions?: string; pinned?: string } = {}) {
     const session = await this.client!.session.create({ location: { directory }, model: opts.model })
-    if (opts.instructions?.trim()) {
+    const entries = [
+      [SPACE_INSTRUCTIONS_KEY, opts.instructions],
+      [PINNED_INSTRUCTIONS_KEY, opts.pinned],
+    ] as const
+    for (const [key, value] of entries) {
+      if (!value?.trim()) continue
       // Durable and invisible in the transcript: opencode adds it to the system context of every turn.
-      await this.client!.session.instructions.entry.put({
-        sessionID: session.id,
-        key: SPACE_INSTRUCTIONS_KEY,
-        value: opts.instructions.trim(),
-      })
+      await this.client!.session.instructions.entry.put({ sessionID: session.id, key, value: value.trim() })
     }
     await this.refresh()
     return session.id
