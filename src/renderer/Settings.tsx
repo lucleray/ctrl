@@ -155,7 +155,7 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
               value={settings.defaultModel}
               enabled={settings.defaultModelEnabled}
               onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
-              fallback="opencode default"
+              fallback={{ label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }}
             />
           </div>
         </div>

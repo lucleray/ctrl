@@ -145,7 +145,11 @@ export function SpaceSettings({
               value={space.model ?? null}
               enabled={modelOn}
               onChange={(model) => void window.ctrl.updateSpace(space.id, { model })}
-              fallback={appDefault ? "App custom model" : "opencode default"}
+              fallback={
+                appDefault
+                  ? { label: "App custom model", detail: "Uses the custom model from ctrl's settings" }
+                  : { label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }
+              }
             />
           </div>
         </div>

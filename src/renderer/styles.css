@@ -767,6 +767,9 @@ button {
 .model-trigger-text {
   flex: 1;
   min-width: 0;
+  /* Always two lines tall, so switching states doesn't shift the layout */
+  min-height: 30px;
+  justify-content: center;
   display: flex;
   flex-direction: column;
   line-height: 1.25;

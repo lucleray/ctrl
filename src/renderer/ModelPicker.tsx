@@ -11,7 +11,7 @@ type Props = {
   onChange(model: ModelRef): void
   /** Off: the picker is greyed out and shows `fallback`, what applies instead */
   enabled: boolean
-  fallback: string
+  fallback: { label: string; detail: string }
 }
 
 type Row =
@@ -44,7 +44,8 @@ export function ModelPicker({ choices, error, value, onChange, enabled, fallback
             </>
           ) : (
             <>
-              <span className="model-trigger-name">{enabled ? "Choose a model…" : fallback}</span>
+              <span className="model-trigger-name">{enabled ? "Choose a model…" : fallback.label}</span>
+              <span className="model-trigger-provider">{enabled ? "Pick one from the list" : fallback.detail}</span>
             </>
           )}
         </span>
