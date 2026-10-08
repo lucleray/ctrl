@@ -146,6 +146,9 @@ export type CtrlApi = {
   newSessionHere(): Promise<void>
   /** Opens an http(s)/mailto link in the default browser */
   openExternal(url: string): Promise<void>
+  /** wrapped-links: full URL for a link cut at the row's end */
+  resolveLink(url: string, next: string): Promise<string>
+  prefetchLinks(): Promise<void>
   archiveCurrent(): Promise<void>
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>

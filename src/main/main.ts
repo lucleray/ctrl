@@ -19,6 +19,7 @@ import { OpenCodeService } from "./opencode"
 import { loadShellEnv } from "./shell-env"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
+import { WrappedLinks } from "./wrapped-links" // wrapped-links
 import { cliThemeName, listThemes } from "./themes"
 
 const root = join(fileURLToPath(import.meta.url), "../..")
@@ -114,6 +115,12 @@ const opencode = new OpenCodeService(() => {
   attention.update(opencode.sessions)
   push()
 })
+
+// wrapped-links
+const wrappedLinks = new WrappedLinks(
+  () => opencode.client,
+  (id) => opencode.sessions.find((s) => s.id === id)?.updated,
+)
 
 const attention = new Attention({
   window: () => win,
@@ -369,6 +376,9 @@ function registerIpc() {
   })
   ipcMain.handle("session:new-here", () => newSessionHere())
   ipcMain.handle("open-external", (_e, url: string) => openExternal(url))
+  // wrapped-links
+  ipcMain.handle("links:resolve", (_e, url: string, next: string) => wrappedLinks.resolve(currentSessionID, url, next))
+  ipcMain.handle("links:prefetch", () => currentSessionID && wrappedLinks.prefetch(currentSessionID))
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on

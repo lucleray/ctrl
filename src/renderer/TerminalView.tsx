@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { WebglAddon } from "@xterm/addon-webgl"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { WebLinksAddon } from "@xterm/addon-web-links"
+import { onLinkHover, onLinkLeave, resolveLink } from "./wrapped-links" // wrapped-links
 
 // Fallback colors before the TUI paints; the padding then tracks the TUI's own background.
 const PALETTE = {
@@ -73,7 +74,16 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean; fontSize
     t.loadAddon(new Unicode11Addon())
     t.unicode.activeVersion = "11"
     // Bare URLs in the output
-    t.loadAddon(new WebLinksAddon(openLink))
+    t.loadAddon(
+      new WebLinksAddon(
+        (event, uri) => {
+          if (!event.metaKey) return
+          event.preventDefault()
+          void resolveLink(uri).then(window.ctrl.openExternal) // wrapped-links (was: openLink)
+        },
+        { hover: (_e, uri, range) => onLinkHover(t, uri, range), leave: onLinkLeave }, // wrapped-links
+      ),
+    )
     // Debug hook for CTRL_EVAL test runs
     ;(window as unknown as { __term: Terminal }).__term = t
     t.attachCustomKeyEventHandler((e) => {

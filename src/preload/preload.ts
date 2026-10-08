@@ -23,6 +23,8 @@ const api: CtrlApi = {
   onRecordedKey: on("shortcut:recorded"),
   newSessionHere: () => ipcRenderer.invoke("session:new-here"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  resolveLink: (url, next) => ipcRenderer.invoke("links:resolve", url, next), // wrapped-links
+  prefetchLinks: () => ipcRenderer.invoke("links:prefetch"), // wrapped-links
   archiveCurrent: () => ipcRenderer.invoke("session:archive-current"),
   createSpace: (name) => ipcRenderer.invoke("space:create", name),
   renameSpace: (id, name) => ipcRenderer.invoke("space:rename", id, name),
