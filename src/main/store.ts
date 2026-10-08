@@ -1,12 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { Space } from "../shared/types"
+import type { Space, UiState } from "../shared/types"
+
+const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true }
 
 type Persisted = {
   spaces: Space[]
   assignments: Record<string, string>
   /** sessionID → archived-at timestamp */
   archived: Record<string, number>
+  ui: UiState
 }
 
 export class Store {
@@ -17,7 +20,12 @@ export class Store {
     try {
       loaded = JSON.parse(readFileSync(file, "utf8"))
     } catch {}
-    this.data = { spaces: [], assignments: {}, archived: {}, ...loaded }
+    this.data = { spaces: [], assignments: {}, archived: {}, ...loaded, ui: { ...DEFAULT_UI, ...loaded.ui } }
+  }
+
+  setUi(patch: Partial<UiState>) {
+    Object.assign(this.data.ui, patch)
+    this.save()
   }
 
   setArchived(sessionIDs: string[], archived: boolean) {

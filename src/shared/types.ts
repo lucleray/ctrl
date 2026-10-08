@@ -13,7 +13,13 @@ export type SessionItem = {
   running: boolean
 }
 
+export type UiState = {
+  recentsCollapsed: boolean
+  archivedCollapsed: boolean
+}
+
 export type AppState = {
+  ui: UiState
   spaces: Space[]
   assignments: Record<string, string>
   archived: Record<string, number>
@@ -34,6 +40,7 @@ export type CtrlApi = {
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
   setArchived(sessionID: string, archived: boolean): Promise<void>
+  setUi(patch: Partial<UiState>): Promise<void>
   toggleSpace(id: string): Promise<void>
   showSpaceMenu(id: string): Promise<void>
   showSessionMenu(sessionID: string): Promise<void>

@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { AppState } from "../shared/types"
+import type { AppState, UiState } from "../shared/types"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
@@ -31,6 +31,7 @@ const state = (): AppState => ({
   spaces: store.data.spaces,
   assignments: store.data.assignments,
   archived: store.data.archived,
+  ui: store.data.ui,
   sessions: opencode.sessions,
   currentSessionID,
   bridgeConnected,
@@ -93,6 +94,10 @@ function registerIpc() {
   ipcMain.handle("session:rename", (_e, sessionID: string, title: string) =>
     opencode.renameSession(sessionID, title).catch(report),
   )
+  ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
+    store.setUi(patch)
+    push()
+  })
   ipcMain.handle("session:archive", (_e, sessionID: string, archived: boolean) => {
     store.setArchived([sessionID], archived)
     push()
@@ -137,7 +142,7 @@ function registerIpc() {
           const res = await dialog.showMessageBox(win!, {
             type: "warning",
             message: `Delete "${space.name}"?`,
-            detail: "Sessions are kept and moved back to Chats.",
+            detail: "Sessions are kept and moved back to Recents.",
             buttons: ["Delete", "Cancel"],
             defaultId: 1,
             cancelId: 1,
@@ -161,7 +166,7 @@ function registerIpc() {
       {
         label: "Move to",
         submenu: [
-          { label: "Chats", type: "radio", checked: current === null, click: () => move(sessionID, null) },
+          { label: "Recents", type: "radio", checked: current === null, click: () => move(sessionID, null) },
           ...store.data.spaces.map((s) => ({
             label: s.name,
             type: "radio" as const,

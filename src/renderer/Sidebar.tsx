@@ -5,8 +5,8 @@ import { age } from "./format"
 
 const SESSION_DRAG = "application/x-ctrl-session"
 const SPACE_DRAG = "application/x-ctrl-space"
-const CHATS = "__chats__"
-const CHATS_LIMIT = 40
+const RECENTS = "__recents__"
+const LIST_LIMIT = 40
 
 type Props = {
   state: AppState
@@ -23,7 +23,6 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [reorder, setReorder] = useState<Reorder | null>(null)
-  const [showArchived, setShowArchived] = useState(false)
   const draggingSpace = useRef<string | null>(null)
 
   useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
@@ -31,7 +30,7 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
 
   const grouped = useMemo(() => {
     const bySpace = new Map<string, SessionItem[]>()
-    const chats: SessionItem[] = []
+    const recents: SessionItem[] = []
     const archived: SessionItem[] = []
     const valid = new Set(state.spaces.map((s) => s.id))
     for (const session of state.sessions) {
@@ -44,10 +43,10 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
         const list = bySpace.get(spaceID) ?? []
         list.push(session)
         bySpace.set(spaceID, list)
-      } else chats.push(session)
+      } else recents.push(session)
     }
     archived.sort((a, b) => state.archived[b.id] - state.archived[a.id])
-    return { bySpace, chats, archived }
+    return { bySpace, recents, archived }
   }, [state.sessions, state.assignments, state.spaces, state.archived])
 
   const clearDrag = () => {
@@ -210,23 +209,30 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
           ))}
         </Section>
 
-        <div className={`drop-zone ${dropTarget === CHATS ? "over" : ""}`} {...sessionDrop(CHATS, null)}>
-          <Section title="Chats">
-            {grouped.chats.slice(0, CHATS_LIMIT).map(sessionRow)}
-            {grouped.chats.length === 0 && <div className="empty">Drop a session here to remove it from its space</div>}
-          </Section>
+        {/* Recents stays a drop target even when folded, to pull sessions out of a space. */}
+        <div className={`drop-zone ${dropTarget === RECENTS ? "over" : ""}`} {...sessionDrop(RECENTS, null)}>
+          <FoldSection
+            title="Recents"
+            collapsed={state.ui.recentsCollapsed}
+            onToggle={() => void window.ctrl.setUi({ recentsCollapsed: !state.ui.recentsCollapsed })}
+          >
+            {grouped.recents.slice(0, LIST_LIMIT).map(sessionRow)}
+            {grouped.recents.length === 0 && (
+              <div className="empty">Drop a session here to remove it from its space</div>
+            )}
+          </FoldSection>
         </div>
 
         {grouped.archived.length > 0 && (
-          <section className="section archived">
-            <button className="section-header toggle" onClick={() => setShowArchived((v) => !v)}>
-              <span>
-                Archived <span className="count">{grouped.archived.length}</span>
-              </span>
-              <Icon name={showArchived ? "chevron-down" : "chevron-right"} />
-            </button>
-            {showArchived && grouped.archived.slice(0, CHATS_LIMIT).map(sessionRow)}
-          </section>
+          <FoldSection
+            title="Archived"
+            className="archived"
+            count={grouped.archived.length}
+            collapsed={state.ui.archivedCollapsed}
+            onToggle={() => void window.ctrl.setUi({ archivedCollapsed: !state.ui.archivedCollapsed })}
+          >
+            {grouped.archived.slice(0, LIST_LIMIT).map(sessionRow)}
+          </FoldSection>
         )}
       </div>
     </aside>
@@ -241,6 +247,28 @@ function Section(props: { title: string; action?: ReactNode; children: ReactNode
         {props.action}
       </div>
       {props.children}
+    </section>
+  )
+}
+
+function FoldSection(props: {
+  title: string
+  collapsed: boolean
+  onToggle(): void
+  count?: number
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <section className={`section ${props.className ?? ""}`}>
+      <button className="section-header toggle" onClick={props.onToggle}>
+        <span>
+          {props.title}
+          {props.count !== undefined && <span className="count">{props.count}</span>}
+        </span>
+        <Icon name={props.collapsed ? "chevron-right" : "chevron-down"} />
+      </button>
+      {!props.collapsed && props.children}
     </section>
   )
 }

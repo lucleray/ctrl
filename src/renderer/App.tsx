@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar"
 import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
+  ui: { recentsCollapsed: false, archivedCollapsed: true },
   spaces: [],
   assignments: {},
   archived: {},
