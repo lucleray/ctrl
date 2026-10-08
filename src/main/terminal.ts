@@ -16,6 +16,9 @@ function findOpencode() {
   return candidates.find((p) => existsSync(p))
 }
 
+const RESTART_WINDOW_MS = 30_000
+const MAX_QUICK_RESTARTS = 3
+
 type Events = {
   onData(data: string): void
   onReset(): void
@@ -36,6 +39,10 @@ export class Terminal {
   private size = { cols: 120, rows: 40 }
   private pendingSession: string | null = null
   private cliOverrides: Record<string, unknown> = {}
+  private lastRoute: string | null = null
+  private exits: number[] = []
+  private restartTimer?: ReturnType<typeof setTimeout>
+  private disposed = false
 
   constructor(
     private pluginDir: string,
@@ -63,7 +70,10 @@ export class Terminal {
           this.navigate(this.pendingSession)
           this.pendingSession = null
         }
-        if (msg.type === "route") this.events.onRoute(msg.sessionID ?? null)
+        if (msg.type === "route") {
+          this.lastRoute = msg.sessionID ?? null
+          this.events.onRoute(this.lastRoute)
+        }
       })
       ws.on("close", () => {
         if (this.bridge !== ws) return
@@ -111,8 +121,30 @@ export class Terminal {
     proc.onExit(() => {
       if (this.proc !== proc) return
       this.proc = undefined
-      this.events.onData("\r\n\x1b[2m[opencode exited — select a session to restart]\x1b[0m\r\n")
+      this.restartAfterExit()
     })
+  }
+
+  /**
+   * The TUI is the whole right pane, so bring it back on the session it was
+   * showing. Give up if it keeps dying right away, so a broken opencode doesn't
+   * spin forever; picking a session tries again.
+   */
+  private restartAfterExit() {
+    const now = Date.now()
+    this.exits = [...this.exits.filter((t) => now - t < RESTART_WINDOW_MS), now]
+    if (this.exits.length > MAX_QUICK_RESTARTS) {
+      this.exits = []
+      this.events.onData("\r\n\x1b[2m[opencode keeps exiting, select a session to try again]\x1b[0m\r\n")
+      return
+    }
+    this.events.onData("\r\n\x1b[2m[opencode exited, restarting…]\x1b[0m\r\n")
+    clearTimeout(this.restartTimer)
+    this.restartTimer = setTimeout(() => {
+      if (this.proc || this.disposed) return
+      this.events.onReset()
+      this.spawn(this.lastRoute ?? undefined)
+    }, 800)
   }
 
   /**
@@ -161,7 +193,11 @@ export class Terminal {
   }
 
   dispose() {
-    this.proc?.kill()
+    this.disposed = true
+    clearTimeout(this.restartTimer)
+    const proc = this.proc
+    this.proc = undefined
+    proc?.kill()
     this.wss?.close()
   }
 }

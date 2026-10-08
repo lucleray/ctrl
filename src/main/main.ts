@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron"
-import { writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,8 +23,21 @@ const root = join(fileURLToPath(import.meta.url), "../..")
 const LIGHT_BG = "#f7f7f6"
 const DARK_BG = "#1c1c1b"
 
+// Dev runs keep their own state so they can't clobber the installed app's. The
+// first run starts from a copy of the real state.
+function useDevUserData() {
+  const real = join(app.getPath("userData"), "state.json")
+  const dir = join(app.getPath("appData"), "ctrl-dev")
+  app.setPath("userData", dir)
+  const dev = join(dir, "state.json")
+  if (existsSync(dev) || !existsSync(real)) return
+  mkdirSync(dir, { recursive: true })
+  copyFileSync(real, dev)
+}
+
 app.setName("ctrl")
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
+else if (!app.isPackaged) useDevUserData()
 
 if (app.isPackaged) {
   loadShellEnv()
@@ -39,6 +52,7 @@ const headless =
   process.env.CTRL_HEADLESS === "1" || !!process.env.CTRL_EVAL || !!process.env.CTRL_SCREENSHOT
 
 let win: BrowserWindow | undefined
+let quitting = false
 const store = new Store(join(app.getPath("userData"), "state.json"))
 let currentSessionID: string | null = null
 let bridgeConnected = false
@@ -344,6 +358,17 @@ function createWindow() {
       sandbox: false,
     },
   })
+  // Mac-style: closing hides the window, the TUI keeps running, and the dock
+  // icon brings it back. Only ⌘Q (or the dock's Quit) actually quits.
+  win.on("close", (event) => {
+    if (quitting || headless || process.platform !== "darwin") return
+    event.preventDefault()
+    const w = win!
+    if (w.isFullScreen()) {
+      w.once("leave-full-screen", () => w.hide())
+      w.setFullScreen(false)
+    } else w.hide()
+  })
   // Intercept app shortcuts before they reach the focused terminal.
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown" || !input.meta || input.control || input.alt) return
@@ -455,7 +480,15 @@ app.on("second-instance", () => {
   win.focus()
 })
 
-app.on("window-all-closed", () => {
-  terminal.dispose()
-  app.quit()
+app.on("activate", () => {
+  if (headless || !win || win.isDestroyed()) return
+  win.show()
 })
+
+app.on("before-quit", () => {
+  quitting = true
+})
+
+app.on("window-all-closed", () => app.quit())
+
+app.on("will-quit", () => terminal.dispose())

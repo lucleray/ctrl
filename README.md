@@ -33,9 +33,10 @@ npm run install-app   # build + replace /Applications/ctrl.app (restarts it if r
 
 The packaged app loads your login shell's environment at startup (Finder
 launches get a bare PATH), and ships the bridge plugin unbundled in
-`Contents/Resources/bridge` since opencode can't read inside `app.asar`. Dev
-and packaged builds share `~/Library/Application Support/ctrl/state.json`, so
-run one at a time.
+`Contents/Resources/bridge` since opencode can't read inside `app.asar`. The
+installed app keeps its state in `~/Library/Application Support/ctrl`; dev runs
+use `ctrl-dev` next to it (seeded from a copy of the real state on first run),
+so both can run side by side.
 
 ## Usage
 
