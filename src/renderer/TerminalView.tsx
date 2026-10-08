@@ -30,9 +30,14 @@ function translateKey(e: KeyboardEvent): string | null {
 
 export type TerminalHandle = { focus(): void }
 
-export const TerminalView = forwardRef<TerminalHandle, { dark: boolean }>(function TerminalView({ dark }, ref) {
+export const TerminalView = forwardRef<TerminalHandle, { dark: boolean; fontSize: number }>(function TerminalView(
+  { dark, fontSize },
+  ref,
+) {
   const el = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal>(null)
+  const fitAddon = useRef<FitAddon>(null)
+  const initialFontSize = useRef(fontSize)
   const wrap = useRef<HTMLDivElement>(null)
   const fallback = useRef(PALETTE.light)
   fallback.current = dark ? PALETTE.dark : PALETTE.light
@@ -42,7 +47,7 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean }>(functi
   useEffect(() => {
     const t = new Terminal({
       fontFamily: '"SF Mono", Menlo, Monaco, monospace',
-      fontSize: 13,
+      fontSize: initialFontSize.current,
       lineHeight: 1.15,
       allowProposedApi: true,
       macOptionIsMeta: true,
@@ -52,6 +57,7 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean }>(functi
     })
     term.current = t
     const fit = new FitAddon()
+    fitAddon.current = fit
     t.loadAddon(fit)
     t.loadAddon(new Unicode11Addon())
     t.unicode.activeVersion = "11"
@@ -109,6 +115,14 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean }>(functi
   useEffect(() => {
     if (term.current) term.current.options.theme = fallback.current
   }, [dark])
+
+  useEffect(() => {
+    const t = term.current
+    if (!t || t.options.fontSize === fontSize) return
+    t.options.fontSize = fontSize
+    // New cell size → new cols/rows; onResize forwards them to the pty.
+    fitAddon.current?.fit()
+  }, [fontSize])
 
   return (
     <div className="terminal-wrap" ref={wrap} style={{ background: fallback.current.background }}>

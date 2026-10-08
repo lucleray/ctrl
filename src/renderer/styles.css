@@ -582,6 +582,39 @@ button {
   color: var(--muted);
 }
 
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--hover-strong);
+  border-radius: 8px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.stepper button {
+  min-width: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.stepper button:disabled {
+  opacity: 0.4;
+}
+
+.stepper .stepper-value {
+  min-width: 44px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 .segmented button.on {
   background: var(--card-bg);
   color: var(--text);

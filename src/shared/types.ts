@@ -42,7 +42,11 @@ export type Settings = {
   dockBadge: boolean
   /** macOS notifications when a background session needs you or finishes */
   notifications: boolean
+  /** Terminal font size in px */
+  fontSize: number
 }
+
+export const FONT_SIZE = { min: 9, max: 24, default: 13 }
 
 export type ThemeInfo = {
   builtin: string[]

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import type { Appearance, AppState } from "../shared/types"
+import { FONT_SIZE, type Appearance, type AppState } from "../shared/types"
 import { Icon } from "./icons"
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
@@ -86,6 +86,36 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
                 ))}
               </optgroup>
             </select>
+          </div>
+
+          <div className="setting">
+            <div>
+              <div className="setting-title">Text size</div>
+              <div className="setting-desc">Font size of the terminal. Also ⌘+, ⌘− and ⌘0 to reset.</div>
+            </div>
+            <div className="stepper">
+              <button
+                title="Smaller (⌘−)"
+                disabled={settings.fontSize <= FONT_SIZE.min}
+                onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize - 1 })}
+              >
+                −
+              </button>
+              <button
+                className="stepper-value"
+                title="Reset to default (⌘0)"
+                onClick={() => void window.ctrl.setSettings({ fontSize: FONT_SIZE.default })}
+              >
+                {settings.fontSize}px
+              </button>
+              <button
+                title="Larger (⌘+)"
+                disabled={settings.fontSize >= FONT_SIZE.max}
+                onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize + 1 })}
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
 

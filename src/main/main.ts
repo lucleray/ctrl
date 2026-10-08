@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { AppState, Settings, ThemeInfo, UiState } from "../shared/types"
+import { FONT_SIZE, type AppState, type Settings, type ThemeInfo, type UiState } from "../shared/types"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
@@ -122,6 +122,15 @@ const applyTheme = () => {
   push()
 }
 
+const clampFontSize = (size: number) => Math.min(FONT_SIZE.max, Math.max(FONT_SIZE.min, Math.round(size)))
+
+const setFontSize = (size: number) => {
+  const fontSize = clampFontSize(size)
+  if (fontSize === store.data.settings.fontSize) return
+  store.setSettings({ fontSize })
+  push()
+}
+
 const openSession = (sessionID: string) => {
   currentSessionID = sessionID
   opencode.setCurrent(sessionID)
@@ -159,6 +168,7 @@ function registerIpc() {
     opencode.renameSession(sessionID, title).catch(report),
   )
   ipcMain.handle("settings:set", (_e, patch: Partial<Settings>) => {
+    if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
     store.setSettings(patch)
     loadThemes()
     applyTheme()
@@ -304,7 +314,23 @@ function createWindow() {
   })
   // Intercept app shortcuts before they reach the focused terminal.
   win.webContents.on("before-input-event", (event, input) => {
-    if (input.type !== "keyDown" || !input.meta || input.control || input.alt || input.shift) return
+    if (input.type !== "keyDown" || !input.meta || input.control || input.alt) return
+    // ⌘+ is shift+= on most layouts, so check text size keys before the shift guard.
+    const size = store.data.settings.fontSize
+    const fontSize =
+      input.key === "=" || input.key === "+"
+        ? size + 1
+        : input.key === "-"
+          ? size - 1
+          : input.key === "0"
+            ? FONT_SIZE.default
+            : null
+    if (fontSize !== null) {
+      event.preventDefault()
+      setFontSize(fontSize)
+      return
+    }
+    if (input.shift) return
     const key = input.key.toLowerCase()
     // ⌘1–9 is handled in the renderer: swallowing a key here makes Chromium drop
     // the following key-ups, which would leave the ⌘ hints stuck on screen.

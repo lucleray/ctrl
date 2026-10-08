@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { AppState } from "../shared/types"
+import { FONT_SIZE, type AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
@@ -9,7 +9,7 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
   ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -101,7 +101,7 @@ export function App() {
       />
       <main className="main">
         <div className="main-drag" />
-        <TerminalView ref={terminal} dark={state.dark} />
+        <TerminalView ref={terminal} dark={state.dark} fontSize={state.settings.fontSize} />
         <ReferenceDrop
           sessions={state.sessions}
           currentSessionID={state.currentSessionID}
