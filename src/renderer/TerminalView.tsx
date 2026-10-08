@@ -6,6 +6,24 @@ import { Unicode11Addon } from "@xterm/addon-unicode11"
 
 export const TERM_BG = "#eff1f5"
 
+// xterm.js doesn't encode these the way native macOS terminals do, so translate
+// them into sequences opencode understands.
+function translateKey(e: KeyboardEvent): string | null {
+  const mods = (e.shiftKey ? "s" : "") + (e.ctrlKey ? "c" : "") + (e.altKey ? "a" : "") + (e.metaKey ? "m" : "")
+  switch (`${mods}:${e.key}`) {
+    case "s:Enter":
+      return "\x1b[13;2u" // CSI-u shift+return → input.newline
+    case "m:ArrowLeft":
+      return "\x01" // ctrl+a → input.line.home
+    case "m:ArrowRight":
+      return "\x05" // ctrl+e → input.line.end
+    case "m:Backspace":
+      return "\x15" // ctrl+u → input.delete.to.line.start
+    default:
+      return null
+  }
+}
+
 export type TerminalHandle = { focus(): void }
 
 export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_props, ref) {
@@ -31,6 +49,14 @@ export const TerminalView = forwardRef<TerminalHandle>(function TerminalView(_pr
     t.loadAddon(fit)
     t.loadAddon(new Unicode11Addon())
     t.unicode.activeVersion = "11"
+    t.attachCustomKeyEventHandler((e) => {
+      const seq = translateKey(e)
+      if (!seq) return true
+      // Swallow keydown/keypress/keyup so xterm doesn't also send its own encoding.
+      if (e.type === "keydown") window.ctrl.ptyWrite(seq)
+      e.preventDefault()
+      return false
+    })
     t.open(el.current!)
     try {
       t.loadAddon(new WebglAddon())
