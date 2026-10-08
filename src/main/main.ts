@@ -3,7 +3,14 @@ import { writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { FONT_SIZE, type AppState, type Settings, type ThemeInfo, type UiState } from "../shared/types"
+import {
+  FONT_SIZE,
+  type AppState,
+  type Settings,
+  type SpacePatch,
+  type ThemeInfo,
+  type UiState,
+} from "../shared/types"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
 import { Store } from "./store"
@@ -139,8 +146,11 @@ const openSession = (sessionID: string) => {
 }
 
 const newSession = async (spaceID: string | null) => {
-  const dir = (spaceID && store.space(spaceID)?.directory) || homedir()
-  const id = await opencode.createSession(dir)
+  const space = spaceID ? store.space(spaceID) : undefined
+  const id = await opencode.createSession(space?.directory || homedir(), {
+    model: space?.model,
+    instructions: space?.instructions,
+  })
   if (spaceID) store.assign(id, spaceID)
   openSession(id)
 }
@@ -160,6 +170,22 @@ function registerIpc() {
     store.updateSpace(id, { name })
     push()
   })
+  ipcMain.handle("space:update", (_e, id: string, patch: SpacePatch) => {
+    store.patchSpace(id, patch)
+    push()
+  })
+  ipcMain.handle("space:pick-folder", async (_e, id: string) => {
+    const space = store.space(id)
+    if (!space || !win) return
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory"],
+      defaultPath: space.directory || homedir(),
+    })
+    if (res.canceled || !res.filePaths[0]) return
+    store.patchSpace(id, { directory: res.filePaths[0] })
+    push()
+  })
+  ipcMain.handle("models:list", (_e, directory?: string) => opencode.listModels(directory))
   ipcMain.handle("space:move", (_e, id: string, index: number) => {
     store.moveSpace(id, index)
     push()
@@ -192,18 +218,7 @@ function registerIpc() {
       { label: "New session", click: () => void newSession(id).catch(report) },
       { type: "separator" },
       { label: "Rename", click: () => send("space:rename", id) },
-      {
-        label: space.directory ? `Folder: ${space.directory.replace(homedir(), "~")}` : "Set folder…",
-        click: async () => {
-          const res = await dialog.showOpenDialog(win!, {
-            properties: ["openDirectory"],
-            defaultPath: space.directory || homedir(),
-          })
-          if (res.canceled || !res.filePaths[0]) return
-          store.updateSpace(id, { directory: res.filePaths[0] })
-          push()
-        },
-      },
+      { label: "Space settings…", click: () => send("space:settings", id) },
       { type: "separator" },
       {
         label: "Archive all sessions",
@@ -356,6 +371,14 @@ function createWindow() {
           console.error("[ctrl] eval failed", err)
         }
       }, 3000)
+    })
+  }
+
+  // Debug helper: send a main → renderer event after load, e.g. CTRL_SEND='["space:settings","spc_x"]'
+  const sendEvent = process.env.CTRL_SEND
+  if (sendEvent) {
+    win.webContents.once("did-finish-load", () => {
+      setTimeout(() => send(...(JSON.parse(sendEvent) as [string, ...unknown[]])), 2000)
     })
   }
 

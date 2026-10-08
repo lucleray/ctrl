@@ -5,6 +5,7 @@ import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
+import { SpaceSettings } from "./SpaceSettings"
 import { TerminalView, type TerminalHandle } from "./TerminalView"
 
 const EMPTY: AppState = {
@@ -24,6 +25,8 @@ export function App() {
   const [state, setState] = useState<AppState>(EMPTY)
   const [palette, setPalette] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
+  const editingSpace = state.spaces.find((s) => s.id === spaceSettingsID)
   // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
   const { hints, cancel: cancelHints } = useJumpHints((n) => {
     const id = jumpTargets()[n - 1]
@@ -40,12 +43,14 @@ export function App() {
 
   const open = useCallback((id: string) => {
     setSettings(false)
+    setSpaceSettingsID(null)
     void window.ctrl.openSession(id)
     terminal.current?.focus()
   }, [])
 
   const create = useCallback(async (spaceID: string | null) => {
     setSettings(false)
+    setSpaceSettingsID(null)
     await window.ctrl.newSession(spaceID)
     terminal.current?.focus()
   }, [])
@@ -67,6 +72,20 @@ export function App() {
     terminal.current?.focus()
   }, [])
 
+  const closeSpaceSettings = useCallback(() => {
+    setSpaceSettingsID(null)
+    terminal.current?.focus()
+  }, [])
+
+  useEffect(
+    () =>
+      window.ctrl.onSpaceSettings((id) => {
+        setSettings(false)
+        setSpaceSettingsID(id)
+      }),
+    [],
+  )
+
   const closePalette = useCallback(() => {
     setPalette(false)
     terminal.current?.focus()
@@ -79,6 +98,7 @@ export function App() {
         if (name === "palette") setPalette((p) => !p)
         if (name === "settings") {
           setPalette(false)
+          setSpaceSettingsID(null)
           setSettings((v) => !v)
         }
         if (name === "new-chat") {
@@ -97,7 +117,10 @@ export function App() {
         onOpen={open}
         onNew={create}
         onSearch={() => setPalette(true)}
-        onSettings={() => setSettings((v) => !v)}
+        onSettings={() => {
+          setSpaceSettingsID(null)
+          setSettings((v) => !v)
+        }}
       />
       <main className="main">
         <div className="main-drag" />
@@ -112,6 +135,7 @@ export function App() {
           }}
         />
         {settings && <Settings state={state} onClose={closeSettings} />}
+        {editingSpace && <SpaceSettings key={editingSpace.id} space={editingSpace} onClose={closeSpaceSettings} />}
       </main>
       {palette && (
         <Palette state={state} onClose={closePalette} onOpen={open} onNew={create} onRevealSpace={revealSpace} />

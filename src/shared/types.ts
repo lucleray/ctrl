@@ -1,8 +1,30 @@
+export type ModelRef = { providerID: string; id: string }
+
 export type Space = {
   id: string
   name: string
   directory?: string
   collapsed?: boolean
+  /** Model new sessions in this space start with; unset = opencode's default */
+  model?: ModelRef
+  /** Extra instructions attached to every new session in this space */
+  instructions?: string
+}
+
+export type ModelOption = ModelRef & { name: string }
+
+export type ModelChoices = {
+  models: ModelOption[]
+  /** opencode's default model for the space's folder */
+  default?: ModelOption
+}
+
+/** Space settings editable from the renderer; null clears a field. */
+export type SpacePatch = {
+  name?: string
+  directory?: string | null
+  model?: ModelRef | null
+  instructions?: string | null
 }
 
 /** Ordered by urgency: the first one that applies wins. */
@@ -82,6 +104,10 @@ export type CtrlApi = {
   onShortcut(cb: (name: Shortcut) => void): () => void
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
+  onSpaceSettings(cb: (spaceID: string) => void): () => void
+  updateSpace(id: string, patch: SpacePatch): Promise<void>
+  pickSpaceFolder(id: string): Promise<void>
+  listModels(directory?: string): Promise<ModelChoices>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
   setArchived(sessionID: string, archived: boolean): Promise<void>

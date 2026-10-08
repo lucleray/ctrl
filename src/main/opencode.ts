@@ -1,6 +1,8 @@
-import { OpenCode, type PermissionRequest, type SessionInfo } from "@opencode/client"
+import { OpenCode, type ModelInfo, type PermissionRequest, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
-import type { SessionItem } from "../shared/types"
+import type { ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
+
+const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
 
 type Client = ReturnType<typeof OpenCode.make>
 
@@ -41,6 +43,9 @@ export class OpenCodeService {
   client?: Client
   sessions: SessionItem[] = []
   private timer?: ReturnType<typeof setTimeout>
+  private setReady!: (client: Client) => void
+  /** Resolves once the opencode service is reachable. */
+  ready = new Promise<Client>((resolve) => (this.setReady = resolve))
 
   constructor(private onChange: () => void) {}
 
@@ -55,6 +60,7 @@ export class OpenCodeService {
         this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
         await this.refresh()
         this.setProblem(null)
+        this.setReady(this.client)
         break
       } catch (err) {
         this.setProblem(`Can't reach opencode: ${message(err)}`)
@@ -194,10 +200,35 @@ export class OpenCodeService {
     }
   }
 
-  async createSession(directory: string) {
-    const session = await this.client!.session.create({ location: { directory } })
+  async createSession(directory: string, opts: { model?: ModelRef; instructions?: string } = {}) {
+    const session = await this.client!.session.create({ location: { directory }, model: opts.model })
+    if (opts.instructions?.trim()) {
+      // Durable and invisible in the transcript: opencode adds it to the system context of every turn.
+      await this.client!.session.instructions.entry.put({
+        sessionID: session.id,
+        key: SPACE_INSTRUCTIONS_KEY,
+        value: opts.instructions.trim(),
+      })
+    }
     await this.refresh()
     return session.id
+  }
+
+  async listModels(directory?: string): Promise<ModelChoices> {
+    const location = directory ? { directory } : undefined
+    const option = (m: ModelInfo): ModelOption => ({ providerID: m.providerID, id: m.id, name: m.name })
+    const client = await this.ready
+    // A folder opencode hasn't loaded yet can briefly report no models.
+    let list = await client.model.list({ location })
+    for (let i = 0; i < 5 && list.data.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 500))
+      list = await client.model.list({ location })
+    }
+    const def = await client.model.default({ location }).catch(() => ({ data: null }))
+    return {
+      models: list.data.map(option).sort((a, b) => a.providerID.localeCompare(b.providerID) || a.name.localeCompare(b.name)),
+      default: def.data ? option(def.data) : undefined,
+    }
   }
 
   async renameSession(sessionID: string, title: string) {

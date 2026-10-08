@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import { FONT_SIZE, type Settings, type Space, type UiState } from "../shared/types"
+import { FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
 
 const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 }
 const DEFAULT_SETTINGS: Settings = {
@@ -76,6 +76,19 @@ export class Store {
     const space = this.space(id)
     if (!space) return
     Object.assign(space, patch)
+    this.save()
+  }
+
+  /** Like updateSpace, but null or blank values remove the field. */
+  patchSpace(id: string, patch: SpacePatch) {
+    const space = this.space(id)
+    if (!space) return
+    for (const [key, value] of Object.entries(patch) as [keyof SpacePatch, SpacePatch[keyof SpacePatch]][]) {
+      if (value === undefined) continue
+      if (value === null || (typeof value === "string" && !value.trim())) {
+        if (key !== "name") delete space[key]
+      } else Object.assign(space, { [key]: key === "name" ? String(value).trim() : value })
+    }
     this.save()
   }
 
