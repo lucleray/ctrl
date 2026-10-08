@@ -1,40 +1,53 @@
-// Rebrands the dev Electron.app so the dock, ⌘-Tab and notifications say "ctrl"
-// (they read the bundle's Info.plist, not anything the app sets at runtime).
-// Runs on postinstall; packaged builds get this from electron-builder instead.
+// Makes the dev app show up as "ctrl" (dock, ⌘-Tab, menu bar, notifications).
+// macOS reads the name from the app bundle and caches it per bundle id, so we
+// clone Electron.app into ctrl.app with its own id/name/icon and point the
+// `electron` package at it. Runs on postinstall; packaged builds get this from
+// electron-builder instead.
 import { execFileSync } from "node:child_process"
-import { copyFileSync, existsSync } from "node:fs"
+import { copyFileSync, existsSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 if (process.platform !== "darwin") process.exit(0)
 
 const NAME = "ctrl"
-const app = join("node_modules", "electron", "dist", "Electron.app")
-const plist = join(app, "Contents", "Info.plist")
-if (!existsSync(plist)) {
+const BUNDLE_ID = "im.luc.ctrl.dev"
+const dist = join("node_modules", "electron", "dist")
+const source = join(dist, "Electron.app")
+const target = join(dist, `${NAME}.app`)
+
+if (!existsSync(source)) {
   console.log("[brand] Electron.app not found yet, skipping (rerun: npm run brand)")
   process.exit(0)
 }
 
-const buddy = (cmd) => execFileSync("/usr/libexec/PlistBuddy", ["-c", cmd, plist], { stdio: "pipe" })
-for (const key of ["CFBundleName", "CFBundleDisplayName"]) {
+rmSync(target, { recursive: true, force: true })
+execFileSync("ditto", [source, target])
+
+const plist = join(target, "Contents", "Info.plist")
+const set = (key, value) => {
   try {
-    buddy(`Set :${key} ${NAME}`)
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, plist], { stdio: "pipe" })
   } catch {
-    buddy(`Add :${key} string ${NAME}`)
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", `Add :${key} string ${value}`, plist], { stdio: "pipe" })
   }
 }
+set("CFBundleName", NAME)
+set("CFBundleDisplayName", NAME)
+set("CFBundleIdentifier", BUNDLE_ID)
 
 const icon = join("build", "icon.icns")
-if (existsSync(icon)) copyFileSync(icon, join(app, "Contents", "Resources", "electron.icns"))
+if (existsSync(icon)) copyFileSync(icon, join(target, "Contents", "Resources", "electron.icns"))
 
-// Editing Info.plist breaks the bundle's signature; re-sign ad hoc so macOS still launches it.
-execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "pipe" })
+// Editing the bundle breaks its signature; re-sign ad hoc so macOS still launches it.
+execFileSync("codesign", ["--force", "--deep", "--sign", "-", target], { stdio: "pipe" })
 
-// Nudge Launch Services so the dock picks up the new name/icon.
 const lsregister =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 try {
-  execFileSync(lsregister, ["-f", app], { stdio: "pipe" })
+  execFileSync(lsregister, ["-f", target], { stdio: "pipe" })
 } catch {}
 
-console.log(`[brand] dev Electron.app now shows as "${NAME}"`)
+// `require("electron")` / `npx electron` resolve the binary through path.txt.
+writeFileSync(join("node_modules", "electron", "path.txt"), `${NAME}.app/Contents/MacOS/Electron`)
+
+console.log(`[brand] dev app is now ${target} (${BUNDLE_ID})`)
