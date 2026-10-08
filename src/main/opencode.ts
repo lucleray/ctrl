@@ -6,6 +6,10 @@ type Client = ReturnType<typeof OpenCode.make>
 
 const MAX_SESSIONS = 1000
 
+function message(err: unknown) {
+  return err instanceof Error ? err.message : String(err)
+}
+
 function describePermission(p: PermissionRequest) {
   const target = p.resources[0] ? ` ${p.resources[0]}` : ""
   const text = `Waiting for permission: ${p.action}${target}`
@@ -40,11 +44,30 @@ export class OpenCodeService {
 
   constructor(private onChange: () => void) {}
 
+  /** Set while the opencode service can't be reached or sessions can't be loaded. */
+  problem: string | null = null
+
   async start() {
-    const endpoint = await Service.ensure()
-    this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-    await this.refresh()
+    // Keep retrying: the service may still be starting, or come back later.
+    while (true) {
+      try {
+        const endpoint = await Service.ensure()
+        this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
+        await this.refresh()
+        this.setProblem(null)
+        break
+      } catch (err) {
+        this.setProblem(`Can't reach opencode: ${message(err)}`)
+        await new Promise((r) => setTimeout(r, 3000))
+      }
+    }
     void this.listen()
+  }
+
+  private setProblem(problem: string | null) {
+    if (problem === this.problem) return
+    this.problem = problem
+    this.onChange()
   }
 
   async refresh() {
@@ -146,7 +169,14 @@ export class OpenCodeService {
 
   scheduleRefresh() {
     clearTimeout(this.timer)
-    this.timer = setTimeout(() => void this.refresh().catch(console.error), 250)
+    this.timer = setTimeout(
+      () =>
+        void this.refresh().then(
+          () => this.setProblem(null),
+          (err) => this.setProblem(`Couldn't load sessions: ${message(err)}`),
+        ),
+      250,
+    )
   }
 
   private async listen() {
@@ -157,6 +187,7 @@ export class OpenCodeService {
         }
       } catch (error) {
         console.error("[ctrl] event stream failed", error)
+        this.setProblem("Lost connection to opencode · retrying")
       }
       await new Promise((r) => setTimeout(r, 1000))
       this.scheduleRefresh()

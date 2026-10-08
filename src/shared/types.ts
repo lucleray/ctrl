@@ -61,11 +61,15 @@ export type AppState = {
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
+  /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
+  problem?: string
+  /** Last failed action; dismissable */
   error?: string
 }
 
 export type CtrlApi = {
   getState(): Promise<AppState>
+  dismissError(): Promise<void>
   onState(cb: (state: AppState) => void): () => void
   onRenameSpace(cb: (spaceID: string) => void): () => void
   onRenameSession(cb: (sessionID: string) => void): () => void

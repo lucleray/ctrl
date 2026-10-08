@@ -24,7 +24,22 @@ let win: BrowserWindow | undefined
 const store = new Store(join(app.getPath("userData"), "state.json"))
 let currentSessionID: string | null = null
 let bridgeConnected = false
+let bridgeProblem = false
+let bridgeTimer: ReturnType<typeof setTimeout> | undefined
 let error: string | undefined
+
+// Only surface the TUI connection if it stays down; restarts (theme changes) take ~1s.
+const BRIDGE_GRACE_MS = 8000
+const watchBridge = () => {
+  clearTimeout(bridgeTimer)
+  bridgeProblem = false
+  if (!bridgeConnected) {
+    bridgeTimer = setTimeout(() => {
+      bridgeProblem = true
+      push()
+    }, BRIDGE_GRACE_MS)
+  }
+}
 
 const send = (channel: string, ...args: unknown[]) => {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
@@ -46,6 +61,7 @@ const state = (): AppState => ({
   sessions: opencode.sessions,
   currentSessionID,
   bridgeConnected,
+  problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
   error,
 })
 
@@ -83,6 +99,7 @@ const terminal = new Terminal(join(root, "bridge"), {
   },
   onBridge: (connected) => {
     bridgeConnected = connected
+    watchBridge()
     push()
   },
 })
@@ -120,6 +137,10 @@ const newSession = async (spaceID: string | null) => {
 
 function registerIpc() {
   ipcMain.handle("state", () => state())
+  ipcMain.handle("error:dismiss", () => {
+    error = undefined
+    push()
+  })
   ipcMain.handle("space:create", (_e, name: string) => {
     const id = store.createSpace(name)
     push()
@@ -326,6 +347,7 @@ app.whenReady().then(async () => {
   }
   registerIpc()
   await terminal.init()
+  watchBridge()
   loadThemes()
   applyTheme()
   // When following the OS, re-theme (and restart the TUI) as the OS flips light/dark.

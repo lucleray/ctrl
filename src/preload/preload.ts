@@ -11,6 +11,7 @@ const on =
 
 const api: CtrlApi = {
   getState: () => ipcRenderer.invoke("state"),
+  dismissError: () => ipcRenderer.invoke("error:dismiss"),
   onState: on("state"),
   onRenameSpace: on("space:rename"),
   onRenameSession: on("session:rename"),

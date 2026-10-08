@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { AppState } from "../shared/types"
-import { shortPath } from "./format"
 import { Palette } from "./Palette"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
@@ -82,8 +81,6 @@ export function App() {
     [create],
   )
 
-  const current = state.sessions.find((s) => s.id === state.currentSessionID)
-
   return (
     <div className="app">
       <Sidebar
@@ -94,15 +91,7 @@ export function App() {
         onSettings={() => setSettings((v) => !v)}
       />
       <main className="main">
-        <header className="titlebar">
-          <span className="title">{current?.title ?? "OpenCode"}</span>
-          {current && <span className="subtitle">{shortPath(current.directory)}</span>}
-          <span className="spacer" />
-          {state.error && <span className="error" title={state.error}>⚠ {state.error}</span>}
-          <span className={`bridge ${state.bridgeConnected ? "on" : ""}`} title="TUI bridge">
-            {state.bridgeConnected ? "connected" : "connecting…"}
-          </span>
-        </header>
+        <div className="main-drag" />
         <TerminalView ref={terminal} dark={state.dark} />
         {settings && <Settings state={state} onClose={closeSettings} />}
       </main>

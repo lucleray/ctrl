@@ -357,68 +357,21 @@ button {
   flex-direction: column;
 }
 
-.titlebar {
-  height: 44px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--titlebar-bg);
+/* No header bar: a thin invisible strip keeps the window draggable from the top. */
+.main-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
   -webkit-app-region: drag;
-}
-
-.titlebar .title {
-  font-weight: 500;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.titlebar .subtitle {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.titlebar .spacer {
-  flex: 1;
-}
-
-.titlebar .error {
-  color: #c2410c;
-  font-size: 12px;
-  max-width: 300px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.bridge {
-  font-size: 11.5px;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.bridge::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #d4a017;
-}
-
-.bridge.on::before {
-  background: #22c55e;
+  z-index: 4;
 }
 
 .terminal-wrap {
   flex: 1;
   min-height: 0;
-  padding: 8px 4px 4px 10px;
+  padding: 14px 4px 4px 10px;
   display: flex;
 }
 
@@ -551,7 +504,7 @@ button {
 
 .settings {
   position: absolute;
-  inset: 44px 0 0 0;
+  inset: 0;
   background: var(--sidebar-bg);
   overflow-y: auto;
   outline: none;
@@ -771,4 +724,55 @@ body.resizing .terminal-wrap {
 
 .switch.on span {
   transform: translateX(14px);
+}
+
+/* ---------- sidebar alert ---------- */
+
+.sidebar-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 9px 8px 9px 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  user-select: text;
+}
+
+.sidebar-alert .icon {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  color: inherit;
+}
+
+.sidebar-alert .alert-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-alert.problem {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.sidebar-alert.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .sidebar-alert.problem {
+    color: #fbbf24;
+  }
+  .sidebar-alert.error {
+    color: #f87171;
+  }
+}
+
+.sidebar-alert .icon-btn {
+  color: inherit;
+  margin: -2px -2px 0 0;
 }

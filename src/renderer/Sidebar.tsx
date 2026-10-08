@@ -244,6 +244,18 @@ export function Sidebar({ state, onOpen, onNew, onSearch, onSettings }: Props) {
           </FoldSection>
         )}
       </div>
+
+      {(state.problem || state.error) && (
+        <div className={`sidebar-alert ${state.problem ? "problem" : "error"}`} role="alert">
+          <Icon name="alert" />
+          <span className="alert-text">{state.problem ?? state.error}</span>
+          {!state.problem && (
+            <button className="icon-btn" title="Dismiss" onClick={() => void window.ctrl.dismissError()}>
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   )
 }
