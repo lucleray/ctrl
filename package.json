@@ -11,14 +11,15 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true; node scripts/brand-electron.mjs",
     "icon": "node scripts/icon.mjs",
-    "brand": "node scripts/brand-electron.mjs"
+    "brand": "node scripts/brand-electron.mjs",
+    "package": "node scripts/package.mjs",
+    "install-app": "node scripts/package.mjs --install"
   },
   "dependencies": {
-    "@opencode/client": "^2.0.25",
-    "node-pty": "^1.1.0",
-    "ws": "^8.22.0"
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
+    "@opencode/client": "^2.0.25",
     "@opencode/plugin": "^2.0.25",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.6.4",
@@ -31,11 +32,46 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "ws": "^8.22.0"
   },
-  "productName": "ctrl"
+  "productName": "ctrl",
+  "build": {
+    "appId": "im.luc.ctrl",
+    "productName": "ctrl",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "!dist/**/*.map",
+      "!dist/bridge/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/bridge",
+        "to": "bridge"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": "dir",
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "electronLanguages": [
+      "en"
+    ]
+  }
 }

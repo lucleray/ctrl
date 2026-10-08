@@ -14,6 +14,7 @@ import {
 } from "../shared/types"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
+import { loadShellEnv } from "./shell-env"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { cliThemeName, listThemes } from "./themes"
@@ -24,6 +25,14 @@ const DARK_BG = "#1c1c1b"
 
 app.setName("ctrl")
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
+
+if (app.isPackaged) {
+  loadShellEnv()
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+    process.exit(0)
+  }
+}
 
 // Test runs (CTRL_HEADLESS=1, implied by the debug hooks) never show the window or take focus.
 const headless =
@@ -98,7 +107,7 @@ const attention = new Attention({
   quiet: headless,
 })
 
-const terminal = new Terminal(join(root, "bridge"), {
+const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
   onData: (data) => send("pty:data", data),
   onReset: () => send("pty:reset"),
   onRoute: (id) => {
@@ -420,7 +429,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   // In dev Electron shows its own icon; packaged builds use build/icon.icns.
-  if (!headless && process.platform === "darwin") app.dock?.setIcon(join(root, "build/icon.png"))
+  if (!app.isPackaged && !headless && process.platform === "darwin") app.dock?.setIcon(join(root, "build/icon.png"))
   if (headless && process.platform === "darwin") {
     // No dock icon, no activation: the app stays in the background.
     app.setActivationPolicy("accessory")
@@ -437,6 +446,13 @@ app.whenReady().then(async () => {
   })
   createWindow()
   opencode.start().catch(report)
+})
+
+app.on("second-instance", () => {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
 })
 
 app.on("window-all-closed", () => {

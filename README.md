@@ -27,7 +27,15 @@ single embedded opencode TUI on the right.
 npm install
 npm run dev     # vite + esbuild watch + electron
 npm start       # production build + electron
+npm run package       # build release/mac-*/ctrl.app (ad-hoc signed)
+npm run install-app   # build + replace /Applications/ctrl.app (restarts it if running)
 ```
+
+The packaged app loads your login shell's environment at startup (Finder
+launches get a bare PATH), and ships the bridge plugin unbundled in
+`Contents/Resources/bridge` since opencode can't read inside `app.asar`. Dev
+and packaged builds share `~/Library/Application Support/ctrl/state.json`, so
+run one at a time.
 
 ## Usage
 
