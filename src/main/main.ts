@@ -253,7 +253,14 @@ function createWindow() {
   const evalJs = process.env.CTRL_EVAL
   if (evalJs) {
     win.webContents.once("did-finish-load", () => {
-      setTimeout(() => void win!.webContents.executeJavaScript(evalJs).catch(console.error), 3000)
+      setTimeout(async () => {
+        try {
+          const result = await win!.webContents.executeJavaScript(evalJs)
+          if (result !== undefined) console.log(`[ctrl] eval: ${JSON.stringify(result)}`)
+        } catch (err) {
+          console.error("[ctrl] eval failed", err)
+        }
+      }, 3000)
     })
   }
 

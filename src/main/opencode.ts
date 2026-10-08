@@ -1,8 +1,10 @@
-import { OpenCode } from "@opencode/client"
+import { OpenCode, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import type { SessionItem } from "../shared/types"
 
 type Client = ReturnType<typeof OpenCode.make>
+
+const MAX_SESSIONS = 1000
 
 const REFRESH_EVENTS = new Set([
   "session.created",
@@ -33,11 +35,11 @@ export class OpenCodeService {
 
   async refresh() {
     if (!this.client) return
-    const [list, active] = await Promise.all([
-      this.client.session.list({ parentID: "null", limit: 300 }),
+    const [all, active] = await Promise.all([
+      this.listAll(),
       this.client.session.active().catch(() => ({}) as Record<string, unknown>),
     ])
-    this.sessions = list.data
+    this.sessions = all
       .filter((s) => !s.parentID && !s.time.archived)
       .sort((a, b) => b.time.updated - a.time.updated)
       .map((s) => ({
@@ -48,6 +50,17 @@ export class OpenCodeService {
         running: s.id in active,
       }))
     this.onChange()
+  }
+
+  private async listAll() {
+    const all: SessionInfo[] = []
+    let res = await this.client!.session.list({ parentID: "null", limit: 300 })
+    all.push(...res.data)
+    while (res.cursor.next && res.data.length > 0 && all.length < MAX_SESSIONS) {
+      res = await this.client!.session.list({ cursor: res.cursor.next })
+      all.push(...res.data)
+    }
+    return all
   }
 
   scheduleRefresh() {

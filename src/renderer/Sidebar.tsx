@@ -7,6 +7,7 @@ const SESSION_DRAG = "application/x-ctrl-session"
 const SPACE_DRAG = "application/x-ctrl-space"
 const RECENTS = "__recents__"
 const LIST_LIMIT = 40
+const ARCHIVED_PAGE = 10
 
 type Props = {
   state: AppState
@@ -23,6 +24,7 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [reorder, setReorder] = useState<Reorder | null>(null)
+  const [archivedShown, setArchivedShown] = useState(ARCHIVED_PAGE)
   const draggingSpace = useRef<string | null>(null)
 
   useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
@@ -227,11 +229,15 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
           <FoldSection
             title="Archived"
             className="archived"
-            count={grouped.archived.length}
             collapsed={state.ui.archivedCollapsed}
             onToggle={() => void window.ctrl.setUi({ archivedCollapsed: !state.ui.archivedCollapsed })}
           >
-            {grouped.archived.slice(0, LIST_LIMIT).map(sessionRow)}
+            {grouped.archived.slice(0, archivedShown).map(sessionRow)}
+            {grouped.archived.length > archivedShown && (
+              <button className="row show-more" onClick={() => setArchivedShown((n) => n + ARCHIVED_PAGE)}>
+                <span className="label">Show more</span>
+              </button>
+            )}
           </FoldSection>
         )}
       </div>
@@ -255,17 +261,13 @@ function FoldSection(props: {
   title: string
   collapsed: boolean
   onToggle(): void
-  count?: number
   className?: string
   children: ReactNode
 }) {
   return (
     <section className={`section ${props.className ?? ""}`}>
       <button className="section-header toggle" onClick={props.onToggle}>
-        <span>
-          {props.title}
-          {props.count !== undefined && <span className="count">{props.count}</span>}
-        </span>
+        <span>{props.title}</span>
         <Icon name={props.collapsed ? "chevron-right" : "chevron-down"} />
       </button>
       {!props.collapsed && props.children}

@@ -188,9 +188,13 @@ button {
   color: var(--text);
 }
 
-.section-header .count {
-  margin-left: 4px;
-  opacity: 0.7;
+.row.show-more {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.row.show-more:hover {
+  color: var(--text);
 }
 
 .section.archived .row.session {
