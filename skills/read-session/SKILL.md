@@ -12,10 +12,10 @@ before answering.
 ## Steps
 
 1. Take the session ID from the mention (the `ses_…` part in parentheses).
-2. Print a digest (relative to this skill's directory):
+2. Print a digest (works from any directory):
 
    ```bash
-   node digest.mjs ses_XXXXXXXX
+   node ~/.agents/skills/read-session/digest.mjs ses_XXXXXXXX
    ```
 
    It shows the title, directory, each turn (user prompt + final assistant
@@ -24,7 +24,7 @@ before answering.
 3. If you need everything said in one turn, read it in full:
 
    ```bash
-   node digest.mjs ses_XXXXXXXX --turn 3
+   node ~/.agents/skills/read-session/digest.mjs ses_XXXXXXXX --turn 3
    ```
 
 4. Use that context to do what the user asked. Briefly say which session you
