@@ -30,6 +30,7 @@ const send = (channel: string, ...args: unknown[]) => {
 const state = (): AppState => ({
   spaces: store.data.spaces,
   assignments: store.data.assignments,
+  archived: store.data.archived,
   sessions: opencode.sessions,
   currentSessionID,
   bridgeConnected,
@@ -92,6 +93,10 @@ function registerIpc() {
   ipcMain.handle("session:rename", (_e, sessionID: string, title: string) =>
     opencode.renameSession(sessionID, title).catch(report),
   )
+  ipcMain.handle("session:archive", (_e, sessionID: string, archived: boolean) => {
+    store.setArchived([sessionID], archived)
+    push()
+  })
   ipcMain.handle("space:toggle", (_e, id: string) => {
     store.updateSpace(id, { collapsed: !store.space(id)?.collapsed })
     push()
@@ -117,6 +122,16 @@ function registerIpc() {
       },
       { type: "separator" },
       {
+        label: "Archive all sessions",
+        click: () => {
+          const ids = opencode.sessions
+            .filter((s) => store.data.assignments[s.id] === id && !store.data.archived[s.id])
+            .map((s) => s.id)
+          store.setArchived(ids, true)
+          push()
+        },
+      },
+      {
         label: "Delete space",
         click: async () => {
           const res = await dialog.showMessageBox(win!, {
@@ -140,6 +155,9 @@ function registerIpc() {
     Menu.buildFromTemplate([
       { label: "Open", click: () => openSession(sessionID) },
       { label: "Rename", click: () => send("session:rename", sessionID) },
+      store.data.archived[sessionID]
+        ? { label: "Unarchive", click: () => (store.setArchived([sessionID], false), push()) }
+        : { label: "Archive", click: () => (store.setArchived([sessionID], true), push()) },
       {
         label: "Move to",
         submenu: [
@@ -174,6 +192,8 @@ function registerIpc() {
   })
   const move = (sessionID: string, spaceID: string | null) => {
     store.assign(sessionID, spaceID)
+    // Moving a session somewhere is a clear signal it's wanted again.
+    if (store.data.archived[sessionID]) store.setArchived([sessionID], false)
     push()
   }
   ipcMain.handle("session:move", (_e, sessionID: string, spaceID: string | null) => move(sessionID, spaceID))

@@ -46,18 +46,22 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
     const spaceName = new Map(state.spaces.map((s) => [s.id, s.name]))
     const out: Item[] = []
 
+    // Archived sessions only surface when explicitly searched for, and rank last.
     const sessions = q
       ? state.sessions
           .filter((s) => matches(q, s.title, spaceName.get(state.assignments[s.id]), shortPath(s.directory)))
+          .sort((a, b) => Number(!!state.archived[a.id]) - Number(!!state.archived[b.id]))
           .slice(0, SEARCH_LIMIT)
-      : state.sessions.slice(0, RECENT_LIMIT)
+      : state.sessions.filter((s) => !state.archived[s.id]).slice(0, RECENT_LIMIT)
     sessions.forEach((s, i) => {
       out.push({
         key: `s:${s.id}`,
         section: "Chats",
         icon: s.running ? <span className="spinner" /> : s.id === state.currentSessionID ? <span className="dot" /> : null,
         label: s.title,
-        hint: spaceName.get(state.assignments[s.id]) ?? shortPath(s.directory).split("/").pop(),
+        hint: state.archived[s.id]
+          ? "Archived"
+          : (spaceName.get(state.assignments[s.id]) ?? shortPath(s.directory).split("/").pop()),
         shortcut: i < 9 ? `^${i + 1}` : undefined,
         run: () => onOpen(s.id),
       })
@@ -65,7 +69,9 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
 
     if (q) {
       for (const space of state.spaces.filter((s) => matches(q, s.name, s.directory))) {
-        const count = Object.values(state.assignments).filter((id) => id === space.id).length
+        const count = state.sessions.filter(
+          (s) => state.assignments[s.id] === space.id && !state.archived[s.id],
+        ).length
         out.push({
           key: `p:${space.id}`,
           section: "Spaces",

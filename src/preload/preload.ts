@@ -19,6 +19,7 @@ const api: CtrlApi = {
   renameSpace: (id, name) => ipcRenderer.invoke("space:rename", id, name),
   moveSpace: (id, index) => ipcRenderer.invoke("space:move", id, index),
   renameSession: (sessionID, title) => ipcRenderer.invoke("session:rename", sessionID, title),
+  setArchived: (sessionID, archived) => ipcRenderer.invoke("session:archive", sessionID, archived),
   toggleSpace: (id) => ipcRenderer.invoke("space:toggle", id),
   showSpaceMenu: (id) => ipcRenderer.invoke("space:menu", id),
   showSessionMenu: (id) => ipcRenderer.invoke("session:menu", id),

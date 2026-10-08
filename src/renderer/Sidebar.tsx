@@ -23,6 +23,7 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [reorder, setReorder] = useState<Reorder | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const draggingSpace = useRef<string | null>(null)
 
   useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
@@ -31,8 +32,13 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const grouped = useMemo(() => {
     const bySpace = new Map<string, SessionItem[]>()
     const chats: SessionItem[] = []
+    const archived: SessionItem[] = []
     const valid = new Set(state.spaces.map((s) => s.id))
     for (const session of state.sessions) {
+      if (state.archived[session.id]) {
+        archived.push(session)
+        continue
+      }
       const spaceID = state.assignments[session.id]
       if (spaceID && valid.has(spaceID)) {
         const list = bySpace.get(spaceID) ?? []
@@ -40,8 +46,9 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
         bySpace.set(spaceID, list)
       } else chats.push(session)
     }
-    return { bySpace, chats }
-  }, [state.sessions, state.assignments, state.spaces])
+    archived.sort((a, b) => state.archived[b.id] - state.archived[a.id])
+    return { bySpace, chats, archived }
+  }, [state.sessions, state.assignments, state.spaces, state.archived])
 
   const clearDrag = () => {
     setDropTarget(null)
@@ -130,6 +137,16 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
       >
         <span className="label">{s.title}</span>
         {s.running ? <span className="spinner" /> : <span className="meta">{age(s.updated)}</span>}
+        <button
+          className="icon-btn row-action"
+          title={state.archived[s.id] ? "Unarchive" : "Archive"}
+          onClick={(e) => {
+            e.stopPropagation()
+            void window.ctrl.setArchived(s.id, !state.archived[s.id])
+          }}
+        >
+          <Icon name={state.archived[s.id] ? "unarchive" : "archive"} />
+        </button>
       </div>
     )
 
@@ -199,6 +216,18 @@ export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
             {grouped.chats.length === 0 && <div className="empty">Drop a session here to remove it from its space</div>}
           </Section>
         </div>
+
+        {grouped.archived.length > 0 && (
+          <section className="section archived">
+            <button className="section-header toggle" onClick={() => setShowArchived((v) => !v)}>
+              <span>
+                Archived <span className="count">{grouped.archived.length}</span>
+              </span>
+              <Icon name={showArchived ? "chevron-down" : "chevron-right"} />
+            </button>
+            {showArchived && grouped.archived.slice(0, CHATS_LIMIT).map(sessionRow)}
+          </section>
+        )}
       </div>
     </aside>
   )

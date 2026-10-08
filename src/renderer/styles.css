@@ -166,6 +166,38 @@ button {
   height: 14px;
 }
 
+.row-action {
+  display: none;
+}
+
+.row.session:hover .row-action {
+  display: inline-flex;
+}
+
+.row.session:hover .meta,
+.row.session:hover .spinner {
+  display: none;
+}
+
+.section-header.toggle {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.section-header.toggle:hover {
+  color: var(--text);
+}
+
+.section-header .count {
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+.section.archived .row.session {
+  padding-left: 10px;
+  color: #6b6b69;
+}
+
 .hover-actions {
   display: none;
   gap: 2px;

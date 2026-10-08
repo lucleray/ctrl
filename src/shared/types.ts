@@ -16,6 +16,7 @@ export type SessionItem = {
 export type AppState = {
   spaces: Space[]
   assignments: Record<string, string>
+  archived: Record<string, number>
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
@@ -32,6 +33,7 @@ export type CtrlApi = {
   renameSpace(id: string, name: string): Promise<void>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
+  setArchived(sessionID: string, archived: boolean): Promise<void>
   toggleSpace(id: string): Promise<void>
   showSpaceMenu(id: string): Promise<void>
   showSessionMenu(sessionID: string): Promise<void>

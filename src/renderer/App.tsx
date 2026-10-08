@@ -8,6 +8,7 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 const EMPTY: AppState = {
   spaces: [],
   assignments: {},
+  archived: {},
   sessions: [],
   currentSessionID: null,
   bridgeConnected: false,

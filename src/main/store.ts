@@ -5,17 +5,27 @@ import type { Space } from "../shared/types"
 type Persisted = {
   spaces: Space[]
   assignments: Record<string, string>
+  /** sessionID → archived-at timestamp */
+  archived: Record<string, number>
 }
 
 export class Store {
   data: Persisted
 
   constructor(private file: string) {
+    let loaded: Partial<Persisted> = {}
     try {
-      this.data = JSON.parse(readFileSync(file, "utf8"))
-    } catch {
-      this.data = { spaces: [], assignments: {} }
+      loaded = JSON.parse(readFileSync(file, "utf8"))
+    } catch {}
+    this.data = { spaces: [], assignments: {}, archived: {}, ...loaded }
+  }
+
+  setArchived(sessionIDs: string[], archived: boolean) {
+    for (const id of sessionIDs) {
+      if (archived) this.data.archived[id] ??= Date.now()
+      else delete this.data.archived[id]
     }
+    this.save()
   }
 
   save() {
