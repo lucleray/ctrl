@@ -74,7 +74,7 @@ export class Store {
 
   createSpace(name: string) {
     const id = `spc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    this.data.spaces.push({ id, name })
+    this.data.spaces.unshift({ id, name })
     this.save()
     return id
   }
