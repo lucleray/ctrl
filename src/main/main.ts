@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron"
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -368,6 +368,7 @@ function registerIpc() {
     if (currentSessionID) archive([currentSessionID])
   })
   ipcMain.handle("session:new-here", () => newSessionHere())
+  ipcMain.handle("open-external", (_e, url: string) => openExternal(url))
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
@@ -433,6 +434,18 @@ function registerIpc() {
   ipcMain.on("pty:resize", (_e, cols: number, rows: number) => terminal.resize(cols, rows))
 }
 
+const openExternal = (url: string) => {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return
+  }
+  if (!["http:", "https:", "mailto:"].includes(parsed.protocol)) return
+  if (headless) return console.log(`[ctrl] open external (suppressed): ${parsed.href}`)
+  void shell.openExternal(parsed.href)
+}
+
 function report(err: unknown) {
   console.error(err)
   error = err instanceof Error ? err.message : String(err)
@@ -456,6 +469,17 @@ function createWindow() {
       sandbox: false,
     },
   })
+  // Never open Electron windows for links; hand them to the browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: "deny" }
+  })
+  win.webContents.on("will-navigate", (event, url) => {
+    if (url === win?.webContents.getURL()) return
+    event.preventDefault()
+    openExternal(url)
+  })
+
   // Mac-style: closing hides the window, the TUI keeps running, and the dock
   // icon brings it back. Only ⌘Q (or the dock's Quit) actually quits.
   win.on("close", (event) => {

@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebglAddon } from "@xterm/addon-webgl"
 import { Unicode11Addon } from "@xterm/addon-unicode11"
+import { WebLinksAddon } from "@xterm/addon-web-links"
 
 // Fallback colors before the TUI paints; the padding then tracks the TUI's own background.
 const PALETTE = {
@@ -26,6 +27,14 @@ function translateKey(e: KeyboardEvent): string | null {
     default:
       return null
   }
+}
+
+// The TUI owns plain clicks (it tracks the mouse), so links open on ⌘-click like
+// iTerm and VS Code.
+const openLink = (event: MouseEvent, uri: string) => {
+  if (!event.metaKey) return
+  event.preventDefault()
+  void window.ctrl.openExternal(uri)
 }
 
 export type TerminalHandle = { focus(): void }
@@ -54,6 +63,8 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean; fontSize
       cursorBlink: true,
       scrollback: 0,
       theme: fallback.current,
+      // OSC 8 hyperlinks (e.g. markdown links the TUI renders)
+      linkHandler: { activate: openLink, allowNonHttpProtocols: true },
     })
     term.current = t
     const fit = new FitAddon()
@@ -61,6 +72,10 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean; fontSize
     t.loadAddon(fit)
     t.loadAddon(new Unicode11Addon())
     t.unicode.activeVersion = "11"
+    // Bare URLs in the output
+    t.loadAddon(new WebLinksAddon(openLink))
+    // Debug hook for CTRL_EVAL test runs
+    ;(window as unknown as { __term: Terminal }).__term = t
     t.attachCustomKeyEventHandler((e) => {
       const seq = translateKey(e)
       if (!seq) return true

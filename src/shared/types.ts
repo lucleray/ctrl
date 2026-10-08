@@ -144,6 +144,8 @@ export type CtrlApi = {
   recordShortcut(on: boolean): Promise<void>
   onRecordedKey(cb: (accel: string) => void): () => void
   newSessionHere(): Promise<void>
+  /** Opens an http(s)/mailto link in the default browser */
+  openExternal(url: string): Promise<void>
   archiveCurrent(): Promise<void>
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
