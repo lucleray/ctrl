@@ -1,0 +1,298 @@
+:root {
+  --sidebar-bg: #f4f4f3;
+  --sidebar-w: 280px;
+  --text: #1f1f1f;
+  --muted: #8a8a88;
+  --hover: rgba(0, 0, 0, 0.045);
+  --active: rgba(0, 0, 0, 0.075);
+  --accent: #3b82f6;
+  --border: #e6e6e4;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 13.5px;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px 10px;
+}
+
+.sidebar-drag {
+  height: 44px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.brand {
+  font-size: 17px;
+  font-weight: 600;
+  padding: 4px 10px 12px;
+  letter-spacing: -0.01em;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0 -10px;
+  padding: 0 10px;
+}
+
+.section {
+  margin-top: 18px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 0 6px 6px 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 7px;
+  width: 100%;
+  text-align: left;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+.row.active {
+  background: var(--active);
+}
+
+.row .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row .meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.row.session {
+  padding-left: 35px;
+}
+
+.section > .row.session,
+.drop-zone .row.session {
+  padding-left: 10px;
+}
+
+.icon {
+  flex-shrink: 0;
+  color: #555;
+}
+
+.icon-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.icon-btn:hover {
+  background: var(--active);
+  color: var(--text);
+}
+
+.icon-btn .icon {
+  color: inherit;
+  width: 14px;
+  height: 14px;
+}
+
+.hover-actions {
+  display: none;
+  gap: 2px;
+}
+
+.space-header:hover .hover-actions {
+  display: inline-flex;
+}
+
+.space,
+.drop-zone {
+  border-radius: 8px;
+  outline: 1.5px solid transparent;
+  outline-offset: -1px;
+  transition: background 0.12s, outline-color 0.12s;
+}
+
+.space {
+  margin-bottom: 4px;
+}
+
+.space.over,
+.drop-zone.over {
+  background: rgba(59, 130, 246, 0.07);
+  outline-color: rgba(59, 130, 246, 0.45);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 10px 8px;
+}
+
+.empty.indent {
+  padding-left: 35px;
+}
+
+.input-row input {
+  flex: 1;
+  font: inherit;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 3px 6px;
+  outline: none;
+  background: white;
+  min-width: 0;
+}
+
+.spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.6px solid #bbb;
+  border-top-color: transparent;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- main ---------- */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fafaf9;
+  -webkit-app-region: drag;
+}
+
+.titlebar .title {
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.titlebar .subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.titlebar .spacer {
+  flex: 1;
+}
+
+.titlebar .error {
+  color: #c2410c;
+  font-size: 12px;
+  max-width: 300px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bridge {
+  font-size: 11.5px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bridge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d4a017;
+}
+
+.bridge.on::before {
+  background: #22c55e;
+}
+
+.terminal-wrap {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 4px 4px 10px;
+  display: flex;
+}
+
+.terminal {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}

@@ -1,0 +1,226 @@
+import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron"
+import { writeFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+import type { AppState } from "../shared/types"
+import { OpenCodeService } from "./opencode"
+import { Store } from "./store"
+import { Terminal } from "./terminal"
+
+const root = join(fileURLToPath(import.meta.url), "../..")
+
+if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
+
+let win: BrowserWindow | undefined
+const store = new Store(join(app.getPath("userData"), "state.json"))
+let currentSessionID: string | null = null
+let bridgeConnected = false
+let error: string | undefined
+
+const send = (channel: string, ...args: unknown[]) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+}
+
+const state = (): AppState => ({
+  spaces: store.data.spaces,
+  assignments: store.data.assignments,
+  sessions: opencode.sessions,
+  currentSessionID,
+  bridgeConnected,
+  error,
+})
+
+let pushQueued = false
+const push = () => {
+  if (pushQueued) return
+  pushQueued = true
+  queueMicrotask(() => {
+    pushQueued = false
+    send("state", state())
+  })
+}
+
+const opencode = new OpenCodeService(push)
+
+const terminal = new Terminal(join(root, "bridge"), {
+  onData: (data) => send("pty:data", data),
+  onReset: () => send("pty:reset"),
+  onRoute: (id) => {
+    currentSessionID = id
+    push()
+  },
+  onBridge: (connected) => {
+    bridgeConnected = connected
+    push()
+  },
+})
+
+const openSession = (sessionID: string) => {
+  currentSessionID = sessionID
+  terminal.open(sessionID)
+  push()
+}
+
+const newSession = async (spaceID: string | null) => {
+  const dir = (spaceID && store.space(spaceID)?.directory) || homedir()
+  const id = await opencode.createSession(dir)
+  if (spaceID) store.assign(id, spaceID)
+  openSession(id)
+}
+
+function registerIpc() {
+  ipcMain.handle("state", () => state())
+  ipcMain.handle("space:create", (_e, name: string) => {
+    const id = store.createSpace(name)
+    push()
+    return id
+  })
+  ipcMain.handle("space:rename", (_e, id: string, name: string) => {
+    store.updateSpace(id, { name })
+    push()
+  })
+  ipcMain.handle("space:toggle", (_e, id: string) => {
+    store.updateSpace(id, { collapsed: !store.space(id)?.collapsed })
+    push()
+  })
+  ipcMain.handle("space:menu", (_e, id: string) => {
+    const space = store.space(id)
+    if (!space || !win) return
+    Menu.buildFromTemplate([
+      { label: "New session", click: () => void newSession(id).catch(report) },
+      { type: "separator" },
+      { label: "Rename", click: () => send("space:rename", id) },
+      {
+        label: space.directory ? `Folder: ${space.directory.replace(homedir(), "~")}` : "Set folder…",
+        click: async () => {
+          const res = await dialog.showOpenDialog(win!, {
+            properties: ["openDirectory"],
+            defaultPath: space.directory || homedir(),
+          })
+          if (res.canceled || !res.filePaths[0]) return
+          store.updateSpace(id, { directory: res.filePaths[0] })
+          push()
+        },
+      },
+      { type: "separator" },
+      {
+        label: "Delete space",
+        click: async () => {
+          const res = await dialog.showMessageBox(win!, {
+            type: "warning",
+            message: `Delete "${space.name}"?`,
+            detail: "Sessions are kept and moved back to Chats.",
+            buttons: ["Delete", "Cancel"],
+            defaultId: 1,
+            cancelId: 1,
+          })
+          if (res.response !== 0) return
+          store.deleteSpace(id)
+          push()
+        },
+      },
+    ]).popup({ window: win })
+  })
+  ipcMain.handle("session:menu", (_e, sessionID: string) => {
+    if (!win) return
+    const current = store.data.assignments[sessionID] ?? null
+    Menu.buildFromTemplate([
+      { label: "Open", click: () => openSession(sessionID) },
+      {
+        label: "Move to",
+        submenu: [
+          { label: "Chats", type: "radio", checked: current === null, click: () => move(sessionID, null) },
+          ...store.data.spaces.map((s) => ({
+            label: s.name,
+            type: "radio" as const,
+            checked: current === s.id,
+            click: () => move(sessionID, s.id),
+          })),
+        ],
+      },
+      { type: "separator" },
+      {
+        label: "Delete session",
+        click: async () => {
+          const res = await dialog.showMessageBox(win!, {
+            type: "warning",
+            message: "Delete this session?",
+            detail: "This permanently deletes it from opencode.",
+            buttons: ["Delete", "Cancel"],
+            defaultId: 1,
+            cancelId: 1,
+          })
+          if (res.response !== 0) return
+          await opencode.removeSession(sessionID).catch(report)
+          store.assign(sessionID, null)
+          push()
+        },
+      },
+    ]).popup({ window: win })
+  })
+  const move = (sessionID: string, spaceID: string | null) => {
+    store.assign(sessionID, spaceID)
+    push()
+  }
+  ipcMain.handle("session:move", (_e, sessionID: string, spaceID: string | null) => move(sessionID, spaceID))
+  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
+  ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
+
+  ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
+  ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
+  ipcMain.on("pty:resize", (_e, cols: number, rows: number) => terminal.resize(cols, rows))
+}
+
+function report(err: unknown) {
+  console.error(err)
+  error = err instanceof Error ? err.message : String(err)
+  push()
+}
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 800,
+    minHeight: 500,
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 18 },
+    backgroundColor: "#f7f7f6",
+    webPreferences: {
+      preload: join(root, "dist/preload.cjs"),
+      sandbox: false,
+    },
+  })
+  if (process.env.VITE_DEV_URL) win.loadURL(process.env.VITE_DEV_URL)
+  else win.loadFile(join(root, "dist/renderer/index.html"))
+
+  // Debug helper: CTRL_SCREENSHOT=/path.png CTRL_SCREENSHOT_DELAY=8000
+  const evalJs = process.env.CTRL_EVAL
+  if (evalJs) {
+    win.webContents.once("did-finish-load", () => {
+      setTimeout(() => void win!.webContents.executeJavaScript(evalJs).catch(console.error), 3000)
+    })
+  }
+
+  const shot = process.env.CTRL_SCREENSHOT
+  if (shot) {
+    setTimeout(async () => {
+      const image = await win!.webContents.capturePage()
+      writeFileSync(shot, image.toPNG())
+      console.log(`[ctrl] screenshot saved to ${shot}`)
+    }, Number(process.env.CTRL_SCREENSHOT_DELAY ?? 8000))
+  }
+}
+
+app.whenReady().then(async () => {
+  registerIpc()
+  await terminal.init()
+  createWindow()
+  opencode.start().catch(report)
+})
+
+app.on("window-all-closed", () => {
+  terminal.dispose()
+  app.quit()
+})
