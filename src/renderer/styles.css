@@ -685,6 +685,18 @@ button {
   font-size: 12px;
 }
 
+.setting.setting-with-sub {
+  padding-bottom: 10px;
+}
+
+.setting-sub {
+  padding: 0 16px 14px;
+}
+
+.setting-sub .model-trigger {
+  width: 100%;
+}
+
 .setting-actions {
   display: inline-flex;
   align-items: center;

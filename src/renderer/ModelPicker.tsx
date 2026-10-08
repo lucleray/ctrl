@@ -4,13 +4,6 @@ import { Icon } from "./icons"
 
 const keyOf = (m: ModelRef) => `${m.providerID}::${m.id}`
 
-/** "Claude Opus 5.5 · Vercel AI Gateway", or the raw id while models load. */
-export function modelLabel(ref: ModelRef, choices: ModelChoices | null) {
-  const m = choices?.models.find((x) => keyOf(x) === keyOf(ref))
-  return m ? `${m.name} · ${m.providerName}` : ref.id
-}
-const WIDTH = 440
-
 type Props = {
   choices: ModelChoices | null
   error?: string
@@ -18,7 +11,7 @@ type Props = {
   onChange(model: ModelRef): void
   /** Off: the picker is greyed out and shows `fallback`, what applies instead */
   enabled: boolean
-  fallback: { label: string; detail?: string }
+  fallback: string
 }
 
 type Row =
@@ -51,8 +44,7 @@ export function ModelPicker({ choices, error, value, onChange, enabled, fallback
             </>
           ) : (
             <>
-              <span className="model-trigger-name">{enabled ? "Choose a model…" : fallback.label}</span>
-              {!enabled && fallback.detail && <span className="model-trigger-provider">{fallback.detail}</span>}
+              <span className="model-trigger-name">{enabled ? "Choose a model…" : fallback}</span>
             </>
           )}
         </span>
@@ -156,10 +148,11 @@ function Popover({
       const below = window.innerHeight - r.bottom - 16
       const above = r.top - 16
       const up = below < 320 && above > below
-      const left = Math.max(12, Math.min(r.right - WIDTH, window.innerWidth - WIDTH - 12))
+      const width = Math.min(Math.max(r.width, 380), 560, window.innerWidth - 24)
+      const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12))
       setStyle({
         left,
-        width: WIDTH,
+        width,
         maxHeight: Math.min(480, up ? above : below),
         ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
       })

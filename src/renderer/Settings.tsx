@@ -136,40 +136,27 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
 
         <h2>Sessions</h2>
         <div className="settings-card">
-          <div className="setting">
+          <div className="setting setting-with-sub">
             <div>
-              <div className="setting-title">Default model</div>
+              <div className="setting-title">Custom model</div>
               <div className="setting-desc">
-                {modelError
-                  ? `Couldn't load models: ${modelError}`
-                  : settings.defaultModelEnabled
-                    ? "For new sessions started from ctrl. A space can pick its own in space settings."
-                    : "Off: ctrl doesn't pick a model, opencode uses its own default."}
+                Model for new sessions started from ctrl. A space can pick its own in space settings.
               </div>
             </div>
-            <div className="setting-actions">
-              <ModelPicker
-                choices={choices}
-                error={modelError}
-                value={settings.defaultModel}
-                enabled={settings.defaultModelEnabled}
-                onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
-                fallback={{ label: "opencode default", detail: choices?.default?.name }}
-              />
-              <Toggle
-                title={settings.defaultModelEnabled ? "Use opencode's default instead" : "Pick a default model"}
-                on={settings.defaultModelEnabled}
-                onChange={(on) =>
-                  void window.ctrl.setSettings({
-                    defaultModelEnabled: on,
-                    // First time on: start from what opencode would pick anyway.
-                    ...(on && !settings.defaultModel && choices?.default
-                      ? { defaultModel: { providerID: choices.default.providerID, id: choices.default.id } }
-                      : {}),
-                  })
-                }
-              />
-            </div>
+            <Toggle
+              on={settings.defaultModelEnabled}
+              onChange={(defaultModelEnabled) => void window.ctrl.setSettings({ defaultModelEnabled })}
+            />
+          </div>
+          <div className="setting-sub">
+            <ModelPicker
+              choices={choices}
+              error={modelError}
+              value={settings.defaultModel}
+              enabled={settings.defaultModelEnabled}
+              onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
+              fallback="opencode default"
+            />
           </div>
         </div>
 

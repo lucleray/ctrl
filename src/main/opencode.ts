@@ -236,7 +236,6 @@ export class OpenCodeService {
       await new Promise((r) => setTimeout(r, 500))
       list = await client.model.list({ location })
     }
-    const def = await client.model.default({ location }).catch(() => ({ data: null }))
     const rank = (id: string) => {
       const i = providers.findIndex((p) => p.id === id)
       return i === -1 ? providers.length : i
@@ -255,7 +254,6 @@ export class OpenCodeService {
     return {
       models,
       providers: [...used].sort((a, b) => rank(a) - rank(b)).map((id) => ({ id, name: providerName(id) })),
-      default: def.data ? option(def.data) : undefined,
     }
   }
 

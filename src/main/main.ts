@@ -148,7 +148,7 @@ const openSession = (sessionID: string) => {
 
 /** Space model if it sets one, else the app default if on, else none (opencode decides). */
 const modelFor = (space?: Space) => {
-  if (space?.model && space.modelEnabled !== false) return space.model
+  if (space?.model && (space.modelEnabled ?? true)) return space.model
   const { defaultModel, defaultModelEnabled } = store.data.settings
   return (defaultModelEnabled && defaultModel) || undefined
 }

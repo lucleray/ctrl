@@ -26,8 +26,6 @@ export type ModelChoices = {
   /** In display order: grouped by provider, then vendor, newest first */
   models: ModelOption[]
   providers: { id: string; name: string }[]
-  /** opencode's own default model for the folder */
-  default?: ModelOption
 }
 
 /** Space settings editable from the renderer; null clears a field. */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ModelChoices, ModelRef, Space } from "../shared/types"
 import { shortPath } from "./format"
 import { Icon } from "./icons"
-import { ModelPicker, modelLabel } from "./ModelPicker"
+import { ModelPicker } from "./ModelPicker"
 import { Toggle } from "./Toggle"
 
 export function SpaceSettings({
@@ -36,7 +36,8 @@ export function SpaceSettings({
     }
   }, [space.directory])
 
-  const modelOn = !!space.model && space.modelEnabled !== false
+  // Older state has a model but no flag: that meant on.
+  const modelOn = space.modelEnabled ?? !!space.model
 
   // Text fields save on blur; also flush on close, which unmounts without a blur.
   const pending = useRef({ name, instructions })
@@ -119,43 +120,33 @@ export function SpaceSettings({
             </div>
           </div>
 
-          <div className="setting">
+          <div className="setting setting-with-sub">
             <div>
-              <div className="setting-title">Model</div>
+              <div className="setting-title">Custom model</div>
               <div className="setting-desc">
-                {modelError
-                  ? `Couldn't load models: ${modelError}`
-                  : modelOn
-                    ? "You can still switch models inside a session."
-                    : `Off: uses the ${appDefault ? "app" : "opencode"} default.`}
+                Model for new sessions in this space. You can still switch models inside a session.
               </div>
             </div>
-            <div className="setting-actions">
-              <ModelPicker
-                choices={choices}
-                error={modelError}
-                value={space.model ?? null}
-                enabled={modelOn}
-                onChange={(model) => void window.ctrl.updateSpace(space.id, { model })}
-                fallback={
-                  appDefault
-                    ? { label: "App default", detail: modelLabel(appDefault, choices) }
-                    : { label: "opencode default", detail: choices?.default?.name }
-                }
-              />
-              <Toggle
-                title={modelOn ? "Use the app default instead" : "Pick a model for this space"}
-                on={modelOn}
-                onChange={(on) => {
-                  // First time on: start from whatever would apply right now.
-                  const seed = appDefault ?? (choices?.default && { providerID: choices.default.providerID, id: choices.default.id })
-                  void window.ctrl.updateSpace(space.id, {
-                    modelEnabled: on,
-                    ...(on && !space.model && seed ? { model: seed } : {}),
-                  })
-                }}
-              />
-            </div>
+            <Toggle
+              on={modelOn}
+              onChange={(on) =>
+                void window.ctrl.updateSpace(space.id, {
+                  modelEnabled: on,
+                  // First time on: start from the app's custom model, if there is one.
+                  ...(on && !space.model && appDefault ? { model: appDefault } : {}),
+                })
+              }
+            />
+          </div>
+          <div className="setting-sub">
+            <ModelPicker
+              choices={choices}
+              error={modelError}
+              value={space.model ?? null}
+              enabled={modelOn}
+              onChange={(model) => void window.ctrl.updateSpace(space.id, { model })}
+              fallback={appDefault ? "App custom model" : "opencode default"}
+            />
           </div>
         </div>
 
