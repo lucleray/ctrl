@@ -1,4 +1,5 @@
-export type ModelRef = { providerID: string; id: string }
+/** variant: opencode model variant (e.g. reasoning effort "high"); unset = the model's default */
+export type ModelRef = { providerID: string; id: string; variant?: string }
 
 export type Space = {
   id: string
@@ -20,6 +21,8 @@ export type ModelOption = ModelRef & {
   /** Model maker for gateway-style ids ("anthropic" in "anthropic/claude-…") */
   vendor?: string
   released: number
+  /** Selectable variant ids, in opencode's order */
+  variants: string[]
 }
 
 export type ModelChoices = {

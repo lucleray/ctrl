@@ -58,7 +58,10 @@ export function ModelPicker({ choices, error, value, onChange, enabled, fallback
           value={value}
           onPick={(m) => {
             setOpen(false)
-            onChange(m)
+            // Keep the variant when the new model has one with the same name.
+            const next = choices.models.find((x) => keyOf(x) === keyOf(m))
+            const variant = value?.variant && next?.variants.includes(value.variant) ? value.variant : undefined
+            onChange(variant ? { ...m, variant } : m)
             trigger.current?.focus()
           }}
           onClose={() => {
@@ -66,6 +69,23 @@ export function ModelPicker({ choices, error, value, onChange, enabled, fallback
             trigger.current?.focus()
           }}
         />
+      )}
+      {enabled && value && current && current.variants.length > 0 && (
+        <div className="model-variant">
+          <span className="model-variant-label">Variant</span>
+          <div className="segmented">
+            {[undefined, ...current.variants].map((v) => (
+              <button
+                key={v ?? ""}
+                className={(value.variant ?? undefined) === v ? "on" : ""}
+                title={v ? undefined : "The model's default variant"}
+                onClick={() => onChange({ providerID: value.providerID, id: value.id, ...(v ? { variant: v } : {}) })}
+              >
+                {v ?? "Default"}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </>
   )

@@ -697,6 +697,27 @@ button {
   width: 100%;
 }
 
+.model-variant {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.model-variant-label {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.model-variant .segmented {
+  flex-wrap: wrap;
+  flex-shrink: 1;
+}
+
+.model-variant .segmented button {
+  padding: 3px 10px;
+}
+
 .setting-actions {
   display: inline-flex;
   align-items: center;

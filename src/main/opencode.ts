@@ -229,6 +229,7 @@ export class OpenCodeService {
       providerName: providerName(m.providerID),
       vendor: m.id.includes("/") ? m.id.split("/")[0] : undefined,
       released: m.time.released,
+      variants: m.variants.map((v) => v.id),
     })
     // A folder opencode hasn't loaded yet can briefly report no models.
     let list = await client.model.list({ location })
