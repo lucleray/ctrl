@@ -80,6 +80,13 @@ function registerIpc() {
     store.updateSpace(id, { name })
     push()
   })
+  ipcMain.handle("space:move", (_e, id: string, index: number) => {
+    store.moveSpace(id, index)
+    push()
+  })
+  ipcMain.handle("session:rename", (_e, sessionID: string, title: string) =>
+    opencode.renameSession(sessionID, title).catch(report),
+  )
   ipcMain.handle("space:toggle", (_e, id: string) => {
     store.updateSpace(id, { collapsed: !store.space(id)?.collapsed })
     push()
@@ -127,6 +134,7 @@ function registerIpc() {
     const current = store.data.assignments[sessionID] ?? null
     Menu.buildFromTemplate([
       { label: "Open", click: () => openSession(sessionID) },
+      { label: "Rename", click: () => send("session:rename", sessionID) },
       {
         label: "Move to",
         submenu: [
@@ -192,6 +200,16 @@ function createWindow() {
       sandbox: false,
     },
   })
+  // Intercept app shortcuts before they reach the focused terminal.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !input.meta || input.control || input.alt || input.shift) return
+    const key = input.key.toLowerCase()
+    const name = key === "p" || key === "k" ? "palette" : key === "n" ? "new-chat" : null
+    if (!name) return
+    event.preventDefault()
+    send("shortcut", name)
+  })
+
   if (process.env.VITE_DEV_URL) win.loadURL(process.env.VITE_DEV_URL)
   else win.loadFile(join(root, "dist/renderer/index.html"))
 

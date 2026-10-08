@@ -26,8 +26,12 @@ export type CtrlApi = {
   getState(): Promise<AppState>
   onState(cb: (state: AppState) => void): () => void
   onRenameSpace(cb: (spaceID: string) => void): () => void
+  onRenameSession(cb: (sessionID: string) => void): () => void
+  onShortcut(cb: (name: "palette" | "new-chat") => void): () => void
   createSpace(name: string): Promise<string>
   renameSpace(id: string, name: string): Promise<void>
+  moveSpace(id: string, index: number): Promise<void>
+  renameSession(sessionID: string, title: string): Promise<void>
   toggleSpace(id: string): Promise<void>
   showSpaceMenu(id: string): Promise<void>
   showSessionMenu(sessionID: string): Promise<void>

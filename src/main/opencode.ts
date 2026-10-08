@@ -75,6 +75,11 @@ export class OpenCodeService {
     return session.id
   }
 
+  async renameSession(sessionID: string, title: string) {
+    await this.client!.session.update({ sessionID, title })
+    await this.refresh()
+  }
+
   async removeSession(sessionID: string) {
     await this.client!.session.remove({ sessionID })
     await this.refresh()

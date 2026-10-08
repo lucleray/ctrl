@@ -41,6 +41,15 @@ export class Store {
     this.save()
   }
 
+  /** Moves a space so it sits at `index` in the final list. */
+  moveSpace(id: string, index: number) {
+    const from = this.data.spaces.findIndex((s) => s.id === id)
+    if (from === -1) return
+    const [space] = this.data.spaces.splice(from, 1)
+    this.data.spaces.splice(Math.max(0, Math.min(index, this.data.spaces.length)), 0, space)
+    this.save()
+  }
+
   deleteSpace(id: string) {
     this.data.spaces = this.data.spaces.filter((s) => s.id !== id)
     for (const [sessionID, spaceID] of Object.entries(this.data.assignments)) {

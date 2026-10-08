@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react"
 import type { AppState, SessionItem, Space } from "../shared/types"
 import { Icon } from "./icons"
+import { age } from "./format"
 
-const DRAG_TYPE = "application/x-ctrl-session"
+const SESSION_DRAG = "application/x-ctrl-session"
+const SPACE_DRAG = "application/x-ctrl-space"
 const CHATS = "__chats__"
 const CHATS_LIMIT = 40
 
@@ -10,23 +12,21 @@ type Props = {
   state: AppState
   onOpen(id: string): void
   onNew(spaceID: string | null): void
+  onSearch(): void
 }
 
-function age(ms: number) {
-  const s = Math.max(0, (Date.now() - ms) / 1000)
-  if (s < 60) return "now"
-  if (s < 3600) return `${Math.floor(s / 60)}m`
-  if (s < 86400) return `${Math.floor(s / 3600)}h`
-  if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
-  return `${Math.floor(s / (86400 * 30))}mo`
-}
+type Reorder = { id: string; pos: "before" | "after" }
 
-export function Sidebar({ state, onOpen, onNew }: Props) {
+export function Sidebar({ state, onOpen, onNew, onSearch }: Props) {
   const [creating, setCreating] = useState(false)
-  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
+  const [renamingSession, setRenamingSession] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [reorder, setReorder] = useState<Reorder | null>(null)
+  const draggingSpace = useRef<string | null>(null)
 
-  useEffect(() => window.ctrl.onRenameSpace(setRenaming), [])
+  useEffect(() => window.ctrl.onRenameSpace(setRenamingSpace), [])
+  useEffect(() => window.ctrl.onRenameSession(setRenamingSession), [])
 
   const grouped = useMemo(() => {
     const bySpace = new Map<string, SessionItem[]>()
@@ -43,9 +43,15 @@ export function Sidebar({ state, onOpen, onNew }: Props) {
     return { bySpace, chats }
   }, [state.sessions, state.assignments, state.spaces])
 
-  const dropProps = (key: string, spaceID: string | null) => ({
+  const clearDrag = () => {
+    setDropTarget(null)
+    setReorder(null)
+    draggingSpace.current = null
+  }
+
+  const sessionDrop = (key: string, spaceID: string | null) => ({
     onDragOver: (e: DragEvent) => {
-      if (!e.dataTransfer.types.includes(DRAG_TYPE)) return
+      if (!e.dataTransfer.types.includes(SESSION_DRAG)) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "move"
       if (dropTarget !== key) setDropTarget(key)
@@ -54,39 +60,88 @@ export function Sidebar({ state, onOpen, onNew }: Props) {
       if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget((t) => (t === key ? null : t))
     },
     onDrop: (e: DragEvent) => {
+      const id = e.dataTransfer.getData(SESSION_DRAG)
+      if (!id) return
       e.preventDefault()
-      setDropTarget(null)
-      const id = e.dataTransfer.getData(DRAG_TYPE)
-      if (id) void window.ctrl.moveSession(id, spaceID)
+      clearDrag()
+      void window.ctrl.moveSession(id, spaceID)
     },
   })
 
-  const sessionRow = (s: SessionItem) => (
-    <div
-      key={s.id}
-      className={`row session ${s.id === state.currentSessionID ? "active" : ""}`}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(DRAG_TYPE, s.id)
-        e.dataTransfer.effectAllowed = "move"
-      }}
-      onDragEnd={() => setDropTarget(null)}
-      onClick={() => onOpen(s.id)}
-      onContextMenu={(e) => {
+  const spaceDrop = (space: Space, index: number): HTMLAttributes<HTMLDivElement> => {
+    const sessions = sessionDrop(space.id, space.id)
+    return {
+      onDragOver: (e) => {
+        if (!e.dataTransfer.types.includes(SPACE_DRAG)) return sessions.onDragOver(e)
         e.preventDefault()
-        void window.ctrl.showSessionMenu(s.id)
-      }}
-      title={`${s.title}\n${s.directory}`}
-    >
-      <span className="label">{s.title}</span>
-      {s.running ? <span className="spinner" /> : <span className="meta">{age(s.updated)}</span>}
-    </div>
-  )
+        e.dataTransfer.dropEffect = "move"
+        const rect = e.currentTarget.getBoundingClientRect()
+        const pos = e.clientY < rect.top + Math.min(rect.height / 2, 20) ? "before" : "after"
+        if (draggingSpace.current === space.id) return setReorder(null)
+        if (reorder?.id !== space.id || reorder.pos !== pos) setReorder({ id: space.id, pos })
+      },
+      onDragLeave: (e) => {
+        sessions.onDragLeave(e)
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setReorder((r) => (r?.id === space.id ? null : r))
+      },
+      onDrop: (e) => {
+        const dragged = draggingSpace.current
+        if (!e.dataTransfer.types.includes(SPACE_DRAG) || !dragged) return sessions.onDrop(e)
+        e.preventDefault()
+        const pos = reorder?.id === space.id ? reorder.pos : "after"
+        clearDrag()
+        if (dragged === space.id) return
+        const from = state.spaces.findIndex((s) => s.id === dragged)
+        let to = index + (pos === "after" ? 1 : 0)
+        if (from < to) to--
+        if (from !== to) void window.ctrl.moveSpace(dragged, to)
+      },
+    }
+  }
+
+  const sessionRow = (s: SessionItem) =>
+    renamingSession === s.id ? (
+      <NameInput
+        key={s.id}
+        initial={s.title}
+        indent
+        onDone={(title) => {
+          setRenamingSession(null)
+          if (title && title !== s.title) void window.ctrl.renameSession(s.id, title)
+        }}
+      />
+    ) : (
+      <div
+        key={s.id}
+        className={`row session ${s.id === state.currentSessionID ? "active" : ""}`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(SESSION_DRAG, s.id)
+          e.dataTransfer.effectAllowed = "move"
+        }}
+        onDragEnd={clearDrag}
+        onClick={() => onOpen(s.id)}
+        onDoubleClick={() => setRenamingSession(s.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          void window.ctrl.showSessionMenu(s.id)
+        }}
+        title={`${s.title}\n${s.directory}`}
+      >
+        <span className="label">{s.title}</span>
+        {s.running ? <span className="spinner" /> : <span className="meta">{age(s.updated)}</span>}
+      </div>
+    )
 
   return (
     <aside className="sidebar">
       <div className="sidebar-drag" />
-      <div className="brand">ctrl</div>
+      <div className="brand">
+        <span>ctrl</span>
+        <button className="icon-btn" title="Search (⌘P)" onClick={onSearch}>
+          <Icon name="search" />
+        </button>
+      </div>
 
       <button className="row action" onClick={() => onNew(null)}>
         <Icon name="compose" />
@@ -104,6 +159,7 @@ export function Sidebar({ state, onOpen, onNew }: Props) {
         >
           {creating && (
             <NameInput
+              icon="folder"
               placeholder="Space name"
               onDone={(name) => {
                 setCreating(false)
@@ -114,23 +170,30 @@ export function Sidebar({ state, onOpen, onNew }: Props) {
           {state.spaces.length === 0 && !creating && (
             <div className="empty">No spaces yet — hit + to create one</div>
           )}
-          {state.spaces.map((space) => (
+          {state.spaces.map((space, index) => (
             <SpaceGroup
               key={space.id}
               space={space}
               sessions={grouped.bySpace.get(space.id) ?? []}
-              renaming={renaming === space.id}
-              onRenamed={() => setRenaming(null)}
-              onStartRename={() => setRenaming(space.id)}
+              renaming={renamingSpace === space.id}
+              onRenamed={() => setRenamingSpace(null)}
+              onStartRename={() => setRenamingSpace(space.id)}
               onNew={() => onNew(space.id)}
               highlight={dropTarget === space.id}
-              dropProps={dropProps(space.id, space.id)}
+              reorder={reorder?.id === space.id ? reorder.pos : null}
+              dropProps={spaceDrop(space, index)}
+              onDragStart={(e) => {
+                draggingSpace.current = space.id
+                e.dataTransfer.setData(SPACE_DRAG, space.id)
+                e.dataTransfer.effectAllowed = "move"
+              }}
+              onDragEnd={clearDrag}
               renderSession={sessionRow}
             />
           ))}
         </Section>
 
-        <div className={`drop-zone ${dropTarget === CHATS ? "over" : ""}`} {...dropProps(CHATS, null)}>
+        <div className={`drop-zone ${dropTarget === CHATS ? "over" : ""}`} {...sessionDrop(CHATS, null)}>
           <Section title="Chats">
             {grouped.chats.slice(0, CHATS_LIMIT).map(sessionRow)}
             {grouped.chats.length === 0 && <div className="empty">Drop a session here to remove it from its space</div>}
@@ -158,18 +221,23 @@ function SpaceGroup(props: {
   sessions: SessionItem[]
   renaming: boolean
   highlight: boolean
+  reorder: "before" | "after" | null
   onRenamed(): void
   onStartRename(): void
   onNew(): void
   dropProps: HTMLAttributes<HTMLDivElement>
+  onDragStart(e: DragEvent): void
+  onDragEnd(): void
   renderSession(s: SessionItem): ReactNode
 }) {
   const { space } = props
   const open = !space.collapsed
+  const classes = ["space", props.highlight && "over", props.reorder && `drop-${props.reorder}`]
   return (
-    <div className={`space ${props.highlight ? "over" : ""}`} {...props.dropProps}>
+    <div className={classes.filter(Boolean).join(" ")} data-space-id={space.id} {...props.dropProps}>
       {props.renaming ? (
         <NameInput
+          icon="folder"
           initial={space.name}
           onDone={(name) => {
             props.onRenamed()
@@ -179,6 +247,9 @@ function SpaceGroup(props: {
       ) : (
         <div
           className="row space-header"
+          draggable
+          onDragStart={props.onDragStart}
+          onDragEnd={props.onDragEnd}
           onClick={() => void window.ctrl.toggleSpace(space.id)}
           onDoubleClick={props.onStartRename}
           onContextMenu={(e) => {
@@ -223,7 +294,13 @@ function SpaceGroup(props: {
   )
 }
 
-function NameInput(props: { initial?: string; placeholder?: string; onDone(name: string | null): void }) {
+function NameInput(props: {
+  initial?: string
+  placeholder?: string
+  icon?: string
+  indent?: boolean
+  onDone(name: string | null): void
+}) {
   const ref = useRef<HTMLInputElement>(null)
   const done = useRef(false)
   useEffect(() => {
@@ -236,13 +313,14 @@ function NameInput(props: { initial?: string; placeholder?: string; onDone(name:
     props.onDone(value?.trim() || null)
   }
   return (
-    <div className="row input-row">
-      <Icon name="folder" />
+    <div className={`row input-row ${props.indent ? "indent" : ""}`}>
+      {props.icon && <Icon name={props.icon} />}
       <input
         ref={ref}
         defaultValue={props.initial}
         placeholder={props.placeholder}
         onKeyDown={(e) => {
+          e.stopPropagation()
           if (e.key === "Enter") finish(e.currentTarget.value)
           if (e.key === "Escape") finish(null)
         }}
