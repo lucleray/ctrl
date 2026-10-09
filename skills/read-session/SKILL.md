@@ -12,10 +12,11 @@ before answering.
 ## Steps
 
 1. Take the session ID from the mention (the `ses_…` part in parentheses).
-2. Print a digest (works from any directory):
+2. Print a digest with `digest.sh` from this skill's base directory (works from
+   any working directory):
 
    ```bash
-   node ~/.agents/skills/read-session/digest.mjs ses_XXXXXXXX
+   sh <skill base directory>/digest.sh ses_XXXXXXXX
    ```
 
    It shows the title, directory, each turn (user prompt + final assistant
@@ -24,7 +25,7 @@ before answering.
 3. If you need everything said in one turn, read it in full:
 
    ```bash
-   node ~/.agents/skills/read-session/digest.mjs ses_XXXXXXXX --turn 3
+   sh <skill base directory>/digest.sh ses_XXXXXXXX --turn 3
    ```
 
 4. Use that context to do what the user asked. Briefly say which session you
@@ -33,6 +34,8 @@ before answering.
 
 ## Notes
 
+- `digest.sh` runs `digest.mjs` with `node`, or with ctrl's bundled runtime when
+  node isn't installed.
 - `digest.mjs` goes through `opencode api`, which reuses the running opencode
   service and its auth. No extra setup.
 - Don't pipe `opencode api` output directly (it gets truncated when stdout is a

@@ -1,25 +1,52 @@
-// Builds release/mac-*/ctrl.app. With --install, replaces /Applications/ctrl.app
-// with it (quitting the running copy first) so it launches like any other app.
+// Builds ctrl.app for macOS, ad-hoc signed.
+//   node scripts/package.mjs                  this Mac's arch → release/mac*/ctrl.app
+//   node scripts/package.mjs --install        same, then replaces /Applications/ctrl.app (quitting it first)
+//   node scripts/package.mjs --arch all --zip arm64 + x64, zipped as release/ctrl-<version>-mac-<arch>.zip
 import { execFileSync, execSync } from "node:child_process"
-import { existsSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
+
+const argv = process.argv.slice(2)
+const flag = (name) => argv.includes(name)
+const option = (name) => {
+  const i = argv.indexOf(name)
+  return i === -1 ? undefined : argv[i + 1]
+}
+const host = process.arch === "arm64" ? "arm64" : "x64"
+const archs = { all: ["arm64", "x64"], arm64: ["arm64"], x64: ["x64"] }[option("--arch") ?? host]
+if (!archs) throw new Error("--arch must be arm64, x64 or all")
+const { version } = JSON.parse(readFileSync("package.json", "utf8"))
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" })
 
 run("npm run build")
 rmSync("release", { recursive: true, force: true })
-run("npx electron-builder --mac --dir")
+run(`npx electron-builder --mac --dir ${archs.map((a) => `--${a}`).join(" ")}`)
 
-const out = readdirSync("release").find((d) => d.startsWith("mac"))
-const built = join("release", out, "ctrl.app")
-if (!existsSync(built)) throw new Error(`no app at ${built}`)
+// electron-builder names the output folder mac-arm64 for arm64, and plain mac for x64.
+const appFor = (arch) => {
+  const dir = readdirSync("release").find((d) => d === (arch === "x64" ? "mac" : `mac-${arch}`))
+  const app = dir && join("release", dir, "ctrl.app")
+  if (!app || !existsSync(app)) throw new Error(`no ${arch} app in release/`)
+  return app
+}
 
-// Not notarized (it's built locally, so no quarantine), but Apple Silicon still
-// needs a valid signature to launch: sign it ad hoc.
-execFileSync("codesign", ["--force", "--deep", "--sign", "-", built], { stdio: "inherit" })
-console.log(`[package] built ${built}`)
+for (const arch of archs) {
+  const app = appFor(arch)
+  // Not notarized (no Developer ID), but Apple Silicon still needs a valid signature to
+  // launch: sign it ad hoc. Downloads through gh aren't quarantined, so Gatekeeper lets it run.
+  execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" })
+  console.log(`[package] built ${app}`)
+  if (flag("--zip")) {
+    const zip = join("release", `ctrl-${version}-mac-${arch}.zip`)
+    execFileSync("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, zip])
+    console.log(`[package] zipped ${zip}`)
+  }
+}
 
-if (process.argv.includes("--install")) {
+if (flag("--install")) {
+  if (!archs.includes(host)) throw new Error(`--install needs a ${host} build`)
+  const built = appFor(host)
   const target = "/Applications/ctrl.app"
   const running = () => {
     try {

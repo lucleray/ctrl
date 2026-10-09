@@ -1,4 +1,15 @@
 import { execFileSync } from "node:child_process"
+import { homedir } from "node:os"
+import { delimiter, join } from "node:path"
+
+/** Appended to PATH when missing, in case the shell env couldn't be read (slow or broken rc files). */
+const FALLBACK_PATH = [
+  join(homedir(), ".opencode/bin"),
+  "/opt/homebrew/bin",
+  "/opt/homebrew/sbin",
+  "/usr/local/bin",
+  join(homedir(), ".local/bin"),
+]
 
 /**
  * Apps launched from Finder/Dock get launchd's bare environment (PATH is just
@@ -12,7 +23,7 @@ export function loadShellEnv() {
   try {
     const out = execFileSync(shell, ["-ilc", `printf '${marker}'; /usr/bin/env -0; printf '${marker}'`], {
       encoding: "utf8",
-      timeout: 5000,
+      timeout: 8000,
       stdio: ["ignore", "pipe", "ignore"],
       env: { ...process.env, DISABLE_AUTO_UPDATE: "true" },
     })
@@ -27,5 +38,8 @@ export function loadShellEnv() {
     }
   } catch (err) {
     console.error("[ctrl] couldn't load the login shell environment:", err)
+  } finally {
+    const path = (process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(delimiter).filter(Boolean)
+    process.env.PATH = [...path, ...FALLBACK_PATH.filter((p) => !path.includes(p))].join(delimiter)
   }
 }

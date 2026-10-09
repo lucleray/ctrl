@@ -1,6 +1,6 @@
 {
   "name": "ctrl",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -13,7 +13,8 @@
     "icon": "node scripts/icon.mjs",
     "brand": "node scripts/brand-electron.mjs",
     "package": "node scripts/package.mjs",
-    "install-app": "node scripts/package.mjs --install"
+    "install-app": "node scripts/package.mjs --install",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@xterm/addon-unicode-graphemes": "^0.4.0",
@@ -53,12 +54,17 @@
       "dist/**",
       "!dist/**/*.map",
       "!dist/bridge/**",
-      "package.json"
+      "package.json",
+      "!node_modules/node-pty/prebuilds/win32-*/**"
     ],
     "extraResources": [
       {
         "from": "dist/bridge",
         "to": "bridge"
+      },
+      {
+        "from": "skills",
+        "to": "skills"
       }
     ],
     "asarUnpack": [

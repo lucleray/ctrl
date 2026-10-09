@@ -7,9 +7,9 @@
 // Reads through `opencode api`, which reuses the TUI's service discovery + auth.
 // Its stdout gets truncated when piped, so responses go through a temp file.
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { delimiter, join } from "node:path"
 
 const [id, flag, flagValue] = process.argv.slice(2)
 if (!id?.startsWith("ses_")) {
@@ -17,10 +17,19 @@ if (!id?.startsWith("ses_")) {
   process.exit(1)
 }
 
+// PATH first, then where installers put it (the agent's shell may not have it on PATH).
+const opencode =
+  [
+    ...(process.env.PATH ?? "").split(delimiter).filter(Boolean).map((d) => join(d, "opencode")),
+    join(homedir(), ".opencode/bin/opencode"),
+    "/opt/homebrew/bin/opencode",
+    "/usr/local/bin/opencode",
+  ].find((p) => existsSync(p)) ?? "opencode"
+
 const dir = mkdtempSync(join(tmpdir(), "read-session-"))
 function api(path) {
   const file = join(dir, "out.json")
-  execFileSync("/bin/sh", ["-c", `opencode api get '${path}' > '${file}'`], { stdio: ["ignore", "ignore", "inherit"] })
+  execFileSync("/bin/sh", ["-c", `'${opencode}' api get '${path}' > '${file}'`], { stdio: ["ignore", "ignore", "inherit"] })
   const body = JSON.parse(readFileSync(file, "utf8"))
   return body.data ?? body
 }
