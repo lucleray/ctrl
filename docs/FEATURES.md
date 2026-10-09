@@ -100,11 +100,11 @@ where it lives.
 
 ## Install & updates
 
-- Install with one command through gh: latest release → `/Applications`, not quarantined (`install.sh`)
+- Install with one curl command: latest release → `/Applications`, not quarantined (`install.sh`)
 - Setup screen instead of the terminal when opencode is missing or older than `MIN_OPENCODE`, with the
   install / upgrade command to copy; checks again on Check again or when the window regains focus
   (`src/renderer/OpencodeSetup.tsx`, `src/main/opencode-bin.ts`)
-- Updates from GitHub Releases via gh: checked at launch and every 6h, sticky toast with Update, which
+- Updates from GitHub Releases through GitHub's public API, no login: checked at launch and every 6h, sticky toast with Update, which
   downloads, swaps the app bundle once ctrl quits and relaunches. Settings → About shows the version
   and a manual check (`src/main/updater.ts`)
 - read-session skill: offered in a toast at first launch and when a session is referenced without it,

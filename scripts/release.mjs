@@ -25,7 +25,7 @@ if (!out("git", ["branch", "-r", "--contains", sha])) throw new Error("Push this
 
 execSync("node scripts/package.mjs --arch all --zip", { stdio: "inherit" })
 
-const zips = ["arm64", "x64"].map((arch) => `release/ctrl-${version}-mac-${arch}.zip`)
+const zips = ["arm64", "x64"].map((arch) => `release/ctrl-mac-${arch}.zip`)
 execFileSync(
   "gh",
   ["release", "create", tag, ...zips, "--repo", REPO, "--target", sha, "--title", `ctrl ${version}`, "--generate-notes"],

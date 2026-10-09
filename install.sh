@@ -1,21 +1,12 @@
 #!/bin/sh
 # Installs (or reinstalls) the latest ctrl release into /Applications.
-#   gh api repos/lucleray/ctrl/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
-# Goes through gh because the repo is private. Files gh downloads aren't quarantined,
-# so the ad-hoc signed app opens without a Gatekeeper prompt.
+#   curl -fsSL https://raw.githubusercontent.com/lucleray/ctrl/main/install.sh | sh
+# curl doesn't quarantine what it downloads (browsers do), so the ad-hoc signed app opens
+# without a Gatekeeper prompt.
 set -e
 
 REPO=lucleray/ctrl
 APP=${CTRL_APP:-/Applications/ctrl.app}
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "ctrl installs through the GitHub CLI: brew install gh && gh auth login" >&2
-  exit 1
-fi
-if ! gh auth status >/dev/null 2>&1; then
-  echo "Log in to GitHub first: gh auth login" >&2
-  exit 1
-fi
 
 case "$(uname -m)" in
   arm64) ARCH=arm64 ;;
@@ -26,8 +17,8 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Downloading the latest ctrl ($ARCH)…"
-gh release download --repo "$REPO" --pattern "ctrl-*-mac-$ARCH.zip" --dir "$TMP"
-ditto -x -k "$TMP"/ctrl-*-mac-"$ARCH".zip "$TMP/unpacked"
+curl -fL --progress-bar -o "$TMP/ctrl.zip" "https://github.com/$REPO/releases/latest/download/ctrl-mac-$ARCH.zip"
+ditto -x -k "$TMP/ctrl.zip" "$TMP/unpacked"
 
 if pgrep -f "^$APP/Contents/MacOS/" >/dev/null 2>&1; then
   echo "Quitting the running ctrl…"

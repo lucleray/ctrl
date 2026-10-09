@@ -227,7 +227,7 @@ function updateText(update: UpdateStatus): string {
   }
 }
 
-/** Version, and updates from GitHub Releases through gh. */
+/** Version, and updates from GitHub Releases. */
 function AboutRow({ version, update }: { version: string; update: UpdateStatus }) {
   const busy = update.state === "checking" || update.state === "downloading"
   return (

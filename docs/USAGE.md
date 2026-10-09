@@ -4,11 +4,11 @@
 
 The one-liner in the [README](../README.md#-install) installs the latest release into `/Applications`.
 
-- **Why gh:** the repo is private, so downloads need your GitHub login. Bonus: files gh downloads aren't
-  quarantined, so the app opens without a Gatekeeper prompt even though it isn't notarized.
+- **Why a script:** ctrl isn't notarized. Files curl downloads aren't quarantined, so the app opens without a
+  Gatekeeper prompt.
 - **Downloaded the zip from the browser instead?** macOS will say it's damaged. Run
   `xattr -dr com.apple.quarantine /Applications/ctrl.app` once.
-- **Updates:** ctrl checks for a new release every few hours (through gh) and offers it in a toast.
+- **Updates:** ctrl checks GitHub for a new release every few hours and offers it in a toast.
   **Settings → About** has a manual check. The same one-liner also reinstalls.
 - **First launch:** ctrl offers to install the `read-session` skill (also in **Settings → Agent skill**),
   so agents can read sessions you drag onto the terminal.

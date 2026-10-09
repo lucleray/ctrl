@@ -10,11 +10,11 @@ npm run install-app   # build + replace /Applications/ctrl.app (restarts it if r
 
 **Releasing:** bump `version` in `package.json`, merge, then `npm run release` from a clean checkout of
 the merged commit. It builds arm64 and x64 apps (`scripts/package.mjs --arch all --zip`) and publishes them
-as a GitHub release, `ctrl-<version>-mac-<arch>.zip`. Installed apps find it within a few hours
-(`src/main/updater.ts`). Builds are local because macOS CI minutes are expensive on a private repo.
+as a GitHub release, `ctrl-mac-<arch>.zip` (no version in the name, so `install.sh` can always download
+`releases/latest/download/ctrl-mac-<arch>.zip`). Installed apps find it within a few hours (`src/main/updater.ts`).
 
 **Signing:** builds are ad-hoc signed, not notarized (no Developer ID). That's fine as long as the app
-arrives through gh (install script, in-app updates), which doesn't quarantine it. Notarizing would need
+arrives through `install.sh` (curl) or the in-app updater, which don't quarantine it. Notarizing would need
 an Apple Developer account plus `codesign --options runtime` and `notarytool` in `scripts/package.mjs`.
 
 **opencode:** ctrl needs `MIN_OPENCODE` (`src/main/opencode-bin.ts`) or newer and shows a setup screen

@@ -1,9 +1,9 @@
 // Builds ctrl.app for macOS, ad-hoc signed.
 //   node scripts/package.mjs                  this Mac's arch → release/mac*/ctrl.app
 //   node scripts/package.mjs --install        same, then replaces /Applications/ctrl.app (quitting it first)
-//   node scripts/package.mjs --arch all --zip arm64 + x64, zipped as release/ctrl-<version>-mac-<arch>.zip
+//   node scripts/package.mjs --arch all --zip arm64 + x64, zipped as release/ctrl-mac-<arch>.zip
 import { execFileSync, execSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 
 const argv = process.argv.slice(2)
@@ -15,7 +15,6 @@ const option = (name) => {
 const host = process.arch === "arm64" ? "arm64" : "x64"
 const archs = { all: ["arm64", "x64"], arm64: ["arm64"], x64: ["x64"] }[option("--arch") ?? host]
 if (!archs) throw new Error("--arch must be arm64, x64 or all")
-const { version } = JSON.parse(readFileSync("package.json", "utf8"))
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" })
 
@@ -34,11 +33,12 @@ const appFor = (arch) => {
 for (const arch of archs) {
   const app = appFor(arch)
   // Not notarized (no Developer ID), but Apple Silicon still needs a valid signature to
-  // launch: sign it ad hoc. Downloads through gh aren't quarantined, so Gatekeeper lets it run.
+  // launch: sign it ad hoc. Downloads through curl or ctrl's updater aren't quarantined, so Gatekeeper lets it run.
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" })
   console.log(`[package] built ${app}`)
   if (flag("--zip")) {
-    const zip = join("release", `ctrl-${version}-mac-${arch}.zip`)
+    // No version in the name, so install.sh can download releases/latest/download/ctrl-mac-<arch>.zip.
+    const zip = join("release", `ctrl-mac-${arch}.zip`)
     execFileSync("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, zip])
     console.log(`[package] zipped ${zip}`)
   }

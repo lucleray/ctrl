@@ -50,17 +50,16 @@ Hold ⌘ to see a number next to each session, then press it.
 
 ## 📦 Install
 
-You need a Mac, access to this repo, the GitHub CLI and opencode V2:
+You need a Mac and [opencode V2](https://opencode.ai/v2/docs/):
 
 ```bash
-brew install gh && gh auth login
 curl -fsSL https://opencode.ai/v2/install | bash
 ```
 
 Then install ctrl:
 
 ```bash
-gh api repos/lucleray/ctrl/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
+curl -fsSL https://raw.githubusercontent.com/lucleray/ctrl/main/install.sh | sh
 ```
 
 ctrl updates itself. [docs/USAGE.md](docs/USAGE.md) covers updates, uninstalling and everyday use.

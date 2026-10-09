@@ -151,14 +151,11 @@ export type OpencodeCheck =
  */
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
-/**
- * ctrl updates from GitHub Releases through the gh CLI (the repo is private).
- * unavailable: gh missing, logged out, or no access to the repo
- */
+/** ctrl updates from GitHub Releases (src/main/updater.ts). */
 export type UpdateStatus =
   | { state: "idle" | "checking" | "up-to-date" }
   | { state: "available" | "downloading"; version: string }
-  | { state: "unavailable" | "error"; detail: string }
+  | { state: "error"; detail: string }
 
 export type AppState = {
   /** ctrl's own version */
