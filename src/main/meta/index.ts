@@ -13,6 +13,8 @@ const AFTER_RUN = 4 * SECOND
 const HOURLY_CAP = 500
 /** Stop when a shared budget gets this low, until it resets. */
 const RESERVE = 0.1
+/** `next` for final details (stored in SQLite, which has no Infinity) */
+const FINAL = Number.MAX_SAFE_INTEGER
 
 type Cached = { meta: ResourceMeta; next: number }
 type Watched = MetaRequest & { provider: ProviderID; last: number }
@@ -149,9 +151,14 @@ export class ResourceMetaService {
       .filter((w) => {
         if (w.provider !== provider) return false
         const c = this.cache.get(w.id)
-        return !c || now >= c.next || w.last > c.meta.fetched
+        return !c || now >= c.next || this.mentionedAgain(w, c)
       })
       .sort((a, b) => b.last - a.last)
+  }
+
+  /** Mentioned since its last fetch, so possibly changed (an agent just merged or deployed it). */
+  private mentionedAgain(w: Watched, c: Cached) {
+    return c.next !== FINAL && w.last > c.meta.fetched
   }
 
   /** Wakes up when the soonest provider can do something: something is due and it isn't paused. */
@@ -166,12 +173,14 @@ export class ResourceMetaService {
       for (const w of this.watched.values()) {
         if (w.provider !== id) continue
         const c = this.cache.get(w.id)
-        next = Math.min(next, !c || w.last > c.meta.fetched ? now : c.next)
+        if (c?.next === FINAL) continue
+        next = Math.min(next, !c || this.mentionedAgain(w, c) ? now : c.next)
       }
       if (next !== Infinity) at = Math.min(at, Math.max(next, r.pausedUntil))
     }
     if (at === Infinity) return
-    this.timer = setTimeout(() => void this.tick(), Math.max(delay, at - now, 0))
+    // Capped: setTimeout fires right away past ~24.8 days, and waking up once an hour costs nothing.
+    this.timer = setTimeout(() => void this.tick(), Math.min(HOUR, Math.max(delay, at - now, 0)))
   }
 
   private async tick() {
@@ -209,7 +218,8 @@ export class ResourceMetaService {
     const changed: Record<string, ResourceMeta> = {}
     for (const w of batch) {
       const meta = result.metas.get(w.id) ?? { missing: true, fetched: Date.now() }
-      const next = meta.fetched + r.provider.ttl(w.type, meta)
+      const ttl = r.provider.ttl(w.type, meta)
+      const next = ttl === Infinity ? FINAL : meta.fetched + ttl
       this.cache.set(w.id, { meta, next })
       insert.run(w.id, JSON.stringify(meta), next)
       changed[w.id] = meta

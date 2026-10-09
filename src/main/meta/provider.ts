@@ -30,7 +30,7 @@ export interface Provider {
   id: ProviderID
   /** Most resources per fetch() call */
   batchSize: number
-  /** How long details stay fresh */
+  /** How long details stay fresh; Infinity = final, never refetched (not even when mentioned again) */
   ttl(type: string, meta: ResourceMeta): number
   fetch(batch: MetaRequest[]): Promise<ProviderResult>
   /** Forget the cached token (Retry, or after the service rejected it) */

@@ -180,12 +180,17 @@ async function fetchGithub(token: string, items: MetaRequest[]): Promise<Provide
   }
 }
 
-/** Things that are moving (CI running, GitHub computing mergeability) refresh every minute, settled ones rarely. */
+/**
+ * Things that are moving (CI running, GitHub computing mergeability) refresh
+ * every minute, settled ones rarely. Merged PRs can't change state again, so
+ * they're never refetched (closed ones can be reopened).
+ */
 function ttl(type: string, m: ResourceMeta) {
   if (m.missing) return DAY
   if (type === "github-repo") return 7 * DAY
   if (type === "github-commit") return m.ci === "pending" ? MINUTE : DAY
   const open = m.state === "open" || m.state === "draft"
+  if (type === "github-pr" && m.state === "merged") return Infinity
   if (!open) return DAY
   if (type === "github-pr" && (m.ci === "pending" || m.conflicts === undefined)) return MINUTE
   if (m.state === "draft") return 10 * MINUTE

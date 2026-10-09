@@ -53,7 +53,7 @@ where it lives.
   focused, TTL by state, refreshed early when a run in scope ends or a resource is mentioned again, cached on
   disk; status per service in Settings → Resource details (`src/main/meta/`, one file per provider)
   - GitHub (gh's token): PRs, issues, commits, repos: title, state color, CI, review, conflicts. One batched
-    GraphQL request (~1 point); 1 min while CI runs, 5 min open, 24h merged/closed
+    GraphQL request (~1 point); 1 min while CI runs, 5 min open, 24h closed, never again once merged
   - Vercel (vercel CLI's token, refreshed via `vercel whoami` when it expires): deployments (commit, branch,
     target, build state) and projects (latest production deployment); 15s while building
 
