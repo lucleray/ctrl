@@ -177,6 +177,8 @@ export class FxTerminals {
       TERM_PROGRAM: "ctrl",
       // fx checks for upgrades itself; never let one restart it under us.
       FX_AUTO_UPGRADE: "0",
+      // ctrl plays its own sounds (or none when they're off), so fx's would double up.
+      FX_SOUND: "off",
     } as Record<string, string>
     // A known session resumes; a new one that never got an id starts fresh again.
     const args = term.sessionID ? ["resume", "--id", rawID(term.sessionID)] : term.opts.args

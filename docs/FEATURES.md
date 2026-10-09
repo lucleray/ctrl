@@ -118,7 +118,8 @@ where it lives.
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
 - Sounds when a session needs you / fails / finishes: on/off, a macOS system sound or your own audio file per
   event (or None), preview button, optional "also when ctrl is focused". One sound per burst (most urgent wins),
-  played with `afplay`, and it replaces the system notification sound (`src/main/sound.ts`)
+  played with `afplay`, and it replaces the system notification sound (`src/main/sound.ts`). fx's own sounds are
+  always off (`FX_SOUND=off`), so they never double up with ctrl's
 - Agent skill: install / uninstall read-session, with its status
 - About: ctrl's version, update status, Check for updates / Update and restart
 - Resizable sidebar (200–520px, double-click edge to reset), width saved (`src/renderer/ResizeHandle.tsx`)

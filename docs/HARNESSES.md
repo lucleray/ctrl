@@ -52,7 +52,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Status: failed | ✅ | ⚠️ | fx: only for sessions open in ctrl |
 | Status: finished, unread | ✅ | ✅ | fx: read state kept by ctrl |
 | Status of sessions that aren't open | ✅ live | ⚠️ | fx: read from files on disk |
-| Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions |
+| Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
 | Sessions open in another terminal | ✅ | ⚠️ | fx allows one process per session: shown, but ctrl can't open or delete them until that fx quits |
 | Reference a session (drag onto the terminal) | ✅ | ✅ | Works across harnesses, with the `read-session` skill |
 | Drop files from Finder | ✅ | ✅ | |
