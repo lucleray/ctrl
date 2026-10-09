@@ -151,4 +151,4 @@ where it lives.
   added to PATH if that fails (`scripts/package.mjs`, `src/main/shell-env.ts`)
 - Dev runs use a separate `ctrl-dev` state dir, so dev and installed app run side by side
 - Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see `docs/DEVELOPMENT.md`)
-- README screenshots and GIF regenerated from a throwaway demo opencode (`scripts/demo/`, `CTRL_FRAMES` hook)
+- README screenshots and GIF regenerated from a throwaway demo opencode, and fx versions from throwaway fx sessions shown next to them (`scripts/demo/`, `--harness fx`, `CTRL_FRAMES` hook)

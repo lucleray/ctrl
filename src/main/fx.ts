@@ -13,8 +13,9 @@ export const SESSIONS_DIR = join(FX_HOME, "sessions")
 export const fxID = (raw: string) => `${FX_PREFIX}${raw}`
 export const rawID = (id: string) => (id.startsWith(FX_PREFIX) ? id.slice(FX_PREFIX.length) : id)
 
-/** Where fx's installer puts it, then PATH (resolved from the login shell at launch). */
+/** Where fx's installer puts it, then PATH (resolved from the login shell at launch). CTRL_FX is a debug hook. */
 export function findFx() {
+  if (process.env.CTRL_FX) return existsSync(process.env.CTRL_FX) ? process.env.CTRL_FX : undefined
   const path = (process.env.PATH ?? "").split(":").filter(Boolean).map((d) => join(d, "fx"))
   return [join(homedir(), ".local/bin/fx"), "/opt/homebrew/bin/fx", "/usr/local/bin/fx", ...path].find((p) =>
     existsSync(p),

@@ -20,3 +20,9 @@ export function opencodeBin() {
   const candidates = [join(homedir(), ".opencode/bin/opencode"), "/opt/homebrew/bin/opencode", "/usr/local/bin/opencode"]
   return process.env.CTRL_OPENCODE || candidates.find((p) => existsSync(p)) || "opencode"
 }
+
+/** Resolved with the real HOME, before the demo env replaces it. */
+export function fxBin() {
+  const candidates = [join(homedir(), ".local/bin/fx"), "/opt/homebrew/bin/fx", "/usr/local/bin/fx"]
+  return process.env.CTRL_FX || candidates.find((p) => existsSync(p)) || "fx"
+}

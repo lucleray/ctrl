@@ -1,26 +1,37 @@
 // Regenerates the README screenshots in docs/media from demo data (docs/DEVELOPMENT.md → Screenshots).
-// Usage: node scripts/demo/capture.mjs [demo dir]
-// Runs ctrl headless (no window, no focus steal) against a throwaway opencode seeded by seed.mjs.
+// Usage: node scripts/demo/capture.mjs [demo dir] [--harness fx]
+// Runs ctrl headless (no window, no focus steal) against a throwaway opencode seeded by seed.mjs,
+// or with --harness fx against throwaway fx sessions (media get an -fx suffix: hero-fx.png, …).
 import { execFileSync, spawn } from "node:child_process"
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { demoEnv, opencodeBin } from "./env.mjs"
+import { demoEnv, fxBin, opencodeBin } from "./env.mjs"
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
-const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null
-const DEMO = resolve(args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--only") ?? join(tmpdir(), "ctrl-demo"))
+const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null)
+const only = option("--only")
+const harness = option("--harness") ?? "opencode"
+const fx = harness === "fx"
+const DEMO = resolve(
+  args.find((a, i) => !a.startsWith("--") && !["--only", "--harness"].includes(args[i - 1])) ??
+    join(tmpdir(), fx ? "ctrl-demo-fx" : "ctrl-demo"),
+)
 const OUT = resolve("docs/media")
 const RAW = join(DEMO, "raw")
 mkdirSync(OUT, { recursive: true })
-if (!flag("--no-seed")) {
-  // Stop a demo service left over from a previous run before seeding wipes its folder.
+const stopService = () => {
+  if (fx) return
   try {
     execFileSync(opencodeBin(), ["service", "stop"], { env: demoEnv(DEMO), stdio: "ignore" })
   } catch {}
-  execFileSync("node", ["scripts/demo/seed.mjs", DEMO], { stdio: "inherit" })
+}
+if (!flag("--no-seed")) {
+  // Stop a demo service left over from a previous run before seeding wipes its folder.
+  stopService()
+  execFileSync("node", ["scripts/demo/seed.mjs", DEMO, "--harness", harness], { stdio: "inherit" })
 }
 mkdirSync(RAW, { recursive: true })
 // The skill counts as installed (a copy ctrl didn't make), so no "install the skill" toast.
@@ -47,7 +58,11 @@ function scene(name, { seconds = 22, hooks }) {
     const env = {
       ...demoEnv(DEMO),
       ...(ghToken ? { GH_TOKEN: ghToken } : {}),
-      CTRL_OPENCODE: opencodeBin(),
+      // fx: no opencode at all (a path that doesn't exist), so ctrl shows fx sessions only.
+      CTRL_OPENCODE: fx ? join(DEMO, "no-opencode") : opencodeBin(),
+      CTRL_FX: fx ? fxBin() : join(DEMO, "no-fx"),
+      // fx shows its sign-in screen without a provider; resuming a session never calls it.
+      ...(fx ? { AI_GATEWAY_API_KEY: "demo" } : {}),
       CTRL_USER_DATA: join(DEMO, "ctrl"),
       CTRL_HEADLESS: "1",
       CTRL_SKILLS_DIR: join(DEMO, "skills"),
@@ -83,6 +98,7 @@ async function dragReference({ open, drag, prompt }) {
   await window.ctrl.setUi({ resourcesOpen: false })
   await window.ctrl.openSession(open)
   await sleep(13000)
+  const { activeTermID } = await window.ctrl.getState()
   const row = document.querySelector(`.space-sessions [data-session-id="${drag}"]`)
   const main = document.querySelector(".main").getBoundingClientRect()
   const r = row.getBoundingClientRect()
@@ -118,7 +134,7 @@ async function dragReference({ open, drag, prompt }) {
   document.dispatchEvent(new DragEvent("dragend", { bubbles: true }))
   await sleep(600)
   for (const ch of prompt) {
-    window.ctrl.ptyWrite(ch)
+    window.ctrl.ptyWrite(activeTermID, ch)
     await sleep(45)
   }
   return "dragged"
@@ -150,14 +166,15 @@ await scene("reference", {
     CTRL_FRAMES: `${join(RAW, "reference")},15000,100,90`,
   },
 })
-try {
-  execFileSync(opencodeBin(), ["service", "stop"], { env: demoEnv(DEMO), stdio: "ignore" })
-} catch {}
+stopService()
 
 // Crop, resize and encode the GIF inside Electron (nativeImage) with gifenc, installed into the demo folder.
 const tools = join(DEMO, "tools")
 if (!existsSync(join(tools, "node_modules/gifenc"))) {
   execFileSync("npm", ["install", "--prefix", tools, "gifenc", "--no-audit", "--no-fund"], { stdio: "ignore" })
 }
-execFileSync(electron, ["scripts/demo/media.mjs", RAW, OUT, join(tools, "node_modules")], { stdio: "inherit", env: { ...process.env, CTRL_HEADLESS: "1" } })
+execFileSync(electron, ["scripts/demo/media.mjs", RAW, OUT, join(tools, "node_modules")], {
+  stdio: "inherit",
+  env: { ...process.env, CTRL_HEADLESS: "1", CTRL_MEDIA_SUFFIX: fx ? "-fx" : "" },
+})
 console.log(`[demo] done, see ${OUT}`)
