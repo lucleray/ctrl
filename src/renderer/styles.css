@@ -1516,11 +1516,13 @@ body.resizing .terminal-wrap {
   right: 14px;
   z-index: 5;
   width: 320px;
-  max-height: calc(100% - 28px);
+  /* Stops above the TUI's prompt and footer, so the chat input stays visible. */
+  max-height: calc(100% - 120px);
   display: flex;
   flex-direction: column;
   padding: 10px 8px 8px;
-  background: var(--panel-bg);
+  background: color-mix(in srgb, var(--panel-bg) 80%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
   color: var(--text);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
