@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import {
   FONT_SIZE,
   type AppState,
+  type OpencodeCheck,
   type Settings,
   type Space,
   type SoundEvent,
@@ -20,6 +21,9 @@ import { playSound } from "./sound"
 import { ADAPTERS } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
 import { OpenCodeService } from "./opencode"
+import { checkOpencode } from "./opencode-bin"
+import { Skill } from "./skill"
+import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
 import { Store } from "./store"
@@ -93,6 +97,10 @@ const send = (channel: string, ...args: unknown[]) => {
 }
 
 const state = (): AppState => ({
+  version: app.getVersion(),
+  opencode: opencodeCheck,
+  skill: skill.current,
+  update: updater.status,
   spaces: store.data.spaces,
   assignments: store.data.assignments,
   archived: store.data.archived,
@@ -105,7 +113,11 @@ const state = (): AppState => ({
   bridgeConnected,
   mcp: opencode.mcp,
   adapters: adapters.adapters,
-  problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
+  // Without a usable opencode, the setup screen explains what's wrong instead.
+  problem:
+    opencodeCheck.state !== "ok"
+      ? undefined
+      : (opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined)),
   error,
 })
 
@@ -177,6 +189,67 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
     watchBridge()
     push()
   },
+})
+
+// ---------- opencode install, read-session skill, updates ----------
+
+let opencodeCheck: OpencodeCheck = { state: "checking" }
+let opencodeStarted = false
+
+/** The TUI and the service connection only start once a recent enough opencode is installed. */
+const recheckOpencode = async () => {
+  opencodeCheck = await checkOpencode()
+  console.log(`[ctrl] opencode: ${JSON.stringify(opencodeCheck)}`)
+  if (opencodeCheck.state === "ok" && !opencodeStarted) {
+    opencodeStarted = true
+    opencode.start().catch(report)
+  }
+  push()
+}
+
+const skill = new Skill(
+  app.isPackaged ? join(process.resourcesPath, "skills", "read-session") : join(root, "skills", "read-session"),
+)
+let skillSuggested = false
+
+const installSkill = () => {
+  try {
+    skill.install()
+    toast({ icon: "check", message: "Installed the read-session skill. Sessions you drop on the terminal can now be read by the agent" })
+  } catch (err) {
+    report(err)
+  }
+  push()
+}
+
+/** Offers the skill once per launch: at the first launch, then whenever a session is referenced without it. */
+const suggestSkill = () => {
+  if (skillSuggested || skill.refresh().state !== "missing") return
+  skillSuggested = true
+  toast(
+    { icon: "link", message: "Install the read-session skill so agents can read the sessions you drop on the terminal?" },
+    { action: { label: "Install", run: installSkill } },
+  )
+}
+
+/** ctrl's copy of the skill follows ctrl's version. */
+const refreshSkill = () => {
+  if (skill.refresh().state !== "outdated") return
+  try {
+    skill.install()
+  } catch (err) {
+    console.error("[ctrl] couldn't refresh the read-session skill", err)
+  }
+}
+
+const updater = new Updater(app.getVersion(), {
+  onChange: push,
+  onAvailable: (version) =>
+    toast(
+      { icon: "download", message: `ctrl ${version} is available` },
+      { sticky: true, action: { label: "Update", run: () => void updater.install().catch(report) } },
+    ),
+  quit: () => app.quit(),
 })
 
 let themes: ThemeInfo = { builtin: [], custom: [] }
@@ -597,7 +670,22 @@ function registerIpc() {
   )
   ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => adapters.watch(sessionIDs))
   ipcMain.handle("adapter:retry", (_e, id: string) => adapters.retry(id))
-  ipcMain.handle("adapters:check", () => adapters.check())
+  ipcMain.handle("adapters:check", () => {
+    // Settings just opened: also pick up a skill installed or removed by hand.
+    skill.refresh()
+    push()
+    return adapters.check()
+  })
+
+  ipcMain.handle("opencode:recheck", () => recheckOpencode())
+  ipcMain.handle("skill:install", () => installSkill())
+  ipcMain.handle("skill:uninstall", () => {
+    skill.uninstall()
+    push()
+  })
+  ipcMain.handle("skill:referenced", () => suggestSkill())
+  ipcMain.handle("update:check", () => updater.check())
+  ipcMain.handle("update:install", () => updater.install().catch(report))
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
@@ -760,8 +848,21 @@ app.whenReady().then(async () => {
     if (store.data.settings.appearance === "system") applyTheme()
   })
   createWindow()
-  opencode.start().catch(report)
+  void recheckOpencode()
   search.start()
+  refreshSkill()
+  if (!store.data.ui.skillPrompted && skill.refresh().state === "missing") {
+    win!.webContents.once("did-finish-load", () =>
+      setTimeout(() => {
+        // One thing at a time: the setup screen comes first.
+        if (opencodeCheck.state !== "ok") return
+        store.setUi({ skillPrompted: true })
+        suggestSkill()
+      }, 3000),
+    )
+  }
+  // CTRL_UPDATES=1 is a test hook (README): dev runs don't update themselves otherwise.
+  if (app.isPackaged || process.env.CTRL_UPDATES === "1") updater.start()
 })
 
 app.on("second-instance", () => {
@@ -790,4 +891,5 @@ app.on("will-quit", () => {
   terminal.dispose()
   search.stop()
   adapters.stop()
+  updater.stop()
 })

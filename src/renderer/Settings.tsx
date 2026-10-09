@@ -10,7 +10,9 @@ import {
   type AdapterMode,
   type CliInfo,
   type Settings as SettingsData,
+  type SkillStatus,
   type SoundEvent,
+  type UpdateStatus,
   SOUND_EVENTS,
   SYSTEM_SOUNDS,
 } from "../shared/types"
@@ -159,6 +161,90 @@ function AdapterRow({ adapter, modes }: { adapter: AdapterInfo; modes: SettingsD
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+const SKILL_TEXT: Record<SkillStatus["state"], { dot: string; text: string }> = {
+  installed: { dot: "connected", text: "Installed in opencode's global skills folder" },
+  outdated: { dot: "pending", text: "Installed, an older version (refreshed at the next launch)" },
+  external: { dot: "connected", text: "Installed outside ctrl, so ctrl leaves it alone" },
+  missing: { dot: "disabled", text: "Not installed" },
+}
+
+/** The read-session skill: lets agents read sessions dropped onto the terminal. */
+function SkillRow({ skill }: { skill: SkillStatus }) {
+  const [busy, setBusy] = useState(false)
+  const { dot, text } = SKILL_TEXT[skill.state]
+  const act = (fn: () => Promise<void>) => {
+    setBusy(true)
+    void fn().finally(() => setBusy(false))
+  }
+  return (
+    <div className="setting">
+      <div className="mcp-name">
+        <span className={`mcp-dot ${dot}`} />
+        <div>
+          <div className="setting-title">read-session</div>
+          <div className="setting-desc">
+            Drag a session onto the terminal to reference it. With this skill, the agent can read that session and
+            pick up its context.
+          </div>
+          <div className={`setting-desc adapter-status ${dot}`} title={skill.path}>
+            {text}
+            {skill.state === "external" && skill.path ? ` (${skill.path.replace(/^\/Users\/[^/]+/, "~")})` : ""}
+          </div>
+        </div>
+      </div>
+      {skill.state === "missing" && (
+        <button className="btn primary" disabled={busy} onClick={() => act(window.ctrl.installSkill)}>
+          Install
+        </button>
+      )}
+      {(skill.state === "installed" || skill.state === "outdated") && (
+        <button className="btn" disabled={busy} onClick={() => act(window.ctrl.uninstallSkill)}>
+          Uninstall
+        </button>
+      )}
+    </div>
+  )
+}
+
+function updateText(update: UpdateStatus): string {
+  switch (update.state) {
+    case "idle":
+      return "Checks for updates every few hours"
+    case "checking":
+      return "Checking for updates…"
+    case "up-to-date":
+      return "You're on the latest version"
+    case "available":
+      return `Version ${update.version} is available`
+    case "downloading":
+      return `Downloading ${update.version}…`
+    default:
+      return update.detail
+  }
+}
+
+/** Version, and updates from GitHub Releases through gh. */
+function AboutRow({ version, update }: { version: string; update: UpdateStatus }) {
+  const busy = update.state === "checking" || update.state === "downloading"
+  return (
+    <div className="setting">
+      <div>
+        <div className="setting-title">ctrl {version}</div>
+        <div className="setting-desc">{updateText(update)}</div>
+      </div>
+      {update.state === "available" || update.state === "downloading" ? (
+        <button className="btn primary" disabled={busy} onClick={() => void window.ctrl.installUpdate()}>
+          {update.state === "downloading" ? "Updating…" : "Update and restart"}
+        </button>
+      ) : (
+        <button className="btn" disabled={busy} onClick={() => void window.ctrl.checkForUpdates()}>
+          Check for updates
+        </button>
+      )}
     </div>
   )
 }
@@ -397,6 +483,11 @@ export function Settings({
           ))}
         </div>
 
+        <h2>Agent skill</h2>
+        <div className="settings-card">
+          <SkillRow skill={state.skill} />
+        </div>
+
         <h2>Shortcuts</h2>
         <ShortcutSettings overrides={settings.shortcuts} />
 
@@ -451,6 +542,11 @@ export function Settings({
               </div>
             </>
           )}
+        </div>
+
+        <h2>About</h2>
+        <div className="settings-card">
+          <AboutRow version={state.version} update={state.update} />
         </div>
       </div>
     </div>

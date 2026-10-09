@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
+import { OpencodeSetup } from "./OpencodeSetup"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
 import { ResourcesPanel } from "./ResourcesPanel"
@@ -12,6 +13,10 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 import { Toasts } from "./Toast"
 
 const EMPTY: AppState = {
+  version: "",
+  opencode: { state: "checking" },
+  skill: { state: "missing" },
+  update: { state: "idle" },
   ui: {
     recentsCollapsed: false,
     archivedCollapsed: true,
@@ -159,16 +164,23 @@ export function App() {
       />
       <main className="main">
         <div className="main-drag" />
-        <TerminalView ref={terminal} dark={state.dark} fontSize={state.settings.fontSize} />
-        <ReferenceDrop
-          sessions={state.sessions}
-          currentSessionID={state.currentSessionID}
-          onReference={(text) => {
-            // Bracketed paste so the TUI inserts it as text (no submit, no @file search).
-            window.ctrl.ptyWrite(`\x1b[200~${text} \x1b[201~`)
-            terminal.current?.focus()
-          }}
-        />
+        {state.opencode.state === "ok" ? (
+          <>
+            <TerminalView ref={terminal} dark={state.dark} fontSize={state.settings.fontSize} />
+            <ReferenceDrop
+              sessions={state.sessions}
+              currentSessionID={state.currentSessionID}
+              onReference={(text, kind) => {
+                // Bracketed paste so the TUI inserts it as text (no submit, no @file search).
+                window.ctrl.ptyWrite(`\x1b[200~${text} \x1b[201~`)
+                terminal.current?.focus()
+                if (kind === "session") void window.ctrl.sessionReferenced()
+              }}
+            />
+          </>
+        ) : (
+          state.opencode.state !== "checking" && <OpencodeSetup check={state.opencode} />
+        )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (
           <SpaceSettings
@@ -178,7 +190,7 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && !settings && !editingSpace && (
+        {state.ui.resourcesOpen && !settings && !editingSpace && state.opencode.state === "ok" && (
           <ResourcesPanel
             state={state}
             onClose={() => {

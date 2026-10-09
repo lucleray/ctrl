@@ -72,6 +72,8 @@ export type UiState = {
   resourcesWidth: number
   /** Resources of the current session, or of every session in its space */
   resourcesScope: "session" | "space"
+  /** The "install the read-session skill" toast was shown at launch once already */
+  skillPrompted?: boolean
 }
 
 export type Appearance = "system" | "light" | "dark"
@@ -131,7 +133,39 @@ export type ThemeInfo = {
   cliDefault?: string
 }
 
+/** Installs opencode V2 (https://opencode.ai/v2/docs/) */
+export const OPENCODE_INSTALL = "curl -fsSL https://opencode.ai/v2/install | bash"
+export const OPENCODE_UPGRADE = "opencode upgrade"
+
+/** Whether a usable opencode CLI is installed; ctrl only starts the TUI once it's "ok". */
+export type OpencodeCheck =
+  | { state: "checking" }
+  | { state: "ok"; version: string; bin: string }
+  | { state: "missing"; detail?: string }
+  | { state: "outdated"; version: string; min: string; bin: string }
+
+/**
+ * The read-session skill, which lets agents read a session dropped onto the terminal.
+ * installed: ctrl's copy, current · outdated: ctrl's copy from another ctrl version (refreshed at launch) ·
+ * external: a copy ctrl doesn't manage (e.g. a dev symlink), left alone · missing: not installed
+ */
+export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
+
+/**
+ * ctrl updates from GitHub Releases through the gh CLI (the repo is private).
+ * unavailable: gh missing, logged out, or no access to the repo
+ */
+export type UpdateStatus =
+  | { state: "idle" | "checking" | "up-to-date" }
+  | { state: "available" | "downloading"; version: string }
+  | { state: "unavailable" | "error"; detail: string }
+
 export type AppState = {
+  /** ctrl's own version */
+  version: string
+  opencode: OpencodeCheck
+  skill: SkillStatus
+  update: UpdateStatus
   ui: UiState
   settings: Settings
   themes: ThemeInfo
@@ -263,7 +297,7 @@ export type Shortcut = CommandID
  */
 export type Toast = {
   id: string
-  icon: "archive" | "trash" | "alert"
+  icon: "archive" | "trash" | "alert" | "download" | "link" | "check"
   message: string
   /** Show an Undo button */
   undo: boolean
@@ -346,6 +380,15 @@ export type CtrlApi = {
   retryAdapter(id: string): Promise<void>
   /** Checks every live adapter's CLI, e.g. when Settings opens */
   checkAdapters(): Promise<void>
+  /** Looks for opencode again (after installing or upgrading it) */
+  recheckOpencode(): Promise<void>
+  installSkill(): Promise<void>
+  uninstallSkill(): Promise<void>
+  /** A session was referenced: suggests installing the skill if it's missing (once per launch) */
+  sessionReferenced(): Promise<void>
+  checkForUpdates(): Promise<void>
+  /** Downloads the latest release, replaces the app and relaunches */
+  installUpdate(): Promise<void>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

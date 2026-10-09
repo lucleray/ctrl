@@ -14,6 +14,7 @@ const paths: Record<string, string> = {
   reset: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5",
   trash: "M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6",
   check: "M20 6 9 17l-5-5",
+  download: "M12 3v12M7 10l5 5 5-5M5 21h14",
   plus: "M12 5v14M5 12h14",
   dots: "M5 12h.01M12 12h.01M19 12h.01",
   "panel-right": "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 3v18",

@@ -1,6 +1,7 @@
 import { OpenCode, type ModelInfo, type PermissionRequest, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import { homedir } from "node:os"
+import { findOpencode } from "./opencode-bin"
 import type { McpServerItem, ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
@@ -81,7 +82,9 @@ export class OpenCodeService {
     // Keep retrying: the service may still be starting, or come back later.
     while (true) {
       try {
-        const endpoint = await Service.ensure()
+        // The default command is `opencode` from PATH, which a Finder launch may not have.
+        const bin = findOpencode()
+        const endpoint = await Service.ensure(bin ? { command: [bin, "serve", "--service"] } : {})
         this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
         break
       } catch (err) {

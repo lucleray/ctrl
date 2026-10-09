@@ -3,6 +3,31 @@
 A Codex-style desktop shell around the opencode TUI: sidebar with **spaces** (named groups of sessions) and a
 single embedded opencode TUI on the right.
 
+## Install
+
+You need a Mac (Apple silicon or Intel), access to this repo, and:
+
+- **[GitHub CLI](https://cli.github.com)**, logged in: `brew install gh && gh auth login`
+- **[opencode V2](https://opencode.ai/v2/docs/)**: `curl -fsSL https://opencode.ai/v2/install | bash`
+  (ctrl shows these steps if it's missing or too old)
+
+Then install the latest release into `/Applications` and open it:
+
+```bash
+gh api repos/lucleray/ctrl/contents/install.sh -H "Accept: application/vnd.github.raw" | sh
+```
+
+- **Why gh:** the repo is private, so downloads need your GitHub login. Bonus: files gh downloads aren't
+  quarantined, so the app opens without a Gatekeeper prompt even though it isn't notarized.
+- **Downloaded the zip from the browser instead?** macOS will say it's damaged. Run
+  `xattr -dr com.apple.quarantine /Applications/ctrl.app` once.
+- **Updates:** ctrl checks for a new release every few hours (through gh) and offers it in a toast.
+  **Settings → About** has a manual check. The same one-liner also reinstalls.
+- **First launch:** ctrl offers to install the `read-session` skill (also in **Settings → Agent skill**),
+  so agents can read sessions you drag onto the terminal.
+- **Uninstall:** delete `/Applications/ctrl.app` and `~/Library/Application Support/ctrl`, plus
+  `~/.config/opencode/skills/read-session` if you installed the skill. Your opencode sessions aren't touched.
+
 ```text
 ┌─ Electron main ─────────────────────────────────────────┐
 │ @opencode/client ──► background service (sessions, SSE) │
@@ -103,15 +128,27 @@ adapter = { id, name, types[], live? }
 - **Same pipeline as search:** mentions are written in the same transaction as their message and deleted with it.
   Like search, only your prompts and the assistant's text are read, not tool output.
 
-## Run
+## Development
 
 ```bash
 npm install
 npm run dev     # vite + esbuild watch + electron
 npm start       # production build + electron
-npm run package       # build release/mac-*/ctrl.app (ad-hoc signed)
+npm run package       # build release/mac-*/ctrl.app for this Mac (ad-hoc signed)
 npm run install-app   # build + replace /Applications/ctrl.app (restarts it if running)
 ```
+
+**Releasing:** bump `version` in `package.json`, merge, then `npm run release` from a clean checkout of
+the merged commit. It builds arm64 and x64 apps (`scripts/package.mjs --arch all --zip`) and publishes them
+as a GitHub release, `ctrl-<version>-mac-<arch>.zip`. Installed apps find it within a few hours
+(`src/main/updater.ts`). Builds are local because macOS CI minutes are expensive on a private repo.
+
+**Signing:** builds are ad-hoc signed, not notarized (no Developer ID). That's fine as long as the app
+arrives through gh (install script, in-app updates), which doesn't quarantine it. Notarizing would need
+an Apple Developer account plus `codesign --options runtime` and `notarytool` in `scripts/package.mjs`.
+
+**opencode:** ctrl needs `MIN_OPENCODE` (`src/main/opencode-bin.ts`) or newer and shows a setup screen
+otherwise. Raise it when ctrl starts using a newer API.
 
 The packaged app loads your login shell's environment at startup (Finder
 launches get a bare PATH), and ships the bridge plugin unbundled in
@@ -135,8 +172,11 @@ so both can run side by side.
     but part of the model's context on every turn
 - ⌘1–9 jumps to the Nth visible session; hold ⌘ to see the numbers
 - Drag a session onto the terminal to reference it: ctrl pastes `@session[Title](ses_…)` and
-  the `read-session` skill (`skills/read-session`, symlinked into `~/.agents/skills`) lets the
-  agent read its context via `node digest.mjs <id>`
+  the `read-session` skill lets the agent read its context via `digest.sh <id>`. ctrl installs it
+  into `~/.config/opencode/skills` as a copy it manages (`src/main/skill.ts`), refreshed when ctrl's
+  version changes. Copies it didn't make (like a dev symlink of `skills/read-session` in
+  `~/.agents/skills`) are left alone. `digest.sh` runs with `node`, or with ctrl's own runtime when
+  node isn't installed
 - ⌘P search · ⌘N new chat · ⌘T new session in the current session's folder and space ·
   ⌘W archive the current session · ⌘, settings. All rebindable in **Settings → Shortcuts**
   (`src/shared/shortcuts.ts`)
@@ -181,6 +221,11 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
 (force it with `CTRL_HEADLESS=1`).
 
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir (created if missing)
+- `CTRL_OPENCODE=/path/to/opencode` use that binary (a missing path or a fake that prints an old
+  version shows the setup screen)
+- `CTRL_SKILLS_DIR=/tmp/skills` install the read-session skill there, ignoring the real skill folders
+- `CTRL_UPDATES=1` check for updates in dev runs too; `CTRL_UPDATE_NO_RELAUNCH=1` swaps the app on
+  update without reopening it
 - `CTRL_MCP_DIR=/tmp/proj` read MCP statuses for that folder instead of `~` (put a broken server in
   its `opencode.json` to test the failing-MCP toast)
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load

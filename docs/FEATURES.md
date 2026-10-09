@@ -69,7 +69,7 @@ where it lives.
   `src/renderer/TerminalView.tsx`)
 - ⌘-click links to open them in the browser, including URLs wrapped across lines (`src/renderer/wrapped-links.ts`)
 - Drag a session onto the terminal to paste `@session[Title](ses_…)`; the `read-session` skill lets the
-  agent read it (`src/renderer/ReferenceDrop.tsx`, `skills/read-session`)
+  agent read it, with or without node installed (`src/renderer/ReferenceDrop.tsx`, `skills/read-session`)
 - Drop files from Finder onto the terminal to paste their escaped paths (`src/renderer/ReferenceDrop.tsx`)
 - Text size: stepper in settings, ⌘+ / ⌘− / ⌘0
 - Joined emoji (🏄‍♂️, 👩‍💻, flags) render as one glyph with the right width (`@xterm/addon-unicode-graphemes`)
@@ -88,6 +88,8 @@ where it lives.
 - Sounds when a session needs you / fails / finishes: on/off, a macOS system sound or your own audio file per
   event (or None), preview button, optional "also when ctrl is focused". One sound per burst (most urgent wins),
   played with `afplay`, and it replaces the system notification sound (`src/main/sound.ts`)
+- Agent skill: install / uninstall read-session, with its status
+- About: ctrl's version, update status, Check for updates / Update and restart
 - Resizable sidebar (200–520px, double-click edge to reset), width saved (`src/renderer/ResizeHandle.tsx`)
 
 ## Feedback
@@ -96,10 +98,24 @@ where it lives.
   (`src/renderer/Toast.tsx`)
 - Sidebar banner only when ctrl can't reach opencode / the TUI, or an action failed
 
+## Install & updates
+
+- Install with one command through gh: latest release → `/Applications`, not quarantined (`install.sh`)
+- Setup screen instead of the terminal when opencode is missing or older than `MIN_OPENCODE`, with the
+  install / upgrade command to copy; checks again on Check again or when the window regains focus
+  (`src/renderer/OpencodeSetup.tsx`, `src/main/opencode-bin.ts`)
+- Updates from GitHub Releases via gh: checked at launch and every 6h, sticky toast with Update, which
+  downloads, swaps the app bundle once ctrl quits and relaunches. Settings → About shows the version
+  and a manual check (`src/main/updater.ts`)
+- read-session skill: offered in a toast at first launch and when a session is referenced without it,
+  installed into `~/.config/opencode/skills` from Settings → Agent skill (install / uninstall), refreshed
+  when ctrl's copy changes, and copies ctrl didn't make are left alone (`src/main/skill.ts`)
+- arm64 and x64 builds, published with `npm run release` (`scripts/package.mjs`, `scripts/release.mjs`)
+
 ## App & dev
 
 - App name **ctrl** and dot-matrix `c_` icon (`build/icon.svg`, `scripts/icon.mjs`)
-- Packaged macOS app: `npm run install-app`; loads the login shell env at startup (`scripts/package.mjs`,
-  `src/main/shell-env.ts`)
+- Packaged macOS app: `npm run install-app`; loads the login shell env at startup, with common bin folders
+  added to PATH if that fails (`scripts/package.mjs`, `src/main/shell-env.ts`)
 - Dev runs use a separate `ctrl-dev` state dir, so dev and installed app run side by side
 - Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see README)

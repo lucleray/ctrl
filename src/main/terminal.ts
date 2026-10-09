@@ -1,20 +1,10 @@
-import { existsSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
 import { createRequire } from "node:module"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { IPty } from "node-pty"
+import { findOpencode } from "./opencode-bin"
 
 const pty: typeof import("node-pty") = createRequire(import.meta.url)("node-pty")
-
-function findOpencode() {
-  const candidates = [
-    join(homedir(), ".opencode/bin/opencode"),
-    "/opt/homebrew/bin/opencode",
-    "/usr/local/bin/opencode",
-  ]
-  return candidates.find((p) => existsSync(p))
-}
 
 const RESTART_WINDOW_MS = 30_000
 const MAX_QUICK_RESTARTS = 3

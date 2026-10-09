@@ -23,7 +23,7 @@ const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files")
 export function ReferenceDrop(props: {
   sessions: SessionItem[]
   currentSessionID: string | null
-  onReference(text: string): void
+  onReference(text: string, kind: "session" | "files"): void
 }) {
   const [dragging, setDragging] = useState<"session" | "files" | null>(null)
   const [over, setOver] = useState(false)
@@ -89,12 +89,12 @@ export function ReferenceDrop(props: {
         e.preventDefault()
         if (dragging === "files") {
           const paths = [...e.dataTransfer.files].map((f) => window.ctrl.pathForFile(f)).filter(Boolean)
-          if (paths.length) props.onReference(paths.map(escapePath).join(" "))
+          if (paths.length) props.onReference(paths.map(escapePath).join(" "), "files")
           return
         }
         const id = e.dataTransfer.getData(SESSION_DRAG)
         const session = props.sessions.find((s) => s.id === id)
-        if (session && id !== props.currentSessionID) props.onReference(sessionMention(session))
+        if (session && id !== props.currentSessionID) props.onReference(sessionMention(session), "session")
       }}
     >
       <div className="reference-card">
