@@ -175,16 +175,16 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
+        {state.ui.resourcesOpen && (
+          <ResourcesPanel
+            state={state}
+            onClose={() => {
+              void window.ctrl.setUi({ resourcesOpen: false })
+              terminal.current?.focus()
+            }}
+          />
+        )}
       </main>
-      {state.ui.resourcesOpen && (
-        <ResourcesPanel
-          state={state}
-          onClose={() => {
-            void window.ctrl.setUi({ resourcesOpen: false })
-            terminal.current?.focus()
-          }}
-        />
-      )}
       {palette && (
         <Palette state={state} onClose={closePalette} onOpen={open} onNew={create} onRevealSpace={revealSpace} />
       )}

@@ -3,7 +3,6 @@ import { RESOURCE_TYPES, resourceType } from "../shared/resources"
 import type { AppState, ResourceItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
-import { usePanelWidth } from "./ResizeHandle"
 
 const PAGE_SIZE = 8
 
@@ -29,13 +28,6 @@ function useResources(sessionIDs: string[]) {
 }
 
 export function ResourcesPanel({ state, onClose }: { state: AppState; onClose(): void }) {
-  const { width, handle } = usePanelWidth(state.ui.resourcesWidth, {
-    key: "resourcesWidth",
-    min: 220,
-    max: 560,
-    initial: 300,
-    edge: "left",
-  })
   const current = state.currentSessionID
   const space = current ? state.spaces.find((s) => s.id === state.assignments[current]) : undefined
   const scope = space ? state.ui.resourcesScope : "session"
@@ -56,9 +48,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
   )
 
   return (
-    <aside className="resources" style={{ width }}>
-      {handle}
-      <div className="sidebar-drag" />
+    <aside className="resources">
       <div className="resources-header">
         <span>Resources</span>
         <button className="icon-btn" title="Close" onClick={onClose}>

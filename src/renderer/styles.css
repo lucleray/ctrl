@@ -1490,28 +1490,41 @@ body.resizing .terminal-wrap {
 
 /* ---------- resources panel ---------- */
 
+/* A floating card over the terminal's top-right corner; the terminal keeps its full width. */
 .resources {
-  position: relative;
-  flex-shrink: 0;
-  background: var(--sidebar-bg);
-  border-left: 1px solid var(--border);
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  width: 320px;
+  max-height: calc(100% - 28px);
   display: flex;
   flex-direction: column;
-  padding: 0 10px 10px;
+  padding: 10px 8px 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16), 0 1px 4px rgba(0, 0, 0, 0.06);
+  -webkit-app-region: no-drag;
 }
 
-.resize-handle.left {
-  right: auto;
-  left: -4px;
+.resources .scroll {
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.resources .section {
+  margin-top: 12px;
 }
 
 .resources-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 4px 6px 10px 10px;
+  padding: 2px 4px 8px 10px;
 }
 
 .icon-btn.on {
@@ -1555,7 +1568,7 @@ body.resizing .terminal-wrap {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.45;
-  padding: 14px 10px;
+  padding: 10px 10px 6px;
 }
 
 .row.resource {
