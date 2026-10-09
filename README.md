@@ -50,7 +50,7 @@ Hold ⌘ to see a number next to each session, then press it.
 
 ## 📦 Install
 
-You need a Mac and [opencode V2](https://opencode.ai/v2/docs/):
+You need a Mac and [opencode V2](https://opencode.ai/v2/docs/), version 2.0.25 or newer:
 
 ```bash
 curl -fsSL https://opencode.ai/v2/install | bash

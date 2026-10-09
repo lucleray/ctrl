@@ -18,7 +18,8 @@ arrives through `install.sh` (curl) or the in-app updater, which don't quarantin
 an Apple Developer account plus `codesign --options runtime` and `notarytool` in `scripts/package.mjs`.
 
 **opencode:** ctrl needs `MIN_OPENCODE` (`src/main/opencode-bin.ts`) or newer and shows a setup screen
-otherwise. Raise it when ctrl starts using a newer API.
+otherwise. Raise it when ctrl starts using a newer API, and update the version in the README install section
+(it's the version ctrl was tested on, not a proven floor).
 
 The packaged app loads your login shell's environment at startup (Finder
 launches get a bare PATH), and ships the bridge plugin unbundled in
