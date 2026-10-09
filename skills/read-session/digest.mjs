@@ -7,12 +7,12 @@
 // Reads through `opencode api`, which reuses the TUI's service discovery + auth.
 // Its stdout gets truncated when piped, so responses go through a temp file.
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 
 const [id, flag, flagValue] = process.argv.slice(2)
-if (!id?.startsWith("ses_")) {
+if (!/^ses_[A-Za-z0-9]+$/.test(id ?? "")) {
   console.error("usage: digest.mjs <ses_…> [--turn N]")
   process.exit(1)
 }
@@ -29,7 +29,13 @@ const opencode =
 const dir = mkdtempSync(join(tmpdir(), "read-session-"))
 function api(path) {
   const file = join(dir, "out.json")
-  execFileSync("/bin/sh", ["-c", `'${opencode}' api get '${path}' > '${file}'`], { stdio: ["ignore", "ignore", "inherit"] })
+  // A file fd as stdout, not a pipe, so the output isn't truncated.
+  const fd = openSync(file, "w")
+  try {
+    execFileSync(opencode, ["api", "get", path], { stdio: ["ignore", fd, "inherit"] })
+  } finally {
+    closeSync(fd)
+  }
   const body = JSON.parse(readFileSync(file, "utf8"))
   return body.data ?? body
 }

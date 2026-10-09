@@ -1,3 +1,5 @@
+import { randomBytes, timingSafeEqual } from "node:crypto"
+import type { IncomingMessage } from "node:http"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { WebSocketServer, type WebSocket } from "ws"
@@ -8,6 +10,9 @@ const pty: typeof import("node-pty") = createRequire(import.meta.url)("node-pty"
 
 const RESTART_WINDOW_MS = 30_000
 const MAX_QUICK_RESTARTS = 3
+const SESSION_ID = /^ses_[A-Za-z0-9]+$/
+
+const isSessionID = (id: unknown): id is string => typeof id === "string" && SESSION_ID.test(id)
 
 type Events = {
   onData(data: string): void
@@ -42,10 +47,21 @@ export class Terminal {
   ) {}
 
   async init() {
-    this.wss = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+    // Only the TUI we spawn gets the token (via env), so web pages and other
+    // local processes can't drive or impersonate the bridge.
+    const token = randomBytes(32).toString("hex")
+    const expected = Buffer.from(`/?token=${token}`)
+    this.wss = new WebSocketServer({
+      host: "127.0.0.1",
+      port: 0,
+      verifyClient: ({ req }: { req: IncomingMessage }) => {
+        const got = Buffer.from(req.url ?? "")
+        return got.length === expected.length && timingSafeEqual(got, expected)
+      },
+    })
     await new Promise<void>((resolve) => this.wss!.once("listening", () => resolve()))
     const addr = this.wss.address()
-    if (typeof addr === "object" && addr) this.bridgeUrl = `ws://127.0.0.1:${addr.port}`
+    if (typeof addr === "object" && addr) this.bridgeUrl = `ws://127.0.0.1:${addr.port}/?token=${token}`
 
     this.wss.on("connection", (ws) => {
       this.bridge?.close()
@@ -63,6 +79,7 @@ export class Terminal {
           this.pendingSession = null
         }
         if (msg.type === "route") {
+          if (msg.sessionID != null && !isSessionID(msg.sessionID)) return
           this.lastRoute = msg.sessionID ?? null
           this.events.onRoute(this.lastRoute)
           if (this.lastRoute === null) this.flushPrefill()
@@ -84,7 +101,7 @@ export class Terminal {
 
   private spawn(sessionID?: string) {
     const bin = findOpencode()
-    const args = sessionID ? ["-s", sessionID] : []
+    const args = isSessionID(sessionID) ? ["-s", sessionID] : []
     const env = {
       ...process.env,
       TERM: "xterm-256color",
@@ -102,7 +119,7 @@ export class Terminal {
     // Fall back to a login shell so PATH is resolved when launched from Finder.
     const [file, argv] = bin
       ? [bin, args]
-      : [process.env.SHELL || "/bin/zsh", ["-lc", ["exec opencode", ...args].join(" ")]]
+      : [process.env.SHELL || "/bin/zsh", ["-lc", 'exec opencode "$@"', "opencode", ...args]]
 
     const proc = pty.spawn(file, argv, {
       name: "xterm-256color",
