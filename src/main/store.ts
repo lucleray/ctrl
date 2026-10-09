@@ -6,7 +6,7 @@ const DEFAULT_UI: UiState = {
   recentsCollapsed: false,
   archivedCollapsed: true,
   sidebarWidth: 280,
-  resourcesOpen: false,
+  resourcesOpen: true,
   resourcesWidth: 300,
   resourcesScope: "session",
 }

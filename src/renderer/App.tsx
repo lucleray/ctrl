@@ -16,7 +16,7 @@ const EMPTY: AppState = {
     recentsCollapsed: false,
     archivedCollapsed: true,
     sidebarWidth: 280,
-    resourcesOpen: false,
+    resourcesOpen: true,
     resourcesWidth: 300,
     resourcesScope: "session",
   },
