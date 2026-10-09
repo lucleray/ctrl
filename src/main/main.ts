@@ -227,7 +227,8 @@ const fxTerms: FxTerminals = new FxTerminals({
     fx.rebuild()
     saveOpen()
   },
-  onStatus: () => fx.rebuild(),
+  // A status report (turn done, waiting on you) means the session's files changed too.
+  onStatus: (sessionID) => fx.readSoon(rawID(sessionID)),
   onExit: (_termID, sessionID) => {
     if (!sessionID) return
     // fx is gone: flush a rename that had to wait, and refresh the owner.

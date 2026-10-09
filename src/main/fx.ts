@@ -34,6 +34,12 @@ export function checkFx(): Promise<FxCheck> {
 
 /** Coalesce a burst of writes to one session (events, session.json, usage) into one re-read. */
 const READ_DEBOUNCE_MS = 100
+/**
+ * fx keeps events.jsonl open and appends to it, and macOS only reports those writes once the file
+ * is closed (when fx quits). So sessions with a live fx process are checked on a timer instead:
+ * one stat each, and only those few sessions.
+ */
+const POLL_MS = 2000
 /** Tail window for finding the last event; doubles until it holds the start of the last line. */
 const TAIL_START = 16 * 1024
 const TAIL_MAX = 4 * 1024 * 1024
@@ -56,6 +62,8 @@ export type FxSession = {
   turnEnded?: number
   /** pid in owner.live, when that process is alive */
   ownerPid?: number
+  /** events.jsonl size as of the last read, to notice appends while polling */
+  size: number
 }
 
 /** Live status of a session open in ctrl, from OSC 7501 reports (see fx-terminals.ts). */
@@ -95,6 +103,7 @@ export class FxSessions {
   private all = new Map<string, FxSession>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private watcher?: FSWatcher
+  private poller?: ReturnType<typeof setInterval>
   private rebuildQueued = false
 
   constructor(private deps: Deps) {}
@@ -115,6 +124,20 @@ export class FxSessions {
     }
     this.rebuild()
     this.watch()
+    this.poller ??= setInterval(() => void this.poll(), POLL_MS)
+  }
+
+  /** Re-reads sessions with a live fx process whose log grew, or whose process is gone. */
+  private async poll() {
+    for (const s of this.all.values()) {
+      if (s.ownerPid === undefined) continue
+      if (!alive(s.ownerPid)) {
+        this.readSoon(s.id)
+        continue
+      }
+      const size = await stat(join(SESSIONS_DIR, s.id, "events.jsonl")).then((st) => st.size, () => 0)
+      if (size !== s.size) this.readSoon(s.id)
+    }
   }
 
   private watch() {
@@ -166,6 +189,7 @@ export class FxSessions {
         turn: tail?.turn ?? "none",
         turnEnded: tail?.ended,
         ownerPid,
+        size: events?.size ?? 0,
       }
       this.all.set(id, session)
       if (ownerPid && this.deps.isOurPid(ownerPid)) this.deps.onOwner(fxID(id), ownerPid)
@@ -253,6 +277,7 @@ export class FxSessions {
 
   stop() {
     this.watcher?.close()
+    clearInterval(this.poller)
     for (const t of this.timers.values()) clearTimeout(t)
   }
 }

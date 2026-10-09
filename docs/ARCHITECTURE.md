@@ -64,6 +64,9 @@ fx process in a pty ── OSC 7501 status reports ─────────�
 
 - **List:** one scan on launch, then a recursive fs watcher re-reads just the session folder that changed.
   Sessions fx creates but never uses stay hidden.
+- **Polling live sessions:** fx keeps `events.jsonl` open while it runs, and macOS only reports those
+  appends once the file is closed. So sessions with a live fx process (`owner.live`) are also checked on a
+  timer, one stat each (2s in main, 5s in the indexer), and re-read when their log grew.
 - **Status:** OSC 7501 (Program Status Protocol) reports from the processes ctrl runs give running, needs you
   and failed. Otherwise the last line of `events.jsonl` says whether a turn is in progress. Read state is
   ctrl's own (`viewed` in `state.json`); turns that ended before ctrl first saw fx count as read.

@@ -43,6 +43,8 @@ const REEXTRACT_CHUNK = 500
 
 /** fx: bytes read per chunk, so a huge first pass doesn't hold everything in memory. */
 const FX_CHUNK = 4 * 1024 * 1024
+/** fx: how often sessions with a live fx process are checked for new lines (see FxIndexer.poll) */
+const FX_POLL_MS = 5000
 
 const post = (msg: IndexerMessage) => process.parentPort.postMessage(msg)
 const log = (...args: unknown[]) => console.log("[ctrl indexer]", ...args)
@@ -419,6 +421,8 @@ type FxEvent = { seq?: number; timestamp_ms?: number; event?: Record<string, { t
 /** fx sessions ("fx:<id>"), straight from ~/.fx/sessions. */
 class FxIndexer extends Queue {
   private stmt: Record<string, StatementSync>
+  /** Sessions with a live fx process (owner.live), and their log size as of the last pass */
+  private live = new Map<string, { pid: number; size: number }>()
 
   constructor(db: DatabaseSync) {
     super(db)
@@ -434,7 +438,24 @@ class FxIndexer extends Queue {
     while ((await checkFx()).state !== "ok") await new Promise((r) => setTimeout(r, 60_000))
     // Watch first, then reconcile, so nothing that happens in between is missed.
     this.watch()
+    setInterval(() => void this.poll(), FX_POLL_MS)
     await this.reconcile().catch((err) => log("fx reconcile failed", err))
+  }
+
+  /**
+   * fx keeps events.jsonl open and appends to it, and macOS only reports those writes once the file is
+   * closed (when fx quits). So the watcher misses turns while fx runs: check those sessions on a timer.
+   */
+  private async poll() {
+    for (const [id, { pid, size }] of this.live) {
+      if (!alive(pid)) {
+        this.live.delete(id)
+        this.debounce(id)
+        continue
+      }
+      const now = await stat(join(SESSIONS_DIR, id.slice(FX_PREFIX.length), "events.jsonl")).then((s) => s.size, () => 0)
+      if (now !== size) this.debounce(id)
+    }
   }
 
   private watch() {
@@ -473,6 +494,9 @@ class FxIndexer extends Queue {
       return
     }
     if (meta.subagent_child) return
+    const owner = await readFile(join(dir, "owner.live"), "utf8").then((t) => JSON.parse(t) as { pid?: unknown }, () => undefined)
+    if (typeof owner?.pid === "number" && alive(owner.pid)) this.live.set(id, { pid: owner.pid, size })
+    else this.live.delete(id)
     this.base.upsertSession.run(id, meta.title || "New session", meta.workspace_root ?? "", meta.updated_at_ms ?? 0)
     let offset = (this.stmt.session.get(id) as { offset: number }).offset
     let rebuilt = false
@@ -521,6 +545,15 @@ class FxIndexer extends Queue {
       await fh.close()
     }
     if (resources || rebuilt) post({ type: "resources", sessionIDs: [id] })
+  }
+}
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM"
   }
 }
 
