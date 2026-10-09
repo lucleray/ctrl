@@ -4,6 +4,7 @@ import { FONT_SIZE, type AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
+import { ResourcesPanel } from "./ResourcesPanel"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
@@ -11,7 +12,14 @@ import { TerminalView, type TerminalHandle } from "./TerminalView"
 import { Toasts } from "./Toast"
 
 const EMPTY: AppState = {
-  ui: { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 },
+  ui: {
+    recentsCollapsed: false,
+    archivedCollapsed: true,
+    sidebarWidth: 280,
+    resourcesOpen: false,
+    resourcesWidth: 300,
+    resourcesScope: "session",
+  },
   settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false, shortcuts: {} },
   themes: { builtin: [], custom: [] },
   dark: false,
@@ -139,6 +147,7 @@ export function App() {
           setSpaceSettingsID(null)
           setSettings((v) => !v)
         }}
+        onToggleResources={() => void window.ctrl.setUi({ resourcesOpen: !state.ui.resourcesOpen })}
       />
       <main className="main">
         <div className="main-drag" />
@@ -167,6 +176,15 @@ export function App() {
           />
         )}
       </main>
+      {state.ui.resourcesOpen && (
+        <ResourcesPanel
+          state={state}
+          onClose={() => {
+            void window.ctrl.setUi({ resourcesOpen: false })
+            terminal.current?.focus()
+          }}
+        />
+      )}
       {palette && (
         <Palette state={state} onClose={closePalette} onOpen={open} onNew={create} onRevealSpace={revealSpace} />
       )}

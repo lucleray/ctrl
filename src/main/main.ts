@@ -119,7 +119,9 @@ const opencode = new OpenCodeService(() => {
   push()
 })
 
-const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"))
+const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) =>
+  send("resources:changed", ids),
+)
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -406,6 +408,11 @@ const runCommand = (id: CommandID) => {
     return
   }
   if (id === "new-session-here") void newSessionHere().catch(report)
+  if (id === "toggle-resources") {
+    store.setUi({ resourcesOpen: !store.data.ui.resourcesOpen })
+    push()
+    return
+  }
   // The renderer closes overlays and handles palette/settings/new-chat.
   send("shortcut", id)
 }
@@ -534,6 +541,7 @@ function registerIpc() {
   ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => search.search(query))
+  ipcMain.handle("resources:list", (_e, sessionIDs: string[]) => search.resources(sessionIDs))
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))

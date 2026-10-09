@@ -67,6 +67,11 @@ export type UiState = {
   recentsCollapsed: boolean
   archivedCollapsed: boolean
   sidebarWidth: number
+  /** Right-hand resources panel */
+  resourcesOpen: boolean
+  resourcesWidth: number
+  /** Resources of the current session, or of every session in its space */
+  resourcesScope: "session" | "space"
 }
 
 export type Appearance = "system" | "light" | "dark"
@@ -129,10 +134,30 @@ export type SearchHit = {
 
 export type IndexStatus = { indexing: boolean; done: number; total: number }
 
+/** A resource (see src/shared/resources.ts) and how it was mentioned in the queried sessions. */
+export type ResourceItem = {
+  /** Canonical key, e.g. "github-pr:vercel/infra#36612" */
+  id: string
+  type: string
+  url: string
+  data: Record<string, string>
+  mentions: number
+  /** How many of the queried sessions mention it */
+  sessions: number
+  first: number
+  last: number
+  /** You pasted it in a prompt (vs only the assistant mentioning it) */
+  sharedByYou: boolean
+}
+
 export type SearchResult = { hits: SearchHit[]; status: IndexStatus }
 
 /** Messages from the indexer utility process to main. */
-export type IndexerMessage = { type: "ready" } | { type: "status"; status: IndexStatus }
+export type IndexerMessage =
+  | { type: "ready" }
+  | { type: "status"; status: IndexStatus }
+  /** Resources changed in these sessions; null = possibly all of them (re-extraction) */
+  | { type: "resources"; sessionIDs: string[] | null }
 
 export type Shortcut = CommandID
 
@@ -208,6 +233,10 @@ export type CtrlApi = {
   openSession(sessionID: string): Promise<void>
   /** Full-text search over session messages */
   search(query: string): Promise<SearchResult>
+  /** Resources mentioned in these sessions, most recently mentioned first */
+  listResources(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** Resources changed in these sessions; null = possibly all */
+  onResourcesChanged(cb: (sessionIDs: string[] | null) => void): () => void
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

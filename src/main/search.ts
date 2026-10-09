@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess } from "electron"
 import type { DatabaseSync } from "node:sqlite"
-import type { IndexerMessage, IndexStatus, SearchResult } from "../shared/types"
-import { openSearchDb, SearchReader } from "./search-db"
+import type { IndexerMessage, IndexStatus, ResourceItem, SearchResult } from "../shared/types"
+import { openSearchDb, ResourceReader, SearchReader } from "./search-db"
 
 const HIT_LIMIT = 30
 
@@ -14,12 +14,15 @@ export class Search {
   private child?: UtilityProcess
   private db?: DatabaseSync
   private reader?: SearchReader
+  private resourceReader?: ResourceReader
   private status: IndexStatus = { indexing: false, done: 0, total: 0 }
   private stopped = false
 
   constructor(
     private entry: string,
     private dbPath: string,
+    /** Resources changed in these sessions (null: possibly all) */
+    private onResourcesChanged: (sessionIDs: string[] | null) => void,
   ) {}
 
   start() {
@@ -33,8 +36,12 @@ export class Search {
       if (msg.type === "ready" && !this.reader) {
         this.db = openSearchDb(this.dbPath, { readOnly: true })
         this.reader = new SearchReader(this.db)
+        this.resourceReader = new ResourceReader(this.db)
+        this.onResourcesChanged(null)
       } else if (msg.type === "status") {
         this.status = msg.status
+      } else if (msg.type === "resources") {
+        this.onResourcesChanged(msg.sessionIDs)
       }
     })
     child.on("exit", (code) => {
@@ -47,6 +54,10 @@ export class Search {
 
   search(query: string): SearchResult {
     return { hits: this.reader?.search(query, HIT_LIMIT) ?? [], status: this.status }
+  }
+
+  resources(sessionIDs: string[]): ResourceItem[] {
+    return this.resourceReader?.list(sessionIDs) ?? []
   }
 
   stop() {

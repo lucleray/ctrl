@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite"
-import type { SearchHit } from "../shared/types"
+import type { ResourceItem, SearchHit } from "../shared/types"
 
 // Bump to drop and rebuild the index (schema or extraction changes).
 export const INDEX_VERSION = 1
@@ -26,6 +26,9 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
       DROP TABLE IF EXISTS messages_fts;
       DROP TABLE IF EXISTS messages;
       DROP TABLE IF EXISTS sessions;
+      DROP TABLE IF EXISTS resource_mentions;
+      DROP TABLE IF EXISTS resources;
+      DROP TABLE IF EXISTS meta;
     `)
   }
   db.exec(`
@@ -61,6 +64,24 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
       INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
       INSERT INTO messages_fts(rowid, body) VALUES (new.rowid, new.body);
     END;
+    -- One row per canonical resource (see src/shared/resources.ts). data: fields parsed from its URLs.
+    CREATE TABLE IF NOT EXISTS resources (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      url TEXT NOT NULL,
+      data TEXT NOT NULL
+    );
+    -- Which messages mention which resource; the session and time are copied in so scope queries skip messages.
+    CREATE TABLE IF NOT EXISTS resource_mentions (
+      message_id TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created INTEGER NOT NULL,
+      PRIMARY KEY (message_id, resource_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS mentions_session ON resource_mentions(session_id);
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     PRAGMA user_version = ${INDEX_VERSION};
   `)
   return db
@@ -139,5 +160,53 @@ export class SearchReader {
         } satisfies SearchHit,
       ]
     })
+  }
+}
+
+/** Most resources a panel query returns; newest mentions first. */
+const RESOURCE_LIMIT = 500
+
+type ResourceRow = {
+  id: string
+  type: string
+  url: string
+  data: string
+  mentions: number
+  sessions: number
+  first: number
+  last: number
+  by_user: number
+}
+
+export class ResourceReader {
+  private query
+
+  constructor(db: DatabaseSync) {
+    this.query = db.prepare(`
+      SELECT r.id, r.type, r.url, r.data,
+        count(*) AS mentions, count(DISTINCT m.session_id) AS sessions,
+        min(m.created) AS first, max(m.created) AS last, max(m.role = 'user') AS by_user
+      FROM resource_mentions m JOIN resources r ON r.id = m.resource_id
+      WHERE m.session_id IN (SELECT value FROM json_each(?))
+      GROUP BY r.id
+      ORDER BY last DESC
+      LIMIT ${RESOURCE_LIMIT}
+    `)
+  }
+
+  /** Resources mentioned in any of these sessions. Cost grows with their mentions, not with the whole index. */
+  list(sessionIDs: string[]): ResourceItem[] {
+    if (!sessionIDs.length) return []
+    return (this.query.all(JSON.stringify(sessionIDs)) as ResourceRow[]).map((r) => ({
+      id: r.id,
+      type: r.type,
+      url: r.url,
+      data: JSON.parse(r.data),
+      mentions: r.mentions,
+      sessions: r.sessions,
+      first: r.first,
+      last: r.last,
+      sharedByYou: r.by_user === 1,
+    }))
   }
 }

@@ -17,13 +17,14 @@ type Props = {
   onNew(spaceID: string | null): void
   onSearch(): void
   onSettings(): void
+  onToggleResources(): void
   /** sessionID → ⌘ number while ⌘ is held */
   hints: Map<string, number> | null
 }
 
 type Reorder = { id: string; pos: "before" | "after" }
 
-export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: Props) {
+export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onToggleResources }: Props) {
   const [creating, setCreating] = useState(false)
   const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
@@ -178,6 +179,13 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings }: P
           </button>
           <button className="icon-btn" title={withShortcut("Search", shortcutLabel("palette", state.settings.shortcuts))} onClick={onSearch}>
             <Icon name="search" />
+          </button>
+          <button
+            className={`icon-btn ${state.ui.resourcesOpen ? "on" : ""}`}
+            title={withShortcut("Resources", shortcutLabel("toggle-resources", state.settings.shortcuts))}
+            onClick={onToggleResources}
+          >
+            <Icon name="panel-right" />
           </button>
         </span>
       </div>

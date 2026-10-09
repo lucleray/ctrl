@@ -1487,3 +1487,103 @@ body.resizing .terminal-wrap {
 .toast-btn.primary:hover {
   opacity: 0.88;
 }
+
+/* ---------- resources panel ---------- */
+
+.resources {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px 10px;
+}
+
+.resize-handle.left {
+  right: auto;
+  left: -4px;
+}
+
+.resources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 6px 10px 10px;
+}
+
+.icon-btn.on {
+  background: var(--active);
+  color: var(--text);
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin: 0 4px 4px;
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.segmented button {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+}
+
+.segmented button.on {
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.resources .section-header .count {
+  font-size: 11.5px;
+}
+
+.resources .empty {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 14px 10px;
+}
+
+.row.resource {
+  height: auto;
+  min-height: 30px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.resource-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.resource-subtitle {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row.resource:hover .row-action {
+  display: inline-flex;
+}
+
+.row.resource:hover .meta {
+  display: none;
+}

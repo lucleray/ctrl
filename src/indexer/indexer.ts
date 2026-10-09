@@ -10,6 +10,7 @@
 import { OpenCode, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import type { DatabaseSync, StatementSync } from "node:sqlite"
+import { extractResources, RESOURCES_VERSION } from "../shared/resources"
 import type { IndexerMessage, IndexStatus } from "../shared/types"
 import { MAX_BODY, openSearchDb } from "../main/search-db"
 
@@ -28,6 +29,8 @@ const PAGE = 100
 const MARGIN_MS = 60_000
 /** Coalesce bursts of events for one session (a prompt followed quickly by its turn ending). */
 const DEBOUNCE_MS = 1500
+/** Messages per transaction when re-extracting resources; small enough to keep live indexing responsive. */
+const REEXTRACT_CHUNK = 500
 
 const post = (msg: IndexerMessage) => process.parentPort.postMessage(msg)
 const log = (...args: unknown[]) => console.log("[ctrl indexer]", ...args)
@@ -62,6 +65,18 @@ class Indexer {
         ON CONFLICT(id) DO UPDATE SET body = excluded.body WHERE body != excluded.body
       `),
       markIndexed: db.prepare("UPDATE sessions SET indexed_updated = ?, watermark = ? WHERE id = ?"),
+      upsertResource: db.prepare(`
+        INSERT INTO resources (id, type, url, data) VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET url = excluded.url, data = json_patch(resources.data, excluded.data)
+      `),
+      insertMention: db.prepare("INSERT OR IGNORE INTO resource_mentions VALUES (?, ?, ?, ?, ?)"),
+      deleteMessageMentions: db.prepare("DELETE FROM resource_mentions WHERE message_id = ?"),
+      deleteSessionMentions: db.prepare("DELETE FROM resource_mentions WHERE session_id = ?"),
+      getMeta: db.prepare("SELECT value FROM meta WHERE key = ?"),
+      setMeta: db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
+      messagesAfter: db.prepare(
+        "SELECT rowid, id, session_id, role, created, body FROM messages WHERE rowid > ? ORDER BY rowid LIMIT ?",
+      ),
       resetWatermark: db.prepare("UPDATE sessions SET watermark = 0, indexed_updated = NULL WHERE id = ?"),
     }
   }
@@ -77,7 +92,55 @@ class Indexer {
         await new Promise((r) => setTimeout(r, 3000))
       }
     }
+    void this.reextract().catch((err) => log("resource re-extraction failed", err))
     void this.listen()
+  }
+
+  /**
+   * When the resource types changed (RESOURCES_VERSION), rebuild resources from the stored message text.
+   * Local only: no refetching. Chunked, so live indexing keeps going in between.
+   */
+  private async reextract() {
+    const row = this.stmt.getMeta.get("resources_version") as { value: string } | undefined
+    if (row?.value === String(RESOURCES_VERSION)) return
+    const started = Date.now()
+    this.tx(() => {
+      this.db.exec("DELETE FROM resource_mentions")
+      this.db.exec("DELETE FROM resources")
+    })
+    let after = 0
+    let count = 0
+    while (true) {
+      const rows = this.stmt.messagesAfter.all(after, REEXTRACT_CHUNK) as {
+        rowid: number
+        id: string
+        session_id: string
+        role: string
+        created: number
+        body: string
+      }[]
+      if (!rows.length) break
+      this.tx(() => {
+        for (const r of rows) this.indexResources(r.id, r.session_id, r.role, r.created, r.body)
+      })
+      after = rows.at(-1)!.rowid
+      count += rows.length
+      await new Promise((r) => setImmediate(r))
+    }
+    this.stmt.setMeta.run("resources_version", String(RESOURCES_VERSION))
+    log(`re-extracted resources from ${count} messages in ${Date.now() - started}ms`)
+    post({ type: "resources", sessionIDs: null })
+  }
+
+  /** Replaces a message's resource mentions. Returns how many it has. */
+  private indexResources(messageID: string, sessionID: string, role: string, created: number, body: string) {
+    this.stmt.deleteMessageMentions.run(messageID)
+    const found = extractResources(body)
+    for (const r of found) {
+      this.stmt.upsertResource.run(r.key, r.type, r.url, JSON.stringify(r.data))
+      this.stmt.insertMention.run(messageID, r.key, sessionID, role, created)
+    }
+    return found.length
   }
 
   /** Mirror the session list, drop deleted sessions, queue everything that changed since its last pass. */
@@ -198,7 +261,13 @@ class Indexer {
   }
 
   private async index(id: string) {
-    if (this.rebuild.delete(id)) this.tx(() => (this.stmt.deleteMessages.run(id), this.stmt.resetWatermark.run(id)))
+    const rebuilt = this.rebuild.delete(id)
+    if (rebuilt)
+      this.tx(() => {
+        this.stmt.deleteMessages.run(id)
+        this.stmt.deleteSessionMentions.run(id)
+        this.stmt.resetWatermark.run(id)
+      })
     const row = this.stmt.session.get(id) as { updated: number; watermark: number } | undefined
     if (!row) return // not a root session we track (subagent, or deleted)
     const since = row.watermark ? row.watermark - MARGIN_MS : 0
@@ -239,10 +308,16 @@ class Indexer {
     }
     if (oldestIncomplete !== Infinity) watermark = Math.min(watermark, oldestIncomplete)
 
+    let resources = 0
     this.tx(() => {
-      for (const { m, role, body } of docs) this.insertMessage(m, id, role, body.slice(0, MAX_BODY))
+      for (const { m, role, body } of docs) {
+        const text = body.slice(0, MAX_BODY)
+        this.insertMessage(m, id, role, text)
+        resources += this.indexResources(m.id, id, role, m.time.created, text)
+      }
       this.stmt.markIndexed.run(row.updated, watermark, id)
     })
+    if (resources || rebuilt) post({ type: "resources", sessionIDs: [id] })
   }
 
   /** Rowids follow message time (see CANDIDATES in search-db): created ms × 1000, bumped on the rare collision. */
@@ -259,6 +334,7 @@ class Indexer {
   }
 
   private removeSession(id: string) {
+    this.stmt.deleteSessionMentions.run(id)
     this.stmt.deleteMessages.run(id)
     this.stmt.deleteSession.run(id)
   }

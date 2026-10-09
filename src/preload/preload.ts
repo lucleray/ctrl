@@ -47,6 +47,8 @@ const api: CtrlApi = {
   newSession: (spaceID) => ipcRenderer.invoke("session:new", spaceID),
   openSession: (sessionID) => ipcRenderer.invoke("session:open", sessionID),
   search: (query) => ipcRenderer.invoke("search", query),
+  listResources: (sessionIDs) => ipcRenderer.invoke("resources:list", sessionIDs),
+  onResourcesChanged: on("resources:changed"),
   ptyStart: (cols, rows) => ipcRenderer.send("pty:start", cols, rows),
   ptyWrite: (data) => ipcRenderer.send("pty:write", data),
   ptyResize: (cols, rows) => ipcRenderer.send("pty:resize", cols, rows),

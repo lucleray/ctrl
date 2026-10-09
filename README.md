@@ -60,6 +60,28 @@ opencode ──events──► indexer (utility process) ──writes──► s
   Words match as prefixes (`xter` finds `xterm`), not in the middle of words.
 - The index lives in `search.db` next to `state.json`. Delete it (or bump `INDEX_VERSION`) to rebuild from scratch.
 
+## Resources
+
+The right panel (⇧⌘R, or the panel button next to search) lists the links shared in the current session, or in
+every session of its space: PRs, issues, commits, repos, Linear issues, Notion pages, Slack threads and channels,
+Vercel deployments and projects.
+
+```text
+indexed message text ──extractResources()──► resources          (one row per canonical resource)
+                                             resource_mentions  (resource × message, with session + time)
+panel ◄── main: GROUP BY resource over the scope's mentions (~3ms)
+```
+
+- **Types** live in `src/shared/resources.ts`. Each one parses a URL into a canonical identity, a canonical URL
+  and a few fields (`/pull/1/changes`, `/pull/1` and `/pull/1#x` are one PR), and says how to display them.
+  Order matters: the first type that matches wins (PR before repo). URLs no type recognizes are ignored.
+- **Add a type:** append it to `RESOURCE_TYPES` and bump `RESOURCES_VERSION`. The indexer then re-extracts from
+  the stored message text, locally and without refetching (~10ms for 1k messages).
+- **Same pipeline as search:** mentions are written in the same transaction as their message and deleted with it.
+  Like search, only your prompts and the assistant's text are read, not tool output.
+- **No requests:** everything comes from the URL. Titles that need the network (PR title, status) can be added
+  later as fetched metadata on `resources`, next to the parsed `data`, without changing identities.
+
 ## Run
 
 ```bash

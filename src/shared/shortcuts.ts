@@ -5,6 +5,7 @@ export type CommandID =
   | "archive-session"
   | "undo"
   | "settings"
+  | "toggle-resources"
   | "zoom-in"
   | "zoom-out"
   | "zoom-reset"
@@ -23,6 +24,12 @@ export const COMMANDS: Command[] = [
   { id: "archive-session", label: "Archive session", desc: "Archives the current session", defaults: ["Cmd+W"] },
   { id: "undo", label: "Undo", desc: "While an undo notice is showing", defaults: ["Cmd+Z"] },
   { id: "settings", label: "Settings", defaults: ["Cmd+,"] },
+  {
+    id: "toggle-resources",
+    label: "Resources panel",
+    desc: "Links shared in the session or its space",
+    defaults: ["Cmd+Shift+R"],
+  },
   { id: "zoom-in", label: "Larger text", defaults: ["Cmd+=", "Cmd++"] },
   { id: "zoom-out", label: "Smaller text", defaults: ["Cmd+-"] },
   { id: "zoom-reset", label: "Reset text size", defaults: ["Cmd+0"] },

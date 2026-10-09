@@ -2,7 +2,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
 
-const DEFAULT_UI: UiState = { recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280 }
+const DEFAULT_UI: UiState = {
+  recentsCollapsed: false,
+  archivedCollapsed: true,
+  sidebarWidth: 280,
+  resourcesOpen: false,
+  resourcesWidth: 300,
+  resourcesScope: "session",
+}
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
   tuiTheme: null,
