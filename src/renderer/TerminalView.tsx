@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebglAddon } from "@xterm/addon-webgl"
-import { Unicode11Addon } from "@xterm/addon-unicode11"
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { onLinkHover, onLinkLeave, resolveLink } from "./wrapped-links" // wrapped-links
 
@@ -71,8 +71,8 @@ export const TerminalView = forwardRef<TerminalHandle, { dark: boolean; fontSize
     const fit = new FitAddon()
     fitAddon.current = fit
     t.loadAddon(fit)
-    t.loadAddon(new Unicode11Addon())
-    t.unicode.activeVersion = "11"
+    // Joins ZWJ emoji (🏄‍♂️), flags and accents into one cell group, so widths match what's drawn.
+    t.loadAddon(new UnicodeGraphemesAddon())
     // Bare URLs in the output
     t.loadAddon(
       new WebLinksAddon(

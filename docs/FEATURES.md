@@ -70,6 +70,7 @@ where it lives.
   agent read it (`src/renderer/ReferenceDrop.tsx`, `skills/read-session`)
 - Drop files from Finder onto the terminal to paste their escaped paths (`src/renderer/ReferenceDrop.tsx`)
 - Text size: stepper in settings, ⌘+ / ⌘− / ⌘0
+- Joined emoji (🏄‍♂️, 👩‍💻, flags) render as one glyph with the right width (`@xterm/addon-unicode-graphemes`)
 
 ## Settings (⌘,)
 
