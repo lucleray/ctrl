@@ -3,7 +3,8 @@
 ctrl runs two coding agents, called harnesses: [opencode](https://opencode.ai) and [fx](https://fx.sh).
 Sessions of both kinds sit side by side in the sidebar, in Recents and inside the same space.
 
-- **Pick the harness for new sessions** in **Settings → Sessions → Harness**. A space can override it in
+- **Pick the harness for new sessions** on the welcome screen at first launch, or later in
+  **Settings → Sessions → Harness**. A space can override it in
   its space settings. The space ⋯ menu also offers a new session with the other harness.
 - **Only one needs to be installed.** ctrl shows the sessions of whichever harnesses it finds.
   **Settings → Sessions** shows what's installed, with the install command for what isn't.
@@ -59,4 +60,4 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Theme for the terminal | ✅ | ⚠️ | fx follows ctrl's light/dark; pick an fx theme in `~/.fx/settings.json` |
 | MCP server status and Fix | ✅ | ❌ | opencode's MCP servers only |
 | `/new`, `/resume` inside the terminal followed by the sidebar | ✅ | ✅ | |
-| Setup screen | ✅ | ⚠️ | Shown when neither harness is installed; it walks through opencode and mentions fx |
+| Welcome screen | ✅ | ✅ | First launch: shows what's installed, lets you pick when both are, install commands when neither is |

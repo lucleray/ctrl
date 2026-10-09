@@ -103,6 +103,8 @@ export type UiState = {
   resourcesScope: "session" | "space"
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
+  /** The welcome screen (pick a harness) was completed; Settings → About can show it again */
+  onboarded?: boolean
 }
 
 export type Appearance = "system" | "light" | "dark"

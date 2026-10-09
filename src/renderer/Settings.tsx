@@ -631,6 +631,21 @@ export function Settings({
         <h2>About</h2>
         <div className="settings-card">
           <AboutRow version={state.version} update={state.update} />
+          <div className="setting">
+            <div>
+              <div className="setting-title">Welcome screen</div>
+              <div className="setting-desc">The first-launch screen that picks a harness for new sessions.</div>
+            </div>
+            <button
+              className="btn"
+              onClick={() => {
+                void window.ctrl.setUi({ onboarded: false })
+                onClose()
+              }}
+            >
+              Show again
+            </button>
+          </div>
         </div>
       </div>
     </div>

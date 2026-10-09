@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
 import { jumpTargets, useJumpHints } from "./jump"
-import { OpencodeSetup } from "./OpencodeSetup"
+import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
 import { ResourcesPanel } from "./ResourcesPanel"
@@ -56,6 +56,9 @@ export function App() {
   // Either harness is enough: without opencode, ctrl runs fx sessions only (and the other way round).
   const ready = state.opencode.state === "ok" || state.fx.state === "ok"
   const activeTerm = state.terms.find((t) => t.id === state.activeTermID)
+  const checked = state.opencode.state !== "checking" && state.fx.state !== "checking"
+  // First launch, or nothing usable installed. Drawn over the terminals, which keep running underneath.
+  const onboarding = checked && (!state.ui.onboarded || !ready)
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -170,7 +173,7 @@ export function App() {
       />
       <main className="main">
         <div className="main-drag" />
-        {ready ? (
+        {ready && (
           <>
             <TerminalStack
               ref={terminal}
@@ -191,10 +194,18 @@ export function App() {
               />
             )}
           </>
-        ) : (
-          state.opencode.state !== "checking" &&
-          state.opencode.state !== "ok" &&
-          state.fx.state !== "checking" && <OpencodeSetup check={state.opencode} />
+        )}
+        {onboarding && (
+          <Onboarding
+            opencode={state.opencode}
+            fx={state.fx}
+            defaultHarness={state.settings.defaultHarness}
+            onDone={(defaultHarness) => {
+              void window.ctrl.setSettings({ defaultHarness })
+              void window.ctrl.setUi({ onboarded: true })
+              terminal.current?.focus()
+            }}
+          />
         )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (
@@ -206,7 +217,7 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && !settings && !editingSpace && ready && (
+        {state.ui.resourcesOpen && !settings && !editingSpace && ready && !onboarding && (
           <ResourcesPanel
             state={state}
             onClose={() => {

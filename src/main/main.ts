@@ -448,8 +448,13 @@ const openFxSession = (sessionID: string) => {
   })
 }
 
-/** Space harness if it sets one, else the app default. */
-const harnessFor = (space?: Space): Harness => space?.harness ?? store.data.settings.defaultHarness
+/** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
+const harnessFor = (space?: Space): Harness => {
+  const wanted = space?.harness ?? store.data.settings.defaultHarness
+  const ready = (h: Harness) => (h === "fx" ? fxStarted : opencodeStarted)
+  const other: Harness = wanted === "fx" ? "opencode" : "fx"
+  return !ready(wanted) && ready(other) ? other : wanted
+}
 
 /** Space model for that harness if it sets one, else the app default if on, else none (the harness decides). */
 const modelFor = (harness: Harness, space?: Space) => {
@@ -896,6 +901,11 @@ function registerIpc() {
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)
     push()
+    // The skill offer waits for the welcome screen, so it doesn't land on top of it.
+    if (patch.onboarded && !store.data.ui.skillPrompted && skill.refresh().state === "missing") {
+      store.setUi({ skillPrompted: true })
+      setTimeout(suggestSkill, 1500)
+    }
   })
   ipcMain.handle("session:archive", (_e, sessionID: string, archived: boolean) => {
     if (archived) return archive([sessionID])
@@ -1212,8 +1222,8 @@ app.whenReady().then(async () => {
   if (!store.data.ui.skillPrompted && skill.refresh().state === "missing") {
     win!.webContents.once("did-finish-load", () =>
       setTimeout(() => {
-        // One thing at a time: the setup screen comes first.
-        if (opencodeCheck.state !== "ok") return
+        // One thing at a time: the welcome screen comes first (finishing it offers the skill).
+        if (!store.data.ui.onboarded) return
         store.setUi({ skillPrompted: true })
         suggestSkill()
       }, 3000),

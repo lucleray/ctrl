@@ -132,14 +132,15 @@ where it lives.
 ## Install & updates
 
 - Install with one curl command: latest release → `/Applications`, not quarantined (`install.sh`)
-- Setup screen instead of the terminal when neither harness is usable (opencode missing or older than
-  `MIN_OPENCODE`, and no fx), with the
-  install / upgrade command to copy; checks again on Check again or when the window regains focus
-  (`src/renderer/OpencodeSetup.tsx`, `src/main/opencode-bin.ts`)
+- Welcome screen over the terminal area at first launch, and whenever neither harness is usable: a card per
+  harness (fx, opencode) with a check when installed, or its install / upgrade command to copy. One installed:
+  start with it. Both: pick the one new sessions start with. None: Check again (also when the window regains
+  focus). Settings → About → Welcome screen shows it again (`src/renderer/Onboarding.tsx`, `src/main/opencode-bin.ts`)
+- New sessions fall back to the other harness when the chosen one isn't installed (`harnessFor()` in `src/main/main.ts`)
 - Updates from GitHub Releases through GitHub's public API, no login: checked at launch and every 6h, sticky toast with Update, which
   downloads, swaps the app bundle once ctrl quits and relaunches. Settings → About shows the version
   and a manual check (`src/main/updater.ts`)
-- read-session skill: offered in a toast at first launch and when a session is referenced without it,
+- read-session skill: offered in a toast once the welcome screen is done and when a session is referenced without it,
   installed into `~/.config/opencode/skills` from Settings → Agent skill (install / uninstall), refreshed
   when ctrl's copy changes, and copies ctrl didn't make are left alone (`src/main/skill.ts`)
 - arm64 and x64 builds, published with `npm run release` (`scripts/package.mjs`, `scripts/release.mjs`)

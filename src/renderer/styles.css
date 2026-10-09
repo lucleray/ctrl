@@ -372,6 +372,7 @@ button {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 /* No header bar: a thin invisible strip keeps the window draggable from the top. */
@@ -1894,4 +1895,92 @@ body.resizing .terminal-pane.active {
 
 .setup-note {
   font-size: 12.5px;
+}
+
+/* ---------- onboarding (first launch, or when no harness is installed) ---------- */
+
+/* Over the terminal area, so the terminals underneath keep running and their screens survive. */
+.onboarding {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--titlebar-bg);
+  user-select: text;
+  overflow: auto;
+}
+
+.onboarding-card {
+  max-width: 560px;
+  width: 100%;
+  gap: 16px;
+}
+
+.harness-cards {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.harness-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+}
+
+.harness-card.selectable {
+  cursor: pointer;
+}
+
+.harness-card.selectable:hover {
+  border-color: var(--muted);
+}
+
+.harness-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.harness-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.harness-card-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.harness-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.harness-card-status.ok {
+  color: var(--tone-good);
+}
+
+.harness-card-blurb {
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.harness-card-blurb a {
+  color: var(--accent);
+  text-decoration: none;
 }

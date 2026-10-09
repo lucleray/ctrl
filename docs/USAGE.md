@@ -10,8 +10,10 @@ The one-liner in the [README](../README.md#-install) installs the latest release
   `xattr -dr com.apple.quarantine /Applications/ctrl.app` once.
 - **Updates:** ctrl checks GitHub for a new release every few hours and offers it in a toast.
   **Settings → About** has a manual check. The same one-liner also reinstalls.
-- **First launch:** ctrl offers to install the `read-session` skill (also in **Settings → Agent skill**),
-  so agents can read sessions you drag onto the terminal.
+- **First launch:** a welcome screen shows which harnesses (fx, opencode) are installed, with install commands
+  for the missing ones. With both, you pick the one new sessions start with. **Settings → About → Welcome
+  screen** shows it again. Then ctrl offers to install the `read-session` skill (also in **Settings → Agent
+  skill**), so agents can read sessions you drag onto the terminal.
 - **Uninstall:** delete `/Applications/ctrl.app` and `~/Library/Application Support/ctrl`, plus
   `~/.config/opencode/skills/read-session` if you installed the skill. Your opencode sessions aren't touched.
 
