@@ -1,4 +1,4 @@
-import type { Tone } from "../../shared/types"
+import type { Tone } from "../types"
 import {
   AdapterError,
   chip,
@@ -9,11 +9,96 @@ import {
   firstLine,
   MINUTE,
   missing,
-  runCli,
+  segments,
+  host,
   type Fetched,
   type MetaRequest,
   type ResourceAdapter,
+  type ResourceType,
 } from "./adapter"
+
+// ---------- links ----------
+
+// First path segments that are GitHub pages, not owners.
+const GITHUB_RESERVED = new Set(
+  "about account apps codespaces collections contact copilot customer-stories dashboard enterprise events explore features gist github-copilot issues join login logout marketplace new notifications orgs organizations pricing pulls readme search security settings site sponsors stars team topics trending users watching".split(
+    " ",
+  ),
+)
+
+function githubRepo(url: URL) {
+  if (host(url) !== "github.com") return null
+  const [owner, rawRepo, ...rest] = segments(url)
+  if (!owner || !rawRepo || GITHUB_RESERVED.has(owner.toLowerCase())) return null
+  const repo = rawRepo.replace(/\.git$/, "")
+  if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) return null
+  // GitHub names are case-insensitive: key on lowercase, keep the original spelling for display.
+  return { owner, repo, rest, slug: `${owner}/${repo}`, id: `${owner}/${repo}`.toLowerCase() }
+}
+
+const githubPr: ResourceType = {
+  id: "github-pr",
+  label: "Pull requests",
+  icon: "git-pr",
+  parse(url) {
+    const r = githubRepo(url)
+    if (!r || r.rest[0] !== "pull" || !/^\d+$/.test(r.rest[1] ?? "")) return null
+    return {
+      identity: `${r.id}#${r.rest[1]}`,
+      url: `https://github.com/${r.slug}/pull/${r.rest[1]}`,
+      data: { repo: r.slug, number: r.rest[1] },
+    }
+  },
+  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+}
+
+const githubIssue: ResourceType = {
+  id: "github-issue",
+  label: "Issues",
+  icon: "issue",
+  parse(url) {
+    const r = githubRepo(url)
+    if (!r || r.rest[0] !== "issues" || !/^\d+$/.test(r.rest[1] ?? "")) return null
+    return {
+      identity: `${r.id}#${r.rest[1]}`,
+      url: `https://github.com/${r.slug}/issues/${r.rest[1]}`,
+      data: { repo: r.slug, number: r.rest[1] },
+    }
+  },
+  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+}
+
+const githubCommit: ResourceType = {
+  id: "github-commit",
+  label: "Commits",
+  icon: "commit",
+  parse(url) {
+    const r = githubRepo(url)
+    const sha = r?.rest[0] === "commit" ? r.rest[1]?.toLowerCase() : undefined
+    if (!r || !sha || !/^[0-9a-f]{7,40}$/.test(sha)) return null
+    return {
+      identity: `${r.id}@${sha}`,
+      url: `https://github.com/${r.slug}/commit/${sha}`,
+      data: { repo: r.slug, sha },
+    }
+  },
+  describe: (d) => ({ title: `${d.repo}@${d.sha.slice(0, 7)}` }),
+}
+
+const githubRepoType: ResourceType = {
+  id: "github-repo",
+  label: "Repositories",
+  icon: "repo",
+  // Any other repo page (tree, blob, actions…) counts as the repo.
+  parse(url) {
+    const r = githubRepo(url)
+    if (!r) return null
+    return { identity: r.id, url: `https://github.com/${r.slug}`, data: { repo: r.slug } }
+  },
+  describe: (d) => ({ title: d.repo }),
+}
+
+// ---------- live details (gh api graphql) ----------
 
 const PR_FIELDS = `title state isDraft reviewDecision mergeable additions deletions author { login }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`
@@ -136,45 +221,46 @@ function buildQuery(batch: MetaRequest[]) {
   return { repos, query: `query { viewer { login } ${parts.join(" ")} }` }
 }
 
-/** PRs, issues, commits and repos, ~40 per request for about 1 point of GitHub's 5,000/hour. */
 export const github: ResourceAdapter = {
   id: "github",
   name: "GitHub",
   description: "Titles, PR state, CI, reviews and conflicts for PRs, issues, commits and repos",
-  types: ["github-pr", "github-issue", "github-commit", "github-repo"],
-  cli: { command: "gh", install: "brew install gh", login: "gh auth login" },
-  batchSize: 40,
+  types: [githubPr, githubIssue, githubCommit, githubRepoType],
+  // ~40 links per request, for about 1 point of GitHub's 5,000/hour.
+  live: {
+    cli: { command: "gh", install: "brew install gh", login: "gh auth login" },
+    batchSize: 40,
+    async fetch(batch, { run }) {
+      const { repos, query } = buildQuery(batch)
+      const res = await run("gh", ["api", "graphql", "-f", `query=${query}`])
+      // gh exits 1 when part of the query failed (a repo or PR not found), but still prints the data.
+      let body: { data?: Node; errors?: { message: string }[] } | undefined
+      try {
+        body = JSON.parse(res.stdout)
+      } catch {
+        const err = res.stderr.trim()
+        if (/gh auth login|not logged|authentication/i.test(err)) throw new AdapterError("gh isn't logged in", "logged-out")
+        if (/rate limit/i.test(err)) throw new AdapterError("GitHub rate limit reached", "rate-limited")
+        throw new AdapterError(err.split("\n")[0] || "gh api failed", "network")
+      }
+      const data = body?.data
+      if (!data) throw new AdapterError(body?.errors?.[0]?.message ?? "Empty response from GitHub", "network")
 
-  async fetch(batch) {
-    const { repos, query } = buildQuery(batch)
-    const res = await runCli("gh", ["api", "graphql", "-f", `query=${query}`])
-    // gh exits 1 when part of the query failed (a repo or PR not found), but still prints the data.
-    let body: { data?: Node; errors?: { message: string }[] } | undefined
-    try {
-      body = JSON.parse(res.stdout)
-    } catch {
-      const err = res.stderr.trim()
-      if (/gh auth login|not logged|authentication/i.test(err)) throw new AdapterError("gh isn't logged in", "logged-out")
-      if (/rate limit/i.test(err)) throw new AdapterError("GitHub rate limit reached", "rate-limited")
-      throw new AdapterError(err.split("\n")[0] || "gh api failed", "network")
-    }
-    const data = body?.data
-    if (!data) throw new AdapterError(body?.errors?.[0]?.message ?? "Empty response from GitHub", "network")
-
-    const items = new Map<string, Fetched>()
-    for (const g of repos.values()) {
-      const r = data[g.alias] as Node | null
-      for (const { req, field } of g.items) {
-        const node = req.type === "github-repo" ? r : r?.[field]
-        if (!node) items.set(req.id, missing())
-        else if (req.type === "github-repo") items.set(req.id, repo(node))
-        else if (req.type === "github-commit") items.set(req.id, commit(node, `${g.owner}/${g.name}@${req.data.sha.slice(0, 7)}`))
-        else {
-          const ref = `${g.owner}/${g.name}#${req.data.number}`
-          items.set(req.id, node.__typename === "PullRequest" ? pullRequest(node, ref) : issue(node, ref))
+      const items = new Map<string, Fetched>()
+      for (const g of repos.values()) {
+        const r = data[g.alias] as Node | null
+        for (const { req, field } of g.items) {
+          const node = req.type === "github-repo" ? r : r?.[field]
+          if (!node) items.set(req.id, missing())
+          else if (req.type === "github-repo") items.set(req.id, repo(node))
+          else if (req.type === "github-commit") items.set(req.id, commit(node, `${g.owner}/${g.name}@${req.data.sha.slice(0, 7)}`))
+          else {
+            const ref = `${g.owner}/${g.name}#${req.data.number}`
+            items.set(req.id, node.__typename === "PullRequest" ? pullRequest(node, ref) : issue(node, ref))
+          }
         }
       }
-    }
-    return { items, account: data.viewer?.login }
+      return { items, account: data.viewer?.login }
+    },
   },
 }

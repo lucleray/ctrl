@@ -1,4 +1,4 @@
-import type { Tone } from "../../shared/types"
+import type { Tone } from "../types"
 import {
   AdapterError,
   chip,
@@ -7,15 +7,77 @@ import {
   every,
   FINAL,
   firstLine,
+  host,
   HOUR,
   MINUTE,
   missing,
-  runCli,
   SECOND,
+  segments,
   type Fetched,
   type MetaRequest,
   type ResourceAdapter,
+  type ResourceType,
+  type RunCli,
 } from "./adapter"
+
+// ---------- links ----------
+
+// First path segments on vercel.com that are site pages, not teams.
+const VERCEL_RESERVED = new Set(
+  "abuse academy account ai api blog careers changelog contact customers d dashboard design docs download enterprise events font frameworks geist go guides help home integrations kb legal login marketplace new oss partners pricing products resources security signup solutions startups storage support templates try v0".split(
+    " ",
+  ),
+)
+
+// A team or project page under vercel.com/<team>/<project>/<page>, not a deployment id.
+const VERCEL_PROJECT_PAGES = new Set(
+  "activity ai analytics deployments domains environment-variables firewall integrations logs observability settings speed-insights storage stores usage".split(
+    " ",
+  ),
+)
+
+function vercelDashboard(url: URL) {
+  if (host(url) !== "vercel.com") return null
+  const [team, project, third] = segments(url)
+  if (!team || !project || VERCEL_RESERVED.has(team) || project === "~" || !/^[\w.-]+$/.test(team + project)) return null
+  return { team, project, third }
+}
+
+const vercelDeployment: ResourceType = {
+  id: "vercel-deployment",
+  label: "Vercel deployments",
+  icon: "triangle",
+  parse(url): ReturnType<ResourceType["parse"]> {
+    const h = host(url)
+    // Preview and production URLs on vercel.app: the host is the deployment.
+    if (h.endsWith(".vercel.app") && h !== "vercel.app") return { identity: h, url: `https://${h}`, data: { host: h } }
+    // Dashboard deployment pages: vercel.com/<team>/<project>/<deployment id>
+    const d = vercelDashboard(url)
+    if (!d?.third || VERCEL_PROJECT_PAGES.has(d.third) || !/^[A-Za-z0-9]{16,}$/.test(d.third) || !/[A-Z0-9]/.test(d.third))
+      return null
+    return {
+      identity: `${d.team}/${d.project}/${d.third}`,
+      url: `https://vercel.com/${d.team}/${d.project}/${d.third}`,
+      data: { team: d.team, project: d.project, deployment: d.third },
+    }
+  },
+  describe: (d) =>
+    d.host ? { title: d.host } : { title: `${d.project} · ${d.deployment.slice(0, 9)}`, subtitle: d.team },
+}
+
+const vercelProject: ResourceType = {
+  id: "vercel-project",
+  label: "Vercel projects",
+  icon: "triangle",
+  parse(url) {
+    const d = vercelDashboard(url)
+    if (!d) return null
+    return { identity: `${d.team}/${d.project}`, url: `https://vercel.com/${d.team}/${d.project}`, data: { team: d.team, project: d.project } }
+  },
+  describe: (d) => ({ title: d.project, subtitle: d.team }),
+}
+
+// ---------- live details (vercel api) ----------
 
 /** `vercel api` starts an interactive device login when logged out: treat that as logged out. */
 const LOGIN_PROMPT = /login flow|oauth\/device|Waiting for authentication/i
@@ -27,9 +89,9 @@ type Json = Record<string, any>
  * current team, which hides deployments of other teams. An empty teamId means
  * "find it wherever it is" (lookups by host).
  */
-async function get(path: string, team: string): Promise<Json | null> {
+async function get(run: RunCli, path: string, team: string): Promise<Json | null> {
   const sep = path.includes("?") ? "&" : "?"
-  const res = await runCli("vercel", ["api", `${path}${sep}teamId=${encodeURIComponent(team)}`, "--raw"], {
+  const res = await run("vercel", ["api", `${path}${sep}teamId=${encodeURIComponent(team)}`, "--raw"], {
     loginPrompt: LOGIN_PROMPT,
   })
   if (res.code === 0) {
@@ -92,34 +154,35 @@ function project(p: Json, req: MetaRequest): Fetched {
   }
 }
 
-async function fetchOne(req: MetaRequest): Promise<Fetched> {
+async function fetchOne(run: RunCli, req: MetaRequest): Promise<Fetched> {
   const d = req.data
   if (req.type === "vercel-project") {
-    const p = await get(`/v9/projects/${encodeURIComponent(d.project)}`, d.team)
+    const p = await get(run, `/v9/projects/${encodeURIComponent(d.project)}`, d.team)
     return p ? project(p, req) : missing()
   }
   // A *.vercel.app host, or a dashboard deployment id (the dashboard drops the dpl_ prefix).
   const dep = d.host
-    ? await get(`/v13/deployments/${encodeURIComponent(d.host)}`, "")
-    : await get(`/v13/deployments/dpl_${encodeURIComponent(d.deployment)}`, d.team)
+    ? await get(run, `/v13/deployments/${encodeURIComponent(d.host)}`, "")
+    : await get(run, `/v13/deployments/dpl_${encodeURIComponent(d.deployment)}`, d.team)
   return dep ? deployment(dep, req) : missing()
 }
 
 let account: string | undefined
 
-/** Deployments and projects. Vercel's API has no batching: one CLI call per resource, 4 at a time. */
 export const vercel: ResourceAdapter = {
   id: "vercel",
   name: "Vercel",
   description: "Commit, branch and build state for deployments, latest production deployment for projects",
-  types: ["vercel-deployment", "vercel-project"],
-  cli: { command: "vercel", install: "npm i -g vercel", login: "vercel login" },
-  batchSize: 20,
-
-  async fetch(batch) {
-    account ??= (await get("/v2/user", ""))?.user?.username
-    const items = new Map<string, Fetched>()
-    await eachLimit(batch, 4, async (req) => void items.set(req.id, await fetchOne(req)))
-    return { items, account }
+  types: [vercelDeployment, vercelProject],
+  // Vercel's API has no batching: one CLI call per link, 4 at a time.
+  live: {
+    cli: { command: "vercel", install: "npm i -g vercel", login: "vercel login" },
+    batchSize: 20,
+    async fetch(batch, { run }) {
+      account ??= (await get(run, "/v2/user", ""))?.user?.username
+      const items = new Map<string, Fetched>()
+      await eachLimit(batch, 4, async (req) => void items.set(req.id, await fetchOne(run, req)))
+      return { items, account }
+    },
   },
 }

@@ -138,7 +138,7 @@ export type SearchHit = {
 
 export type IndexStatus = { indexing: boolean; done: number; total: number }
 
-/** A resource (see src/shared/resources.ts) and how it was mentioned in the queried sessions. */
+/** A resource (see src/shared/adapters) and how it was mentioned in the queried sessions. */
 export type ResourceItem = {
   /** Canonical key, e.g. "github-pr:vercel/infra#36612" */
   id: string
@@ -152,7 +152,7 @@ export type ResourceItem = {
   last: number
   /** You pasted it in a prompt (vs only the assistant mentioning it) */
   sharedByYou: boolean
-  /** Live details from the adapter that handles this type, when there's one (src/main/adapters) */
+  /** Live details from its adapter, when that adapter has a live part (src/shared/adapters) */
   meta?: ResourceMeta
 }
 
@@ -160,8 +160,8 @@ export type ResourceItem = {
 export type Tone = "open" | "good" | "done" | "bad" | "warn" | "muted"
 
 /**
- * Live details of a resource, from the adapter that handles its type
- * (src/main/adapters). Display-ready, so the panel needs no per-service code.
+ * Live details of a resource, from its adapter's live part
+ * (src/shared/adapters). Display-ready, so the panel needs no per-service code.
  */
 export type ResourceMeta = {
   /** Replaces the title parsed from the URL */
@@ -186,18 +186,20 @@ export type AdapterStatus = {
   detail?: string
 }
 
-/** A resource adapter as Settings lists it. */
+/** A resource adapter (src/shared/adapters) as Settings lists it. */
 export type AdapterInfo = {
   id: string
   name: string
   /** What it adds, e.g. "PR, issue and CI status" */
   description: string
-  /** Resource types it handles (src/shared/resources.ts) */
+  /** Link types it recognizes */
   types: string[]
-  /** The CLI whose login it uses */
-  cli: { command: string; install: string; login: string }
+  /** The CLI it fetches live details with; none = links only */
+  cli?: { command: string; install: string; login: string }
+  /** Live details on (Settings toggle); only matters with a CLI */
   enabled: boolean
-  status: AdapterStatus
+  /** Live adapters only */
+  status?: AdapterStatus
 }
 
 export type SearchResult = { hits: SearchHit[]; status: IndexStatus }

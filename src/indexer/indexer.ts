@@ -10,7 +10,7 @@
 import { OpenCode, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import type { DatabaseSync, StatementSync } from "node:sqlite"
-import { extractResources, RESOURCES_VERSION } from "../shared/resources"
+import { extractResources, RESOURCES_VERSION } from "../shared/adapters"
 import type { IndexerMessage, IndexStatus } from "../shared/types"
 import { MAX_BODY, openSearchDb } from "../main/search-db"
 

@@ -48,15 +48,18 @@ where it lives.
 
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable
-  (`src/renderer/ResourcesPanel.tsx`, `src/shared/resources.ts`)
-- Resource adapters: live details for links, one file per service in `src/main/adapters/`, registered in
-  `adapters/index.ts`, listed (with on/off toggles and CLI status) in Settings → Resource adapters. Each runs its
-  service's own CLI, so ctrl never handles tokens, and returns display-ready details (title, subtitle, tone,
-  chips) plus a cache policy (max age, refetch when mentioned again); one shared scheduler fetches only while the
-  panel is open and the window focused, and caches on disk (`adapters/service.ts`)
-  - GitHub (`gh api graphql`, ~40 per request): PR state, CI, reviews, conflicts; merged PRs are final
-  - Vercel (`vercel api`): deployment commit/branch/build state (15s while building), projects' latest production
-  - Slack (`slack-cli`): thread root message, channel, author; channel names; kept until mentioned again
+  (`src/renderer/ResourcesPanel.tsx`)
+- Resource adapters, one file per service in `src/shared/adapters/`, registered in `adapters/index.ts`: each
+  declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
+  part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are
+  display-ready (title, subtitle, tone, chips) and carry a cache policy (max age, refetch when mentioned
+  again); one scheduler fetches only while the panel is open and the window focused, and caches on disk
+  (`src/main/adapters/service.ts`). Settings → Resource adapters lists them, with CLI status and an on/off
+  toggle for live ones
+  - GitHub (live, `gh api graphql`, ~40 per request): PR state, CI, reviews, conflicts; merged PRs are final
+  - Vercel (live, `vercel api`): deployment commit/branch/build state (15s while building), projects' latest production
+  - Slack (live, `slack-cli`): thread root message, channel, author; channel names; kept until mentioned again
+  - Linear, Notion: links only
 
 ## Terminal
 

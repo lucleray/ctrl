@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { RESOURCE_TYPES, resourceType } from "../shared/resources"
+import { RESOURCE_TYPES, resourceType } from "../shared/adapters"
 import type { AdapterInfo, AppState, ResourceItem, ResourceMeta } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
@@ -124,7 +124,7 @@ function ResourceGroup(props: { label: string; items: ResourceItem[]; source?: A
 
 function metaTooltip(meta: ResourceMeta | undefined, source: AdapterInfo | undefined) {
   if (!meta || !source) return []
-  if (meta.missing) return [`Not found, or ${source.cli.command}'s account can't see it`]
+  if (meta.missing) return [`Not found, or ${source.cli?.command ?? source.name}'s account can't see it`]
   return [...(meta.details ?? []), `Updated from ${source.name} ${age(meta.fetched)} ago`]
 }
 

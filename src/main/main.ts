@@ -15,7 +15,7 @@ import {
 } from "../shared/types"
 import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
-import { ADAPTERS } from "./adapters"
+import { ADAPTERS } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
 import { OpenCodeService } from "./opencode"
 import { Search } from "./search"

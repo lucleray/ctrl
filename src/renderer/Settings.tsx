@@ -67,15 +67,16 @@ function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
   )
 }
 
-/** One resource adapter: what it adds, its CLI's status, and an on/off toggle. */
+/** One resource adapter: what it adds and, when it fetches live details, its CLI's status and an on/off toggle. */
 function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: string[] }) {
   const [busy, setBusy] = useState(false)
   const { status, cli } = adapter
-  const dot = !adapter.enabled
-    ? "disabled"
-    : ({ ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed")
-  const state =
-    !adapter.enabled
+  const live = !!cli && !!status
+  const on = live && adapter.enabled
+  const dot = !on ? "disabled" : ({ ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed")
+  const line = !live
+    ? "Links only, nothing is fetched"
+    : !adapter.enabled
       ? null
       : status.state === "ok"
         ? `Using ${cli.command}${status.account ? ` as ${status.account}` : ""}`
@@ -88,7 +89,7 @@ function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: str
               : status.state === "paused"
                 ? `Paused: ${status.detail}`
                 : status.detail
-  const problem = adapter.enabled && ["no-cli", "logged-out", "error"].includes(status.state)
+  const problem = on && ["no-cli", "logged-out", "error"].includes(status.state)
   return (
     <div className="setting">
       <div className="mcp-name">
@@ -96,31 +97,34 @@ function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: str
         <div>
           <div className="setting-title">{adapter.name}</div>
           <div className="setting-desc">{adapter.description}</div>
-          {state && <div className="setting-desc mcp-error">{state}</div>}
+          {line && <div className="setting-desc mcp-error">{line}</div>}
         </div>
       </div>
-      <div className="mcp-actions">
-        {problem && (
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true)
-              void window.ctrl.retryAdapter(adapter.id).finally(() => setTimeout(() => setBusy(false), 1500))
-            }}
-          >
-            {busy ? "Retrying…" : "Retry"}
-          </button>
-        )}
-        <Toggle
-          on={adapter.enabled}
-          onChange={(on) =>
-            void window.ctrl.setSettings({
-              disabledAdapters: on ? disabled.filter((id) => id !== adapter.id) : [...disabled, adapter.id],
-            })
-          }
-        />
-      </div>
+      {live && (
+        <div className="mcp-actions">
+          {problem && (
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                void window.ctrl.retryAdapter(adapter.id).finally(() => setTimeout(() => setBusy(false), 1500))
+              }}
+            >
+              {busy ? "Retrying…" : "Retry"}
+            </button>
+          )}
+          <Toggle
+            on={adapter.enabled}
+            title="Fetch live details"
+            onChange={(enabled) =>
+              void window.ctrl.setSettings({
+                disabledAdapters: enabled ? disabled.filter((id) => id !== adapter.id) : [...disabled, adapter.id],
+              })
+            }
+          />
+        </div>
+      )}
     </div>
   )
 }

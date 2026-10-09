@@ -64,7 +64,7 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
       INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
       INSERT INTO messages_fts(rowid, body) VALUES (new.rowid, new.body);
     END;
-    -- One row per canonical resource (see src/shared/resources.ts). data: fields parsed from its URLs.
+    -- One row per canonical resource (see src/shared/adapters). data: fields parsed from its URLs.
     CREATE TABLE IF NOT EXISTS resources (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,

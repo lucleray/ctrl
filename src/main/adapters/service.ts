@@ -1,6 +1,15 @@
 import { DatabaseSync } from "node:sqlite"
+import {
+  AdapterError,
+  DAY,
+  MINUTE,
+  SECOND,
+  type CachePolicy,
+  type MetaRequest,
+  type ResourceAdapter,
+} from "../../shared/adapters/adapter"
 import type { AdapterInfo, AdapterStatus, ResourceItem, ResourceMeta } from "../../shared/types"
-import { AdapterError, DAY, MINUTE, SECOND, type CachePolicy, type MetaRequest, type ResourceAdapter } from "./adapter"
+import { runCli } from "./cli"
 
 /** Bump to drop cached details (their shape changed). */
 const CACHE_VERSION = 2
@@ -14,8 +23,11 @@ const AFTER_RUN = 4 * SECOND
 type Cached = { meta: ResourceMeta; cache: CachePolicy }
 type Watched = MetaRequest & { last: number }
 
+type LiveAdapter = ResourceAdapter & { live: NonNullable<ResourceAdapter["live"]> }
+
+/** A live adapter's scheduling state. */
 type Runner = {
-  adapter: ResourceAdapter
+  adapter: LiveAdapter
   busy: boolean
   /** No requests before this (rate limit, auth problem, errors) */
   pausedUntil: number
@@ -34,6 +46,7 @@ const nextFetch = (c: Cached) => c.meta.fetched + c.cache.maxAge
 export class AdapterService {
   private db: DatabaseSync
   private cache = new Map<string, Cached>()
+  private adapterList: ResourceAdapter[]
   private runners: Runner[]
   private byType = new Map<string, Runner>()
   private disabled: Set<string>
@@ -54,8 +67,11 @@ export class AdapterService {
     },
   ) {
     this.disabled = new Set(disabled)
-    this.runners = adapters.map((adapter) => ({ adapter, busy: false, pausedUntil: 0, failures: 0, status: { state: "idle" } }))
-    for (const r of this.runners) for (const type of r.adapter.types) this.byType.set(type, r)
+    this.adapterList = adapters
+    this.runners = adapters
+      .filter((a): a is LiveAdapter => !!a.live)
+      .map((adapter) => ({ adapter, busy: false, pausedUntil: 0, failures: 0, status: { state: "idle" } }))
+    for (const r of this.runners) for (const type of r.adapter.types) this.byType.set(type.id, r)
 
     this.db = new DatabaseSync(dbPath)
     const { user_version } = this.db.prepare("PRAGMA user_version").get() as { user_version: number }
@@ -84,14 +100,14 @@ export class AdapterService {
   }
 
   get adapters(): AdapterInfo[] {
-    return this.runners.map(({ adapter: a, status }) => ({
+    return this.adapterList.map((a) => ({
       id: a.id,
       name: a.name,
       description: a.description,
-      types: a.types,
-      cli: a.cli,
+      types: a.types.map((t) => t.id),
+      cli: a.live?.cli,
       enabled: !this.disabled.has(a.id),
-      status,
+      status: this.runners.find((r) => r.adapter === a)?.status,
     }))
   }
 
@@ -196,7 +212,7 @@ export class AdapterService {
     await Promise.all(
       this.runners.map(async (r) => {
         if (r.busy || now < r.pausedUntil || this.disabled.has(r.adapter.id)) return
-        const batch = this.due(r, now).slice(0, r.adapter.batchSize)
+        const batch = this.due(r, now).slice(0, r.adapter.live.batchSize)
         if (!batch.length) return
         r.busy = true
         try {
@@ -213,7 +229,7 @@ export class AdapterService {
   }
 
   private async fetch(r: Runner, batch: Watched[]) {
-    const result = await r.adapter.fetch(batch)
+    const result = await r.adapter.live.fetch(batch, { run: runCli })
     const fetched = Date.now()
     const insert = this.db.prepare(
       `INSERT INTO resource_meta (id, meta, max_age, on_mention) VALUES (?, ?, ?, ?)
