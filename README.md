@@ -5,15 +5,19 @@
 <h1 align="center">ctrl</h1>
 
 <p align="center">
-  A cozy desktop home for your <a href="https://opencode.ai">opencode</a> sessions 🌊
+  A cozy desktop home for your <a href="https://fx.sh">fx</a> and <a href="https://opencode.ai">opencode</a> sessions 🌊
 </p>
 
-<p align="center">
-  <img src="docs/media/hero.png" alt="ctrl: spaces and sessions in the sidebar, an opencode session on the right, and the links it shared in the resources panel" />
-</p>
+<table>
+  <tr><th>fx</th><th>opencode</th></tr>
+  <tr>
+    <td><img src="docs/media/hero-fx.png" alt="ctrl: the same spaces with fx sessions, an fx session on the right, and the links it shared in the resources panel" /></td>
+    <td><img src="docs/media/hero.png" alt="ctrl: spaces and sessions in the sidebar, an opencode session on the right, and the links it shared in the resources panel" /></td>
+  </tr>
+</table>
 
-ctrl puts a sidebar around the real opencode TUI. Group sessions into spaces, see which ones need you, and
-switch between them instantly.
+ctrl puts a sidebar around the real fx and opencode terminals. Group sessions into spaces (both kinds can
+share one), see which ones need you, and switch between them instantly.
 
 ## ✨ Highlights
 
@@ -27,33 +31,58 @@ waiting for your answer.
 
 Drag a session onto the terminal. ctrl pastes a mention, and the agent reads that session before it answers.
 
-<img src="docs/media/reference.gif" alt="Dragging a session from the sidebar onto the terminal pastes an @session mention into the prompt" />
+<table>
+  <tr><th>fx</th><th>opencode</th></tr>
+  <tr>
+    <td><img src="docs/media/reference-fx.gif" alt="Dragging a session from the sidebar onto the fx terminal pastes a session mention into the prompt" /></td>
+    <td><img src="docs/media/reference.gif" alt="Dragging a session from the sidebar onto the opencode terminal pastes an @session mention into the prompt" /></td>
+  </tr>
+</table>
 
 ### 🔗 Every link in one place
 
 PRs, issues, deploys, Linear tickets and Slack threads shared in a session, or in its whole space. GitHub links
 show live status: draft, CI, merged.
 
-<img src="docs/media/resources.png" width="390" alt="The resources panel listing pull requests, issues, a Linear ticket, a Slack thread and a Vercel deployment" />
+<table>
+  <tr><th>fx</th><th>opencode</th></tr>
+  <tr>
+    <td><img src="docs/media/resources-fx.png" width="390" alt="The resources panel next to an fx session, listing the same kinds of links" /></td>
+    <td><img src="docs/media/resources.png" width="390" alt="The resources panel next to an opencode session, listing pull requests, issues, a Linear ticket, a Slack thread and a Vercel deployment" /></td>
+  </tr>
+</table>
 
 ### 🔍 Search everything
 
 ⌘P searches session titles and the text of every message.
 
-<img src="docs/media/search.png" width="550" alt="The search palette showing chats and messages matching 'test'" />
+<table>
+  <tr><th>fx</th><th>opencode</th></tr>
+  <tr>
+    <td><img src="docs/media/search-fx.png" alt="The search palette over fx sessions, showing chats and messages matching 'test'" /></td>
+    <td><img src="docs/media/search.png" alt="The search palette over opencode sessions, showing chats and messages matching 'test'" /></td>
+  </tr>
+</table>
 
 ### ⚡ Jump with ⌘1–9
 
 Hold ⌘ to see a number next to each session, then press it.
 
-<img src="docs/media/jump.png" width="250" alt="Sidebar with ⌘1 to ⌘9 badges next to sessions" />
+<table>
+  <tr><th>fx</th><th>opencode</th></tr>
+  <tr>
+    <td><img src="docs/media/jump-fx.png" width="250" alt="Sidebar of fx sessions with ⌘1 to ⌘9 badges" /></td>
+    <td><img src="docs/media/jump.png" width="250" alt="Sidebar of opencode sessions with ⌘1 to ⌘9 badges" /></td>
+  </tr>
+</table>
 
 ## 📦 Install
 
-You need a Mac and [opencode V2](https://opencode.ai/v2/docs/), version 2.0.25 or newer:
+You need a Mac and [fx](https://fx.sh), [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), or both:
 
 ```bash
-curl -fsSL https://opencode.ai/v2/install | bash
+curl -fsSL https://fx.sh/setup.sh | bash           # fx
+curl -fsSL https://opencode.ai/v2/install | bash   # opencode
 ```
 
 Then install ctrl:
@@ -68,5 +97,6 @@ ctrl updates itself. [docs/USAGE.md](docs/USAGE.md) covers updates, uninstalling
 
 - [Usage](docs/USAGE.md): install details, spaces, shortcuts, settings
 - [Features](docs/FEATURES.md): everything ctrl does
+- [Harnesses](docs/HARNESSES.md): fx and opencode, and what ctrl supports for each
 - [Architecture](docs/ARCHITECTURE.md): how it works inside
 - [Development](docs/DEVELOPMENT.md): run, release, debug hooks, screenshots

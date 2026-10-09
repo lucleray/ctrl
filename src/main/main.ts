@@ -1,16 +1,25 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron"
+import { execFile } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   FONT_SIZE,
+  FX_INSTALL,
+  harnessOf,
   type AppState,
+  type FxCheck,
+  type Harness,
+  type ModelChoices,
+  type ModelOption,
   type OpencodeCheck,
+  type SessionItem,
   type Settings,
   type Space,
   type SoundEvent,
   type SpacePatch,
+  type TermInfo,
   type ThemeInfo,
   type Toast,
   type UiState,
@@ -20,6 +29,8 @@ import { Attention } from "./attention"
 import { playSound } from "./sound"
 import { ADAPTERS } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
+import { checkFx, FxSessions, rawID, SESSIONS_DIR } from "./fx"
+import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode } from "./opencode-bin"
 import { Skill } from "./skill"
@@ -68,7 +79,12 @@ const headless =
 let win: BrowserWindow | undefined
 let quitting = false
 const store = new Store(join(app.getPath("userData"), "state.json"))
-let currentSessionID: string | null = null
+/** The single embedded opencode TUI, as a terminal next to the fx ones. */
+const OPENCODE_TERM = "opencode"
+/** The opencode TUI is on screen (and no fx terminal is). */
+let showOpencode = false
+/** Session the opencode TUI shows (route reported by the bridge); null = its home screen */
+let opencodeRoute: string | null = null
 let bridgeConnected = false
 let bridgeProblem = false
 let bridgeTimer: ReturnType<typeof setTimeout> | undefined
@@ -96,9 +112,30 @@ const send = (channel: string, ...args: unknown[]) => {
   }
 }
 
+const activeTermID = () => fxTerms.activeID ?? (showOpencode && opencodeStarted ? OPENCODE_TERM : null)
+
+/** Session on screen, whichever harness it belongs to. */
+const currentSessionID = (): string | null => {
+  if (fxTerms.activeID) return fxTerms.active()?.sessionID ?? null
+  return showOpencode ? opencodeRoute : null
+}
+
+/** Both harnesses' sessions, newest first. Rebuilt when either changes. */
+let sessions: SessionItem[] = []
+const rebuildSessions = () => {
+  sessions = [...opencode.sessions, ...fx.sessions].sort((a, b) => b.updated - a.updated)
+}
+const sessionByID = (id: string) => sessions.find((s) => s.id === id)
+
+const terms = (): TermInfo[] => [
+  ...(opencodeStarted ? [{ id: OPENCODE_TERM, harness: "opencode" as const, sessionID: opencodeRoute }] : []),
+  ...fxTerms.list(),
+]
+
 const state = (): AppState => ({
   version: app.getVersion(),
   opencode: opencodeCheck,
+  fx: fxCheck,
   skill: skill.current,
   update: updater.status,
   spaces: store.data.spaces,
@@ -108,16 +145,18 @@ const state = (): AppState => ({
   settings: store.data.settings,
   themes,
   dark: nativeTheme.shouldUseDarkColors,
-  sessions: pendingDeletes.size ? opencode.sessions.filter((s) => !pendingDeletes.has(s.id)) : opencode.sessions,
-  currentSessionID,
+  sessions: pendingDeletes.size ? sessions.filter((s) => !pendingDeletes.has(s.id)) : sessions,
+  currentSessionID: currentSessionID(),
   bridgeConnected,
+  terms: terms(),
+  activeTermID: activeTermID(),
   mcp: opencode.mcp,
   adapters: adapters.adapters,
-  // Without a usable opencode, the setup screen explains what's wrong instead.
+  // Without a usable opencode, the setup screen (or Settings) explains what's wrong instead.
   problem:
-    opencodeCheck.state !== "ok"
-      ? undefined
-      : (opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined)),
+    (opencodeCheck.state === "ok"
+      ? (opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined))
+      : undefined) ?? fx.problem ?? undefined,
   error,
 })
 
@@ -127,7 +166,7 @@ const push = () => {
   pushQueued = true
   queueMicrotask(() => {
     pushQueued = false
-    attention.refreshBadge(opencode.sessions)
+    attention.refreshBadge(sessions)
     send("state", state())
   })
 }
@@ -135,15 +174,85 @@ const push = () => {
 /** Sessions running as of the last update, to notice runs ending. */
 let running = new Set<string>()
 
-const opencode = new OpenCodeService(() => {
-  attention.update(opencode.sessions)
-  watchMcp()
-  const now = new Set(opencode.sessions.filter((s) => s.status === "running").map((s) => s.id))
+const sessionsChanged = () => {
+  rebuildSessions()
+  attention.update(sessions)
+  const now = new Set(sessions.filter((s) => s.status === "running").map((s) => s.id))
   const ended = [...running].filter((id) => !now.has(id))
   running = now
   if (ended.length) adapters.runsEnded(ended)
   push()
+}
+
+const opencode = new OpenCodeService(() => {
+  watchMcp()
+  sessionsChanged()
 })
+
+// ---------- fx ----------
+
+/** You've seen everything up to now in this fx session: it stops being unread (opencode keeps its own read state). */
+const markFxViewed = (sessionID: string | null) => {
+  if (!sessionID || harnessOf(sessionID) !== "fx") return
+  const at = fx.lastActivity(sessionID)
+  if (at === undefined || (store.data.viewed[sessionID] ?? 0) >= at) return
+  store.setViewed(sessionID, at)
+}
+
+const fx: FxSessions = new FxSessions({
+  onChange: () => {
+    markFxViewed(currentSessionID())
+    sessionsChanged()
+  },
+  liveStatus: (id) => fxTerms.status(id),
+  isOurPid: (pid) => fxTerms.isOurPid(pid),
+  onOwner: (sessionID, pid) => {
+    const claimed = fxTerms.claim(sessionID, pid)
+    if (!claimed) return
+    // A session started from a space joins it once fx tells us its id.
+    if (claimed.spaceID && !claimed.previous) store.assign(sessionID, claimed.spaceID)
+    // /new or /resume inside a space's session keeps you in that space.
+    else if (claimed.previous && store.data.assignments[claimed.previous] && !store.data.assignments[sessionID])
+      store.assign(sessionID, store.data.assignments[claimed.previous])
+    if (claimed.previous) fx.readSoon(rawID(claimed.previous))
+  },
+  viewedAt: (id) => Math.max(store.data.viewed[id] ?? 0, store.data.viewedSince),
+  titleOverride: (id) => store.data.titles[id],
+  currentSessionID,
+})
+
+const fxTerms: FxTerminals = new FxTerminals({
+  onData: (termID, data, end) => send("pty:data", termID, data, end),
+  onChange: () => {
+    fx.rebuild()
+    saveOpen()
+  },
+  // A status report (turn done, waiting on you) means the session's files changed too.
+  onStatus: (sessionID) => fx.readSoon(rawID(sessionID)),
+  onExit: (_termID, sessionID) => {
+    if (!sessionID) return
+    // fx is gone: flush a rename that had to wait, and refresh the owner.
+    setTimeout(() => void flushTitle(sessionID), 300)
+    fx.readSoon(rawID(sessionID))
+  },
+})
+if (store.data.termSize) fxTerms.size = store.data.termSize
+
+let fxCheck: FxCheck = { state: "checking" }
+let fxStarted = false
+
+/** fx is optional: its sessions show up once it's installed. */
+const recheckFx = async () => {
+  fxCheck = await checkFx()
+  console.log(`[ctrl] fx: ${JSON.stringify(fxCheck)}`)
+  if (fxCheck.state === "ok" && !fxStarted) {
+    fxStarted = true
+    await fx.start()
+    // Renames that were waiting for an fx that has quit since.
+    for (const id of Object.keys(store.data.titles)) void flushTitle(id)
+  }
+  push()
+}
 
 const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
   send("resources:changed", ids)
@@ -165,7 +274,7 @@ void adapters.check()
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
   () => opencode.client,
-  (id) => opencode.sessions.find((s) => s.id === id)?.updated,
+  (id) => sessionByID(id)?.updated,
 )
 
 const attention = new Attention({
@@ -176,12 +285,17 @@ const attention = new Attention({
   quiet: headless,
 })
 
+let opencodeOut = 0
 const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
-  onData: (data) => send("pty:data", data),
-  onReset: () => send("pty:reset"),
+  onData: (data) => {
+    opencodeOut += data.length
+    send("pty:data", OPENCODE_TERM, data, opencodeOut)
+  },
+  onReset: () => send("pty:reset", OPENCODE_TERM),
   onRoute: (id) => {
-    currentSessionID = id
-    opencode.setCurrent(id)
+    opencodeRoute = id
+    if (showOpencode) opencode.setCurrent(id)
+    saveOpen()
     push()
   },
   onBridge: (connected) => {
@@ -203,6 +317,10 @@ const recheckOpencode = async () => {
   if (opencodeCheck.state === "ok" && !opencodeStarted) {
     opencodeStarted = true
     opencode.start().catch(report)
+    const size = store.data.termSize ?? fxTerms.size
+    terminal.start(size.cols, size.rows)
+    // On screen at launch unless an fx session takes its place (restoreOpen).
+    if (!fxTerms.activeID) showOpencode = true
   }
   push()
 }
@@ -264,8 +382,9 @@ const applyTheme = () => {
   // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
   terminal.setCliOverrides(
     { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } },
-    currentSessionID,
+    opencodeRoute,
   )
+  fxTerms.colorScheme(dark)
   push()
 }
 
@@ -278,35 +397,201 @@ const setFontSize = (size: number) => {
   push()
 }
 
+/** Shows the opencode TUI (and no fx terminal). */
+const showOpencodeTerm = () => {
+  markFxViewed(currentSessionID())
+  showOpencode = true
+  fxTerms.deactivate()
+}
+
+/** Shows an fx terminal: the opencode TUI goes to the back, and its session stops counting as on screen. */
+const showFxTerm = () => {
+  markFxViewed(currentSessionID())
+  showOpencode = false
+  opencode.setCurrent(null)
+}
+
+/** Nothing on screen: the empty state. */
+const showNothing = () => {
+  markFxViewed(currentSessionID())
+  showOpencode = false
+  opencode.setCurrent(null)
+  fxTerms.deactivate()
+}
+
 const openSession = (sessionID: string) => {
-  currentSessionID = sessionID
+  if (harnessOf(sessionID) === "fx") return openFxSession(sessionID)
+  if (!opencodeStarted) return report(new Error("opencode isn't installed, so its sessions can't be opened"))
+  showOpencodeTerm()
+  opencodeRoute = sessionID
   opencode.setCurrent(sessionID)
   terminal.open(sessionID)
+  saveOpen()
   push()
 }
 
-/** Space model if it sets one, else the app default if on, else none (opencode decides). */
-const modelFor = (space?: Space) => {
-  if (space?.model && (space.modelEnabled ?? true)) return space.model
-  const { defaultModel, defaultModelEnabled } = store.data.settings
-  return (defaultModelEnabled && defaultModel) || undefined
+const openFxSession = (sessionID: string) => {
+  const session = fx.get(sessionID)
+  if (!session) return
+  if (!fxTerms.bySession(sessionID) && session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid)) {
+    toast({
+      icon: "alert",
+      message: `“${sessionByID(sessionID)?.title ?? "This session"}” is open in another terminal (pid ${session.ownerPid}). Quit fx there to open it here.`,
+    })
+    return
+  }
+  showFxTerm()
+  void flushTitle(sessionID).finally(() => {
+    fxTerms.open(sessionID, { cwd: session.directory, env: {} })
+    markFxViewed(sessionID)
+    push()
+  })
 }
 
-const newSession = async (spaceID: string | null, directory?: string) => {
+/** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
+const harnessFor = (space?: Space): Harness => {
+  const wanted = space?.harness ?? store.data.settings.defaultHarness
+  const ready = (h: Harness) => (h === "fx" ? fxStarted : opencodeStarted)
+  const other: Harness = wanted === "fx" ? "opencode" : "fx"
+  return !ready(wanted) && ready(other) ? other : wanted
+}
+
+/** Space model for that harness if it sets one, else the app default if on, else none (the harness decides). */
+const modelFor = (harness: Harness, space?: Space) => {
+  const on = (space?.modelEnabled ?? true) && space
+  const spaceModel = harness === "fx" ? space?.fxModel : space?.model
+  if (on && spaceModel) return spaceModel
+  const { defaultModel, defaultFxModel, defaultModelEnabled } = store.data.settings
+  return (defaultModelEnabled && (harness === "fx" ? defaultFxModel : defaultModel)) || undefined
+}
+
+const newSession = async (spaceID: string | null, directory?: string, harness?: Harness) => {
   const space = spaceID ? store.space(spaceID) : undefined
-  const id = await opencode.createSession(directory || space?.directory || homedir(), {
-    model: modelFor(space),
-    instructions: space?.instructions,
-  })
+  harness ??= harnessFor(space)
+  const cwd = directory || space?.directory || homedir()
+  const model = modelFor(harness, space)
+  if (harness === "fx") {
+    if (!fxStarted) throw new Error(`fx isn't installed. Install it with: ${FX_INSTALL}`)
+    const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
+    showFxTerm()
+    // The session joins the space once fx reports its id (onOwner).
+    fxTerms.create({ cwd, args, env: {}, spaceID })
+    push()
+    return
+  }
+  if (!opencodeStarted) throw new Error("opencode isn't installed, so ctrl can't start an opencode session")
+  const id = await opencode.createSession(cwd, { model, instructions: space?.instructions })
   if (spaceID) store.assign(id, spaceID)
   openSession(id)
 }
 
-/** New session in the current session's folder and space; a plain new chat when none is open. */
+/** New session in the current session's folder, space and harness; a plain new chat when none is open. */
 const newSessionHere = () => {
-  const current = opencode.sessions.find((s) => s.id === currentSessionID)
+  const current = sessionByID(currentSessionID() ?? "")
   if (!current) return newSession(null)
-  return newSession(store.data.assignments[current.id] ?? null, current.directory)
+  return newSession(store.data.assignments[current.id] ?? null, current.directory, current.harness)
+}
+
+// ---------- reopening sessions at launch ----------
+
+/** Off until the saved list has been read back, so the empty startup state can't overwrite it. */
+let restored = false
+const RESTORE_STAGGER_MS = 300
+
+const saveOpen = () => {
+  if (restored) store.setOpen(fxTerms.openSessions().slice(0, MAX_LIVE), currentSessionID())
+}
+
+/**
+ * fx has no background service, so its processes die with ctrl. Bring back the fx sessions that
+ * were open, in the background one at a time, and whichever session was on screen. `fx resume`
+ * reprints each conversation.
+ */
+const restoreOpen = () => {
+  const { sessions: open, current } = store.data.open
+  const reopenable = (id: string) => {
+    if (store.data.archived[id]) return false
+    // opencode's list may still be loading: the TUI opens it (or says it's gone) either way.
+    if (harnessOf(id) === "opencode") return opencodeStarted
+    const s = fx.get(id)
+    // Opened in another terminal since: fx won't let two processes share it.
+    return !!s && (s.ownerPid === undefined || fxTerms.isOurPid(s.ownerPid))
+  }
+  const rest = open.filter((id) => id !== current && harnessOf(id) === "fx" && reopenable(id)).slice(0, MAX_LIVE - 1)
+  if (current && reopenable(current)) openSession(current)
+  // Least recent first, so the most recent ends up first in the next save.
+  rest.reverse().forEach((id, i) =>
+    setTimeout(() => {
+      const s = fx.get(id)
+      if (s && !fxTerms.bySession(id)) fxTerms.open(id, { cwd: s.directory, env: {} }, true)
+    }, RESTORE_STAGGER_MS * (i + 1)),
+  )
+  restored = true
+  if (current || rest.length) console.log(`[ctrl] reopening ${rest.length + (current ? 1 : 0)} sessions`)
+}
+
+// ---------- titles ----------
+
+const renameSession = async (sessionID: string, title: string) => {
+  if (harnessOf(sessionID) === "opencode") return opencode.renameSession(sessionID, title)
+  title = title.trim()
+  if (!title) return
+  // fx rewrites session.json while it runs, so the rename waits in state.json until no fx owns the session.
+  store.setTitle(sessionID, title)
+  fx.rebuild()
+  await flushTitle(sessionID)
+}
+
+const flushTitle = async (sessionID: string) => {
+  const title = store.data.titles[sessionID]
+  const session = fx.get(sessionID)
+  if (!title || !session) return
+  if (session.ownerPid !== undefined || fxTerms.bySession(sessionID)) return
+  try {
+    await fx.writeTitle(sessionID, title)
+    store.setTitle(sessionID, null)
+  } catch (err) {
+    console.error("[ctrl] couldn't write the fx title", err)
+  }
+}
+
+// ---------- models ----------
+
+let fxModelCache: { at: number; choices: Promise<ModelChoices> } | undefined
+const FX_MODEL_CACHE_MS = 5 * 60_000
+
+/** `fx models --json` for fx's active provider. Newer fx also lists each model's efforts. */
+const listFxModels = (): Promise<ModelChoices> => {
+  if (fxCheck.state !== "ok") return Promise.reject(new Error("fx isn't installed"))
+  if (fxModelCache && Date.now() - fxModelCache.at < FX_MODEL_CACHE_MS) return fxModelCache.choices
+  const bin = fxCheck.bin
+  const choices = new Promise<ModelChoices>((resolve, reject) => {
+    execFile(bin, ["models", "--json"], { timeout: 20_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+      type Listed = { id: string; name?: string; efforts?: string[] }
+      let json: { ids?: string[]; models?: Listed[] }
+      try {
+        json = JSON.parse(stdout)
+      } catch {
+        return reject(err ?? new Error("fx models returned no JSON"))
+      }
+      const list: Listed[] = json.models ?? (json.ids ?? []).map((id) => ({ id }))
+      const models: ModelOption[] = list.map((m, i) => ({
+        providerID: "fx",
+        id: m.id,
+        name: m.name ?? m.id.split("/").pop()!,
+        providerName: "fx",
+        vendor: m.id.includes("/") ? m.id.split("/")[0] : undefined,
+        // fx lists newest first within a vendor; keep that order.
+        released: list.length - i,
+        variants: m.efforts ?? [],
+      }))
+      models.sort((a, b) => (a.vendor ?? "").localeCompare(b.vendor ?? "") || b.released - a.released)
+      resolve({ models, providers: [{ id: "fx", name: "fx" }] })
+    })
+  })
+  fxModelCache = { at: Date.now(), choices }
+  choices.catch(() => (fxModelCache = undefined))
+  return choices
 }
 
 // ---------- toasts & undo ----------
@@ -362,11 +647,18 @@ const latestUndo = () => {
 const archive = (sessionIDs: string[]) => {
   const ids = sessionIDs.filter((id) => !store.data.archived[id])
   if (!ids.length) return
-  const wasCurrent = currentSessionID && ids.includes(currentSessionID) ? currentSessionID : null
+  const current = currentSessionID()
+  const wasCurrent = current && ids.includes(current) ? current : null
   store.setArchived(ids, true)
-  if (wasCurrent) terminal.home()
+  if (wasCurrent) leave(wasCurrent)
+  // Archived fx sessions don't need a process, unless they're busy.
+  for (const id of ids) {
+    if (harnessOf(id) !== "fx") continue
+    const status = fxTerms.status(id)?.state
+    if (status !== "working" && status !== "blocked") fxTerms.closeSession(id)
+  }
   push()
-  const title = ids.length === 1 ? opencode.sessions.find((s) => s.id === ids[0])?.title : undefined
+  const title = ids.length === 1 ? sessionByID(ids[0])?.title : undefined
   toast(
     {
       icon: "archive",
@@ -376,19 +668,30 @@ const archive = (sessionIDs: string[]) => {
     {
       undo: () => {
         store.setArchived(ids, false)
-        if (wasCurrent && !currentSessionID) openSession(wasCurrent)
+        if (wasCurrent && !currentSessionID()) openSession(wasCurrent)
       },
     },
   )
 }
 
-// Deleting is permanent in opencode, so hide the session right away and only
-// delete it once the undo window has passed (or when ctrl quits).
+/** The session on screen goes away (archived, deleted): opencode goes back to its home screen, fx to the empty state. */
+const leave = (sessionID: string) => {
+  if (harnessOf(sessionID) === "opencode") terminal.home()
+  else showNothing()
+}
+
+// Deleting is permanent (opencode removes it, fx's folder goes to the Trash), so hide
+// the session right away and only delete it once the undo window has passed (or when ctrl quits).
 const pendingDeletes = new Map<string, ReturnType<typeof setTimeout>>()
 
 const deleteSession = (sessionID: string) => {
-  const title = opencode.sessions.find((s) => s.id === sessionID)?.title
-  if (currentSessionID === sessionID) terminal.home()
+  const title = sessionByID(sessionID)?.title
+  const fxSession = fx.get(sessionID)
+  if (harnessOf(sessionID) === "fx" && fxSession?.ownerPid !== undefined && !fxTerms.isOurPid(fxSession.ownerPid)) {
+    toast({ icon: "alert", message: `“${title}” is open in another terminal. Quit fx there to delete it.` })
+    return
+  }
+  if (currentSessionID() === sessionID) leave(sessionID)
   pendingDeletes.set(
     sessionID,
     setTimeout(() => void commitDelete(sessionID), TOAST_MS),
@@ -409,10 +712,18 @@ const commitDelete = async (sessionID: string) => {
   if (!pendingDeletes.has(sessionID)) return
   clearTimeout(pendingDeletes.get(sessionID))
   try {
-    await opencode.removeSession(sessionID)
-    store.assign(sessionID, null)
-    delete store.data.archived[sessionID]
-    store.save()
+    if (harnessOf(sessionID) === "fx") {
+      const term = fxTerms.bySession(sessionID)
+      if (term) {
+        fxTerms.close(term.id)
+        // Let fx release its lock and finish writing before the folder moves.
+        await new Promise((r) => setTimeout(r, 500))
+      }
+      // The Trash, not rm: a mistaken delete can still be recovered from Finder.
+      await shell.trashItem(join(SESSIONS_DIR, rawID(sessionID)))
+      fx.forget(sessionID)
+    } else await opencode.removeSession(sessionID)
+    store.forgetSession(sessionID)
   } catch (err) {
     report(err)
   } finally {
@@ -485,7 +796,9 @@ const fixMcp = (name: string) => {
     `The "${name}" MCP server is broken in opencode (status: ${status}${error}). ` +
     `Diagnose and fix it: check its entry in my opencode config and \`opencode mcp list\`. ` +
     `If it only needs sign-in, tell me to run /mcps and select it instead.`
+  showOpencodeTerm()
   terminal.prefill(prompt)
+  push()
 }
 
 // ---------- shortcuts ----------
@@ -504,7 +817,8 @@ const runCommand = (id: CommandID) => {
     return
   }
   if (id === "archive-session") {
-    if (currentSessionID) archive([currentSessionID])
+    const current = currentSessionID()
+    if (current) archive([current])
     return
   }
   if (id === "new-session-here") void newSessionHere().catch(report)
@@ -547,13 +861,15 @@ function registerIpc() {
     store.patchSpace(id, { directory: res.filePaths[0] })
     push()
   })
-  ipcMain.handle("models:list", (_e, directory?: string) => opencode.listModels(directory))
+  ipcMain.handle("models:list", (_e, harness: Harness, directory?: string) =>
+    harness === "fx" ? listFxModels() : opencode.listModels(directory),
+  )
   ipcMain.handle("space:move", (_e, id: string, index: number) => {
     store.moveSpace(id, index)
     push()
   })
   ipcMain.handle("session:rename", (_e, sessionID: string, title: string) =>
-    opencode.renameSession(sessionID, title).catch(report),
+    renameSession(sessionID, title).catch(report),
   )
   ipcMain.handle("settings:set", (_e, patch: Partial<Settings>) => {
     if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
@@ -585,6 +901,11 @@ function registerIpc() {
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)
     push()
+    // The skill offer waits for the welcome screen, so it doesn't land on top of it.
+    if (patch.onboarded && !store.data.ui.skillPrompted && skill.refresh().state === "missing") {
+      store.setUi({ skillPrompted: true })
+      setTimeout(suggestSkill, 1500)
+    }
   })
   ipcMain.handle("session:archive", (_e, sessionID: string, archived: boolean) => {
     if (archived) return archive([sessionID])
@@ -592,13 +913,17 @@ function registerIpc() {
     push()
   })
   ipcMain.handle("session:archive-current", () => {
-    if (currentSessionID) archive([currentSessionID])
+    const current = currentSessionID()
+    if (current) archive([current])
   })
   ipcMain.handle("session:new-here", () => newSessionHere())
   ipcMain.handle("open-external", (_e, url: string) => openExternal(url))
   // wrapped-links
-  ipcMain.handle("links:resolve", (_e, url: string, next: string) => wrappedLinks.resolve(currentSessionID, url, next))
-  ipcMain.handle("links:prefetch", () => currentSessionID && wrappedLinks.prefetch(currentSessionID))
+  ipcMain.handle("links:resolve", (_e, url: string, next: string) => wrappedLinks.resolve(currentSessionID(), url, next))
+  ipcMain.handle("links:prefetch", () => {
+    const current = currentSessionID()
+    if (current) wrappedLinks.prefetch(current)
+  })
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
   ipcMain.handle("toast:action", (_e, id: string) => runToastAction(id))
   ipcMain.handle("mcp:fix", (_e, name: string) => fixMcp(name))
@@ -613,8 +938,14 @@ function registerIpc() {
   ipcMain.handle("space:menu", (_e, id: string) => {
     const space = store.space(id)
     if (!space || !win) return
+    const harness = harnessFor(space)
+    const other: Harness = harness === "fx" ? "opencode" : "fx"
+    const otherReady = other === "fx" ? fxStarted : opencodeStarted
     Menu.buildFromTemplate([
       { label: "New session", click: () => void newSession(id).catch(report) },
+      ...(otherReady
+        ? [{ label: `New ${other} session`, click: () => void newSession(id, undefined, other).catch(report) }]
+        : []),
       { type: "separator" },
       { label: "Rename", click: () => send("space:rename", id) },
       { label: "Space settings…", click: () => send("space:settings", id) },
@@ -622,7 +953,7 @@ function registerIpc() {
       {
         label: "Archive all sessions",
         click: () =>
-          archive(opencode.sessions.filter((s) => store.data.assignments[s.id] === id).map((s) => s.id)),
+          archive(sessions.filter((s) => store.data.assignments[s.id] === id).map((s) => s.id)),
       },
       { label: "Delete space", click: () => deleteSpace(id) },
     ]).popup({ window: win })
@@ -630,6 +961,7 @@ function registerIpc() {
   ipcMain.handle("session:menu", (_e, sessionID: string) => {
     if (!win) return
     const current = store.data.assignments[sessionID] ?? null
+    const fxTerm = harnessOf(sessionID) === "fx" ? fxTerms.bySession(sessionID) : undefined
     Menu.buildFromTemplate([
       { label: "Open", click: () => openSession(sessionID) },
       { label: "Rename", click: () => send("session:rename", sessionID) },
@@ -648,6 +980,16 @@ function registerIpc() {
           })),
         ],
       },
+      ...(harnessOf(sessionID) === "fx"
+        ? [
+            { type: "separator" as const },
+            {
+              label: "Reveal session folder",
+              click: () => shell.showItemInFolder(join(SESSIONS_DIR, rawID(sessionID), "session.json")),
+            },
+            ...(fxTerm ? [{ label: "Quit fx process", click: () => fxTerms.close(fxTerm.id) }] : []),
+          ]
+        : []),
       { type: "separator" },
       { label: "Delete session", click: () => deleteSession(sessionID) },
     ]).popup({ window: win })
@@ -677,7 +1019,7 @@ function registerIpc() {
     return adapters.check()
   })
 
-  ipcMain.handle("opencode:recheck", () => recheckOpencode())
+  ipcMain.handle("opencode:recheck", () => Promise.all([recheckOpencode(), recheckFx()]))
   ipcMain.handle("skill:install", () => installSkill())
   ipcMain.handle("skill:uninstall", () => {
     skill.uninstall()
@@ -687,9 +1029,18 @@ function registerIpc() {
   ipcMain.handle("update:check", () => updater.check())
   ipcMain.handle("update:install", () => updater.install().catch(report))
 
-  ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
-  ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
-  ipcMain.on("pty:resize", (_e, cols: number, rows: number) => terminal.resize(cols, rows))
+  // The opencode TUI repaints itself, so a re-attached xterm only needs live output from here on.
+  ipcMain.handle("pty:attach", (_e, termID: string) =>
+    termID === OPENCODE_TERM ? { data: "", end: opencodeOut } : fxTerms.backlog(termID),
+  )
+  ipcMain.on("pty:write", (_e, termID: string, data: string) =>
+    termID === OPENCODE_TERM ? terminal.write(data) : fxTerms.write(termID, data),
+  )
+  ipcMain.on("pty:resize", (_e, cols: number, rows: number) => {
+    terminal.resize(cols, rows)
+    fxTerms.resize(cols, rows)
+    store.setTermSize(cols, rows)
+  })
 }
 
 const openExternal = (url: string) => {
@@ -771,7 +1122,7 @@ function createWindow() {
     // ⌘Z only means undo while there's something to undo.
     if (id === "undo" && !latestUndo()) return
     // Nothing to archive: let the menu's Close Window hide ctrl as usual.
-    if (id === "archive-session" && !currentSessionID) return
+    if (id === "archive-session" && !currentSessionID()) return
     event.preventDefault()
     runCommand(id)
   })
@@ -864,14 +1215,15 @@ app.whenReady().then(async () => {
     if (store.data.settings.appearance === "system") applyTheme()
   })
   createWindow()
-  void recheckOpencode()
+  // Both checks first: the session on screen at quit comes back, whichever harness it belongs to.
+  void Promise.all([recheckOpencode(), recheckFx()]).then(restoreOpen)
   search.start()
   refreshSkill()
   if (!store.data.ui.skillPrompted && skill.refresh().state === "missing") {
     win!.webContents.once("did-finish-load", () =>
       setTimeout(() => {
-        // One thing at a time: the setup screen comes first.
-        if (opencodeCheck.state !== "ok") return
+        // One thing at a time: the welcome screen comes first (finishing it offers the skill).
+        if (!store.data.ui.onboarded) return
         store.setUi({ skillPrompted: true })
         suggestSkill()
       }, 3000),
@@ -905,6 +1257,8 @@ app.on("window-all-closed", () => app.quit())
 
 app.on("will-quit", () => {
   terminal.dispose()
+  fxTerms.dispose()
+  fx.stop()
   search.stop()
   adapters.stop()
   updater.stop()

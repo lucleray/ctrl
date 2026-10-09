@@ -1,14 +1,16 @@
-// Seeds a throwaway opencode (its own HOME, XDG dirs and service port) and a ctrl state
-// folder with demo spaces and sessions, for README screenshots. Nothing touches your real
-// opencode or ctrl state. Usage: node scripts/demo/seed.mjs <demo dir>
+// Seeds a throwaway opencode (its own HOME, XDG dirs and service port), or with --harness fx
+// a throwaway ~/.fx in that HOME, and a ctrl state folder with demo spaces and sessions, for
+// README screenshots. Nothing touches your real opencode, fx or ctrl state.
+// Usage: node scripts/demo/seed.mjs <demo dir> [--harness fx]
 // Then scripts/demo/capture.mjs takes the screenshots (docs/DEVELOPMENT.md → Screenshots).
 import { execFileSync } from "node:child_process"
-import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { demoEnv, opencodeBin } from "./env.mjs"
 
 const dir = process.argv[2]
-if (!dir) throw new Error("usage: seed.mjs <demo dir>")
+if (!dir) throw new Error("usage: seed.mjs <demo dir> [--harness fx]")
+const harness = process.argv.includes("--harness") ? process.argv[process.argv.indexOf("--harness") + 1] : "opencode"
 rmSync(dir, { recursive: true, force: true })
 const env = demoEnv(dir)
 const home = env.HOME
@@ -22,10 +24,12 @@ const api = (method, path, body) => {
 
 const folders = { next: join(home, "code/next.js"), ai: join(home, "code/ai"), notes: join(home, "notes") }
 for (const f of Object.values(folders)) mkdirSync(f, { recursive: true })
-// A separate port, so the demo service never collides with the real one.
-oc("service", "set", "port", "49411")
-mkdirSync(env.XDG_CONFIG_HOME + "/opencode", { recursive: true })
-writeFileSync(env.XDG_CONFIG_HOME + "/opencode/opencode.json", JSON.stringify({ model: "opencode/big-pickle" }))
+if (harness === "opencode") {
+  // A separate port, so the demo service never collides with the real one.
+  oc("service", "set", "port", "49411")
+  mkdirSync(env.XDG_CONFIG_HOME + "/opencode", { recursive: true })
+  writeFileSync(env.XDG_CONFIG_HOME + "/opencode/opencode.json", JSON.stringify({ model: "opencode/big-pickle" }))
+}
 
 // A model the demo opencode knows without any login (OpenCode Zen), so the TUI shows its name.
 const MODEL = { id: "big-pickle", providerID: "opencode" }
@@ -205,6 +209,80 @@ const SESSIONS = [
   },
 ]
 
+const SPACES = [
+  { id: "spc_demo_next", name: "next.js", directory: folders.next },
+  { id: "spc_demo_reviews", name: "Reviews", directory: folders.next },
+  { id: "spc_demo_ai", name: "AI SDK", directory: folders.ai },
+]
+const ui = { skillPrompted: true, resourcesOpen: true, recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280, resourcesWidth: 320, resourcesScope: "session" }
+// The demo links point at made-up Slack and Vercel teams: show them as links only.
+const settings = { adapterModes: { slack: "links", vercel: "links" } }
+
+/** Writes ctrl's state for the demo sessions, plus the ids capture.mjs drives them by. */
+function writeState(ids, extra = {}) {
+  const state = {
+    spaces: SPACES,
+    assignments: Object.fromEntries(SESSIONS.filter((s) => s.space).map((s) => [ids[s.key], `spc_demo_${s.space}`])),
+    archived: Object.fromEntries(SESSIONS.filter((s) => s.archived).map((s) => [ids[s.key], now - s.ago * min])),
+    ui,
+    settings,
+    ...extra,
+  }
+  mkdirSync(join(dir, "ctrl"), { recursive: true })
+  writeFileSync(join(dir, "ctrl/state.json"), JSON.stringify(state, null, 2))
+  writeFileSync(join(dir, "ids.json"), JSON.stringify(ids, null, 2))
+  console.log(`[demo] seeded ${SESSIONS.length} ${harness} sessions in ${dir}`)
+}
+
+if (harness === "fx") {
+  seedFx()
+  process.exit(0)
+}
+
+/**
+ * fx sessions are plain files: ~/.fx/sessions/<id>/session.json + events.jsonl (one event per line), all
+ * 0600 since fx refuses files others can read. No tool calls: their output lives in separate files.
+ */
+function seedFx() {
+  const ids = {}
+  const viewed = {}
+  const sessionsDir = join(home, ".fx/sessions")
+  for (const s of SESSIONS) {
+    const raw = fakeID("", s.key).slice(12, 24)
+    ids[s.key] = `fx:${raw}`
+    const end = now - s.ago * min
+    const start = end - s.turns.length * 3 * min
+    const folder = join(sessionsDir, raw)
+    mkdirSync(folder, { recursive: true, mode: 0o700 })
+    const write = (file, text) => writeFileSync(join(folder, file), text, { mode: 0o600 })
+    write(
+      "session.json",
+      JSON.stringify({
+        schema_version: 4, id: raw, origin_workspace_root: folders[s.folder], workspace_root: folders[s.folder],
+        created_at_ms: start, updated_at_ms: end, conversation_language: "und-Latn", provider: "gateway",
+        model: "anthropic/claude-opus-5.5", effort: "auto", fast_mode: false, title: s.title, subagent_child: false,
+      }),
+    )
+    const events = []
+    const event = (t, body) => events.push(JSON.stringify({ schema_version: 3, seq: events.length + 1, timestamp_ms: t, event: body }))
+    s.turns.forEach(([user, reply], n) => {
+      // The last turn ends at `end`, so the sidebar's age and unread state follow the demo times.
+      const t = n === s.turns.length - 1 ? end : start + n * 3 * min
+      event(t, { user: { text: user, images: [], work_id: null } })
+      event(t, { assistant: { text: reply, provider_replay: null, standalone_response: false } })
+      const summary = { started_at_ms: t - 60_000, completed_at_ms: t, thinking_duration_ms: 4200, turn_duration_ms: 60_000, token_progress: { input_tokens: 1200, output_tokens: 300, input_exact: false, output_exact: true } }
+      event(t, { turn_completed: { files: [], turn_summary: summary } })
+    })
+    write("events.jsonl", `${events.join("\n")}\n`)
+    // ctrl reads "last updated" from the log's mtime too: put it back at the demo time.
+    utimesSync(join(folder, "events.jsonl"), end / 1000, end / 1000)
+    write("permissions.json", JSON.stringify({ schema_version: 2, next_generation: 1, rules: [] }))
+    // fx has no read state: ctrl keeps it. Failed turns only show for open fx sessions, so those stay unread.
+    if (s.status === "idle") viewed[ids[s.key]] = end
+  }
+  writeState(ids, { viewed, viewedSince: now - 10_000 * min, settings: { ...settings, defaultHarness: "fx" } })
+}
+
 // A real session in each folder gives a valid projectID for the imports, then goes away.
 const projects = {}
 for (const [name, directory] of Object.entries(folders)) {
@@ -265,20 +343,4 @@ const db = join(env.XDG_DATA_HOME, "opencode/opencode.db")
 const updates = SESSIONS.map((s) => `UPDATE session_v2 SET time_updated = ${now - s.ago * min} WHERE id = '${ids[s.key]}';`)
 execFileSync("sqlite3", [db, updates.join("\n")])
 
-const SPACES = [
-  { id: "spc_demo_next", name: "next.js", directory: folders.next },
-  { id: "spc_demo_reviews", name: "Reviews", directory: folders.next },
-  { id: "spc_demo_ai", name: "AI SDK", directory: folders.ai },
-]
-const state = {
-  spaces: SPACES,
-  assignments: Object.fromEntries(SESSIONS.filter((s) => s.space).map((s) => [ids[s.key], `spc_demo_${s.space}`])),
-  archived: Object.fromEntries(SESSIONS.filter((s) => s.archived).map((s) => [ids[s.key], now - s.ago * min])),
-  ui: { skillPrompted: true, resourcesOpen: true, recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280, resourcesWidth: 320, resourcesScope: "session" },
-  // The demo links point at made-up Slack and Vercel teams: show them as links only.
-  settings: { adapterModes: { slack: "links", vercel: "links" } },
-}
-mkdirSync(join(dir, "ctrl"), { recursive: true })
-writeFileSync(join(dir, "ctrl/state.json"), JSON.stringify(state, null, 2))
-writeFileSync(join(dir, "ids.json"), JSON.stringify(ids, null, 2))
-console.log(`[demo] seeded ${SESSIONS.length} sessions in ${dir}`)
+writeState(ids)

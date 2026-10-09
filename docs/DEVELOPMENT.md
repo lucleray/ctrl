@@ -36,6 +36,9 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir (created if missing)
 - `CTRL_OPENCODE=/path/to/opencode` use that binary (a missing path or a fake that prints an old
   version shows the setup screen)
+- `CTRL_FX=/path/to/fx` use that binary (a missing path means no fx)
+- `CTRL_FX_HOME=/tmp/fx` read fx sessions from there instead of `~/.fx`. fx itself has no profile override,
+  so sessions a test run creates land in `~/.fx/sessions`: delete them afterwards
 - `CTRL_SKILLS_DIR=/tmp/skills` install the read-session skill there, ignoring the real skill folders
 - `CTRL_UPDATES=1` check for updates in dev runs too; `CTRL_UPDATE_NO_RELAUNCH=1` swaps the app on
   update without reopening it
@@ -55,8 +58,12 @@ The README media in `docs/media` come from demo data, never from your own sessio
 ```bash
 node scripts/demo/capture.mjs            # all of them, ~3 minutes
 node scripts/demo/capture.mjs --no-seed --only search   # redo one, reusing the demo data
+node scripts/demo/capture.mjs --harness fx   # the fx versions (hero-fx.png, …), shown next to the opencode ones
 ```
 
+- With `--harness fx`, `seed.mjs` writes the same sessions as fx files into the demo HOME's `~/.fx/sessions`
+  instead, and ctrl runs with no opencode (`CTRL_OPENCODE` pointing nowhere) and the real fx binary (`CTRL_FX`),
+  with a dummy `AI_GATEWAY_API_KEY` so fx skips its sign-in screen (resuming never calls the API).
 - `scripts/demo/seed.mjs` starts a throwaway opencode (its own HOME, XDG dirs and service port 49411) and
   imports demo sessions with real public GitHub links, so the resources panel shows live PR status. It also
   writes a ctrl state folder with three spaces.

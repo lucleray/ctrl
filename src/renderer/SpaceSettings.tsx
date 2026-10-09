@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import type { ModelChoices, ModelRef, Space } from "../shared/types"
+import { HARNESSES, type FxCheck, type ModelChoices, type Settings, type Space } from "../shared/types"
 import { shortPath } from "./format"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -7,14 +7,22 @@ import { Toggle } from "./Toggle"
 
 export function SpaceSettings({
   space,
-  appDefault,
+  settings,
+  fx,
   onClose,
 }: {
   space: Space
-  /** Settings → default model, used when the space doesn't pick one */
-  appDefault: ModelRef | null
+  /** App settings: default harness and models, used when the space doesn't pick its own */
+  settings: Settings
+  fx: FxCheck
   onClose(): void
 }) {
+  const harness = space.harness ?? settings.defaultHarness
+  const harnessName = HARNESSES.find((h) => h.id === harness)!.name
+  const modelKey = harness === "fx" ? "fxModel" : "model"
+  const appDefault = settings.defaultModelEnabled
+    ? (harness === "fx" ? settings.defaultFxModel : settings.defaultModel)
+    : null
   const root = useRef<HTMLDivElement>(null)
   const [name, setName] = useState(space.name)
   const [instructions, setInstructions] = useState(space.instructions ?? "")
@@ -27,17 +35,19 @@ export function SpaceSettings({
   useEffect(() => {
     let live = true
     setModelError(undefined)
-    window.ctrl.listModels(space.directory).then(
+    setChoices(null)
+    window.ctrl.listModels(harness, space.directory).then(
       (c) => live && setChoices(c),
       (err) => live && setModelError(err instanceof Error ? err.message : String(err)),
     )
     return () => {
       live = false
     }
-  }, [space.directory])
+  }, [harness, space.directory])
 
   // Older state has a model but no flag: that meant on.
   const modelOn = space.modelEnabled ?? !!space.model
+  const model = space[modelKey] ?? null
 
   // Text fields save on blur; also flush on close, which unmounts without a blur.
   const pending = useRef({ name, instructions })
@@ -120,11 +130,39 @@ export function SpaceSettings({
             </div>
           </div>
 
+          <div className="setting">
+            <div>
+              <div className="setting-title">Harness</div>
+              <div className="setting-desc">
+                Agent new sessions in this space start with. Sessions of either kind can live in any space.
+                {harness === "fx" && fx.state === "missing" ? " fx isn't installed yet." : ""}
+              </div>
+            </div>
+            <div className="segmented">
+              <button
+                className={space.harness ? "" : "on"}
+                title={`Follows Settings (${settings.defaultHarness})`}
+                onClick={() => void window.ctrl.updateSpace(space.id, { harness: null })}
+              >
+                Default
+              </button>
+              {HARNESSES.map((h) => (
+                <button
+                  key={h.id}
+                  className={space.harness === h.id ? "on" : ""}
+                  onClick={() => void window.ctrl.updateSpace(space.id, { harness: h.id })}
+                >
+                  {h.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="setting setting-with-sub">
             <div>
               <div className="setting-title">Custom model</div>
               <div className="setting-desc">
-                Model for new sessions in this space. You can still switch models inside a session.
+                {harnessName} model for new sessions in this space. You can still switch models inside a session.
               </div>
             </div>
             <Toggle
@@ -133,7 +171,7 @@ export function SpaceSettings({
                 void window.ctrl.updateSpace(space.id, {
                   modelEnabled: on,
                   // First time on: start from the app's custom model, if there is one.
-                  ...(on && !space.model && appDefault ? { model: appDefault } : {}),
+                  ...(on && !model && appDefault ? { [modelKey]: appDefault } : {}),
                 })
               }
             />
@@ -142,13 +180,16 @@ export function SpaceSettings({
             <ModelPicker
               choices={choices}
               error={modelError}
-              value={space.model ?? null}
+              value={model}
               enabled={modelOn}
-              onChange={(model) => void window.ctrl.updateSpace(space.id, { model })}
+              onChange={(next) => void window.ctrl.updateSpace(space.id, { [modelKey]: next })}
               fallback={
                 appDefault
                   ? { label: "App custom model", detail: "Uses the custom model from ctrl's settings" }
-                  : { label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }
+                  : {
+                      label: `Default ${harnessName} model`,
+                      detail: `ctrl doesn't set a model, so ${harnessName} uses its own default`,
+                    }
               }
             />
           </div>
@@ -158,8 +199,8 @@ export function SpaceSettings({
         <div className="settings-card">
           <div className="setting setting-stack">
             <div className="setting-desc wide">
-              Added to every new session in this space as extra instructions. They don't show up in the chat, and the
-              model sees them on every turn.
+              Added to every new opencode session in this space as extra instructions. They don't show up in the chat,
+              and the model sees them on every turn. fx has no way to take them, so fx sessions don't get them.
             </div>
             <textarea
               className="setting-textarea"

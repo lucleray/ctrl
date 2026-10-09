@@ -19,7 +19,9 @@ const DEFAULT_SETTINGS: Settings = {
   soundsWhenFocused: false,
   soundChoices: DEFAULT_SOUND_CHOICES,
   fontSize: FONT_SIZE.default,
+  defaultHarness: "opencode",
   defaultModel: null,
+  defaultFxModel: null,
   defaultModelEnabled: false,
   adapterModes: {},
   shortcuts: {},
@@ -32,6 +34,16 @@ type Persisted = {
   archived: Record<string, number>
   ui: UiState
   settings: Settings
+  /** fx sessions: end of the last turn you've seen (fx has no read state; opencode keeps its own) */
+  viewed: Record<string, number>
+  /** When fx read state started: turns that ended before count as seen, so old history isn't all unread */
+  viewedSince: number
+  /** fx renames waiting for fx to let go of the session (it rewrites session.json while it runs) */
+  titles: Record<string, string>
+  /** fx sessions open at quit, most recently used first, and the one on screen: reopened at launch */
+  open: { sessions: string[]; current: string | null }
+  /** Terminal area size, so restored and new fx processes start at the right size */
+  termSize?: { cols: number; rows: number }
 }
 
 export class Store {
@@ -46,6 +58,10 @@ export class Store {
       spaces: [],
       assignments: {},
       archived: {},
+      viewed: {},
+      viewedSince: Date.now(),
+      titles: {},
+      open: { sessions: [], current: null },
       ...loaded,
       ui: { ...DEFAULT_UI, ...loaded.ui },
       settings: {
@@ -64,6 +80,7 @@ export class Store {
       },
     }
     delete (this.data.settings as { disabledAdapters?: unknown }).disabledAdapters
+    if (!loaded.viewedSince) this.save()
   }
 
   setSettings(patch: Partial<Settings>) {
@@ -84,7 +101,49 @@ export class Store {
     this.save()
   }
 
+  private saveTimer?: ReturnType<typeof setTimeout>
+
+  /** For values that change often (every switch, finished turn or resize): one write per second at most. */
+  private saveSoon() {
+    clearTimeout(this.saveTimer)
+    this.saveTimer = setTimeout(() => this.save(), 1000)
+  }
+
+  setOpen(sessions: string[], current: string | null) {
+    const next = { sessions, current }
+    if (JSON.stringify(next) === JSON.stringify(this.data.open)) return
+    this.data.open = next
+    this.saveSoon()
+  }
+
+  setTermSize(cols: number, rows: number) {
+    if (this.data.termSize?.cols === cols && this.data.termSize.rows === rows) return
+    this.data.termSize = { cols, rows }
+    this.saveSoon()
+  }
+
+  setViewed(sessionID: string, at: number) {
+    this.data.viewed[sessionID] = at
+    this.saveSoon()
+  }
+
+  setTitle(sessionID: string, title: string | null) {
+    if (title) this.data.titles[sessionID] = title
+    else delete this.data.titles[sessionID]
+    this.save()
+  }
+
+  /** Drops everything ctrl keeps about a deleted session. */
+  forgetSession(sessionID: string) {
+    delete this.data.assignments[sessionID]
+    delete this.data.archived[sessionID]
+    delete this.data.viewed[sessionID]
+    delete this.data.titles[sessionID]
+    this.save()
+  }
+
   save() {
+    clearTimeout(this.saveTimer)
     mkdirSync(dirname(this.file), { recursive: true })
     writeFileSync(this.file, JSON.stringify(this.data, null, 2))
   }

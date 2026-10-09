@@ -292,6 +292,7 @@ export class OpenCodeService {
       .sort((a, b) => b.time.updated - a.time.updated)
       .map((s) => ({
         id: s.id,
+        harness: "opencode" as const,
         title: s.title || "New session",
         directory: s.location.directory,
         updated: s.time.updated,

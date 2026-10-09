@@ -1,18 +1,35 @@
 import type { CommandID, ShortcutOverrides } from "./shortcuts"
 
-/** variant: opencode model variant (e.g. reasoning effort "high"); unset = the model's default */
+/** variant: opencode model variant, or fx reasoning effort (`--effort`); unset = the model's default */
 export type ModelRef = { providerID: string; id: string; variant?: string }
+
+/** The coding agent behind a session. Sessions of both kinds live side by side, even in one space. */
+export type Harness = "opencode" | "fx"
+
+export const HARNESSES: { id: Harness; name: string }[] = [
+  { id: "opencode", name: "opencode" },
+  { id: "fx", name: "fx" },
+]
+
+/** fx session ids are prefixed in ctrl ("fx:KvHksYqL8l0C"); opencode ids ("ses_…") aren't, so older state still matches. */
+export const FX_PREFIX = "fx:"
+
+export const harnessOf = (sessionID: string): Harness => (sessionID.startsWith(FX_PREFIX) ? "fx" : "opencode")
 
 export type Space = {
   id: string
   name: string
   directory?: string
   collapsed?: boolean
-  /** Model new sessions in this space start with (when modelEnabled isn't false) */
+  /** Harness new sessions in this space start with; unset = the app default */
+  harness?: Harness
+  /** opencode model new sessions in this space start with (when modelEnabled isn't false) */
   model?: ModelRef
+  /** fx model, same rules */
+  fxModel?: ModelRef
   /** Off: the space doesn't set a model and the app default applies. Unset = on, for older state. */
   modelEnabled?: boolean
-  /** Extra instructions attached to every new session in this space */
+  /** Extra instructions attached to every new opencode session in this space (fx has no way to take them) */
   instructions?: string
 }
 
@@ -23,7 +40,7 @@ export type ModelOption = ModelRef & {
   /** Model maker for gateway-style ids ("anthropic" in "anthropic/claude-…") */
   vendor?: string
   released: number
-  /** Selectable variant ids, in opencode's order */
+  /** Selectable variant ids, in opencode's order (fx: reasoning efforts besides auto) */
   variants: string[]
 }
 
@@ -37,7 +54,9 @@ export type ModelChoices = {
 export type SpacePatch = {
   name?: string
   directory?: string | null
+  harness?: Harness | null
   model?: ModelRef | null
+  fxModel?: ModelRef | null
   modelEnabled?: boolean
   instructions?: string | null
 }
@@ -54,14 +73,24 @@ export const STATUS_RANK: Record<SessionStatus, number> = {
 }
 
 export type SessionItem = {
+  /** opencode: "ses_…" · fx: "fx:<id>" */
   id: string
+  harness: Harness
   title: string
   directory: string
   updated: number
   status: SessionStatus
   /** Human-readable explanation for the tooltip, e.g. "Waiting for permission: bash" */
   statusDetail?: string
+  /** fx: open in an fx outside ctrl (another terminal), so it can't be opened here */
+  elsewhere?: boolean
 }
+
+/**
+ * One terminal on the right. "opencode" is the single embedded opencode TUI, switched between
+ * sessions in place. fx has no way to do that, so each open fx session gets its own process.
+ */
+export type TermInfo = { id: string; harness: Harness; sessionID: string | null; exited?: number }
 
 export type UiState = {
   recentsCollapsed: boolean
@@ -74,6 +103,8 @@ export type UiState = {
   resourcesScope: "session" | "space"
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
+  /** The welcome screen (pick a harness) was completed; Settings → About can show it again */
+  onboarded?: boolean
 }
 
 export type Appearance = "system" | "light" | "dark"
@@ -94,9 +125,13 @@ export type Settings = {
   soundChoices: Record<SoundEvent, string | null>
   /** Terminal font size in px */
   fontSize: number
-  /** Model for new sessions (spaces can override), used when defaultModelEnabled */
+  /** Harness for new sessions; spaces can override */
+  defaultHarness: Harness
+  /** opencode model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
-  /** Off: ctrl passes no model and opencode's default applies */
+  /** fx model for new sessions, same rules */
+  defaultFxModel: ModelRef | null
+  /** Off: ctrl passes no model and the harness's own default applies */
   defaultModelEnabled: boolean
   /** Rebound shortcuts; commands not listed use their defaults */
   shortcuts: ShortcutOverrides
@@ -151,6 +186,11 @@ export type OpencodeCheck =
  */
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
+/** Whether fx is installed. Only needed for fx sessions; ctrl works without it. */
+export type FxCheck = { state: "checking" } | { state: "ok"; version: string; bin: string } | { state: "missing" }
+
+export const FX_INSTALL = "curl -fsSL https://fx.sh/setup.sh | bash"
+
 /** ctrl updates from GitHub Releases (src/main/updater.ts). */
 export type UpdateStatus =
   | { state: "idle" | "checking" | "up-to-date" }
@@ -161,6 +201,7 @@ export type AppState = {
   /** ctrl's own version */
   version: string
   opencode: OpencodeCheck
+  fx: FxCheck
   skill: SkillStatus
   update: UpdateStatus
   ui: UiState
@@ -173,6 +214,10 @@ export type AppState = {
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
+  /** Terminals the renderer keeps one xterm for: the opencode TUI and each live fx process */
+  terms: TermInfo[]
+  /** The terminal on screen; null = nothing open (empty state) */
+  activeTermID: string | null
   /** MCP servers as opencode reports them for the TUI's folder (~) */
   mcp: McpServerItem[]
   /** Resource adapters (live details for links), in Settings order */
@@ -348,7 +393,7 @@ export type CtrlApi = {
   onSpaceSettings(cb: (spaceID: string) => void): () => void
   updateSpace(id: string, patch: SpacePatch): Promise<void>
   pickSpaceFolder(id: string): Promise<void>
-  listModels(directory?: string): Promise<ModelChoices>
+  listModels(harness: Harness, directory?: string): Promise<ModelChoices>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
   setArchived(sessionID: string, archived: boolean): Promise<void>
@@ -386,9 +431,13 @@ export type CtrlApi = {
   checkForUpdates(): Promise<void>
   /** Downloads the latest release, replaces the app and relaunches */
   installUpdate(): Promise<void>
-  ptyStart(cols: number, rows: number): void
-  ptyWrite(data: string): void
+  /** Output the terminal produced so far (bounded), then live data arrives through onPtyData */
+  ptyAttach(termID: string): Promise<{ data: string; end: number }>
+  ptyWrite(termID: string, data: string): void
+  /** Size of the terminal area; every terminal gets it so switching never reflows */
   ptyResize(cols: number, rows: number): void
-  onPtyData(cb: (data: string) => void): () => void
-  onPtyReset(cb: () => void): () => void
+  /** `end`: characters the terminal has output so far, including `data` */
+  onPtyData(cb: (termID: string, data: string, end: number) => void): () => void
+  /** The terminal restarted: clear it */
+  onPtyReset(cb: (termID: string) => void): () => void
 }

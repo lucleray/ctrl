@@ -7,6 +7,12 @@ import {
   type McpStatus,
   type ModelChoices,
   type AdapterInfo,
+  type FxCheck,
+  type Harness,
+  type OpencodeCheck,
+  FX_INSTALL,
+  HARNESSES,
+  OPENCODE_INSTALL,
   type AdapterMode,
   type CliInfo,
   type Settings as SettingsData,
@@ -166,7 +172,7 @@ function AdapterRow({ adapter, modes }: { adapter: AdapterInfo; modes: SettingsD
 }
 
 const SKILL_TEXT: Record<SkillStatus["state"], { dot: string; text: string }> = {
-  installed: { dot: "connected", text: "Installed in opencode's global skills folder" },
+  installed: { dot: "connected", text: "Installed in opencode's global skills folder, which fx reads too" },
   outdated: { dot: "pending", text: "Installed, an older version (refreshed at the next launch)" },
   external: { dot: "connected", text: "Installed outside ctrl, so ctrl leaves it alone" },
   missing: { dot: "disabled", text: "Not installed" },
@@ -301,6 +307,57 @@ function SoundRow({ event, label, choices }: { event: SoundEvent; label: string;
   )
 }
 
+function useModels(harness: Harness, available: boolean) {
+  const [choices, setChoices] = useState<ModelChoices | null>(null)
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    if (!available) {
+      setError(`${harness} isn't installed`)
+      return
+    }
+    let live = true
+    setError(undefined)
+    window.ctrl.listModels(harness).then(
+      (c) => live && setChoices(c),
+      (err) => live && setError(err instanceof Error ? err.message : String(err)),
+    )
+    return () => {
+      live = false
+    }
+  }, [harness, available])
+  return { choices, error }
+}
+
+/** Whether a harness is installed, with its install command when it isn't. */
+function HarnessRow({ harness, check }: { harness: Harness; check: OpencodeCheck | FxCheck }) {
+  const install = harness === "fx" ? FX_INSTALL : OPENCODE_INSTALL
+  const text =
+    check.state === "ok"
+      ? `Installed · ${check.version}`
+      : check.state === "checking"
+        ? "Checking…"
+        : check.state === "outdated"
+          ? `Version ${check.version} is too old (needs ${check.min})`
+          : "Not installed"
+  const dot = check.state === "ok" ? "connected" : check.state === "checking" ? "pending" : "disabled"
+  return (
+    <div className="setting">
+      <div className="mcp-name">
+        <span className={`mcp-dot ${dot}`} />
+        <div>
+          <div className="setting-title">{harness}</div>
+          <div className={`setting-desc adapter-status ${dot}`}>{text}</div>
+          {check.state !== "ok" && check.state !== "checking" && (
+            <div className="setting-desc">
+              Install: <code>{install}</code>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Settings({
   state,
   onClose,
@@ -320,18 +377,8 @@ export function Settings({
   useEffect(() => root.current?.focus(), [])
   useEffect(() => void window.ctrl.checkAdapters(), [])
 
-  const [choices, setChoices] = useState<ModelChoices | null>(null)
-  const [modelError, setModelError] = useState<string>()
-  useEffect(() => {
-    let live = true
-    window.ctrl.listModels().then(
-      (c) => live && setChoices(c),
-      (err) => live && setModelError(err instanceof Error ? err.message : String(err)),
-    )
-    return () => {
-      live = false
-    }
-  }, [])
+  const opencodeModels = useModels("opencode", state.opencode.state === "ok")
+  const fxModels = useModels("fx", state.fx.state === "ok")
 
   return (
     <div
@@ -439,11 +486,36 @@ export function Settings({
 
         <h2>Sessions</h2>
         <div className="settings-card">
+          <div className="setting">
+            <div>
+              <div className="setting-title">Harness</div>
+              <div className="setting-desc">
+                Agent new sessions start with. A space can pick its own, and sessions of both kinds live side by side.{" "}
+                <a href="https://github.com/lucleray/ctrl/blob/main/docs/HARNESSES.md" onClick={(e) => (e.preventDefault(), void window.ctrl.openExternal(e.currentTarget.href))}>
+                  What each supports
+                </a>
+              </div>
+            </div>
+            <div className="segmented">
+              {HARNESSES.map((h) => (
+                <button
+                  key={h.id}
+                  className={settings.defaultHarness === h.id ? "on" : ""}
+                  onClick={() => void window.ctrl.setSettings({ defaultHarness: h.id })}
+                >
+                  {h.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <HarnessRow harness="opencode" check={state.opencode} />
+          <HarnessRow harness="fx" check={state.fx} />
+
           <div className="setting setting-with-sub">
             <div>
               <div className="setting-title">Custom model</div>
               <div className="setting-desc">
-                Model for new sessions started from ctrl. A space can pick its own in space settings.
+                Model for new sessions started from ctrl, per harness. A space can pick its own in space settings.
               </div>
             </div>
             <Toggle
@@ -452,13 +524,25 @@ export function Settings({
             />
           </div>
           <div className="setting-sub">
+            <div className="setting-desc model-harness-label">opencode</div>
             <ModelPicker
-              choices={choices}
-              error={modelError}
+              choices={opencodeModels.choices}
+              error={opencodeModels.error}
               value={settings.defaultModel}
               enabled={settings.defaultModelEnabled}
               onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
               fallback={{ label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }}
+            />
+          </div>
+          <div className="setting-sub">
+            <div className="setting-desc model-harness-label">fx</div>
+            <ModelPicker
+              choices={fxModels.choices}
+              error={fxModels.error}
+              value={settings.defaultFxModel}
+              enabled={settings.defaultModelEnabled}
+              onChange={(defaultFxModel) => void window.ctrl.setSettings({ defaultFxModel })}
+              fallback={{ label: "Default fx model", detail: "ctrl doesn't set a model, so fx uses its own default" }}
             />
           </div>
         </div>
@@ -547,6 +631,21 @@ export function Settings({
         <h2>About</h2>
         <div className="settings-card">
           <AboutRow version={state.version} update={state.update} />
+          <div className="setting">
+            <div>
+              <div className="setting-title">Welcome screen</div>
+              <div className="setting-desc">The first-launch screen that picks a harness for new sessions.</div>
+            </div>
+            <button
+              className="btn"
+              onClick={() => {
+                void window.ctrl.setUi({ onboarded: false })
+                onClose()
+              }}
+            >
+              Show again
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -7,6 +7,8 @@ import { createRequire } from "node:module"
 import { join } from "node:path"
 
 const [raw, out, gifencDir] = process.argv.slice(-3)
+/** "-fx" for the fx captures (hero-fx.png, …) */
+const suffix = process.env.CTRL_MEDIA_SUFFIX ?? ""
 const { GIFEncoder, quantize, applyPalette } = createRequire(join(gifencDir, "x.js"))("gifenc")
 
 // name: crop in raw pixels (or null for the whole window), output width
@@ -35,8 +37,8 @@ for (const [name, [crop, width]] of Object.entries(STILLS)) {
     console.log(`[media] missing ${file}`)
     continue
   }
-  writeFileSync(join(out, `${name}.png`), load(file, crop, width).toPNG())
-  console.log(`[media] ${name}.png`)
+  writeFileSync(join(out, `${name}${suffix}.png`), load(file, crop, width).toPNG())
+  console.log(`[media] ${name}${suffix}.png`)
 }
 
 const framesDir = join(raw, "reference")
@@ -63,8 +65,8 @@ if (files.length) {
   queue.at(-1).delay += 2500
   for (const f of queue) gif.writeFrame(f.index, f.width, f.height, { delay: f.delay, palette })
   gif.finish()
-  writeFileSync(join(out, "reference.gif"), gif.bytes())
-  console.log(`[media] reference.gif (${frames.length} frames, ${queue.length} distinct)`)
+  writeFileSync(join(out, `reference${suffix}.gif`), gif.bytes())
+  console.log(`[media] reference${suffix}.gif (${frames.length} frames, ${queue.length} distinct)`)
 }
 app.quit()
 }
