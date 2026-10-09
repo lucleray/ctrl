@@ -176,7 +176,7 @@ refresh on `mcp.status.changed` events.
 Any of these runs the app headless: hidden window, no dock icon, never takes focus
 (force it with `CTRL_HEADLESS=1`).
 
-- `CTRL_USER_DATA=/tmp/x` use a throwaway state dir
+- `CTRL_USER_DATA=/tmp/x` use a throwaway state dir (created if missing)
 - `CTRL_MCP_DIR=/tmp/proj` read MCP statuses for that folder instead of `~` (put a broken server in
   its `opencode.json` to test the failing-MCP toast)
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load

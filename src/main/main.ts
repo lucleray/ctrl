@@ -46,6 +46,8 @@ function useDevUserData() {
 app.setName("ctrl")
 if (process.env.CTRL_USER_DATA) app.setPath("userData", process.env.CTRL_USER_DATA)
 else if (!app.isPackaged) useDevUserData()
+// The databases below open before Electron creates userData on its own.
+mkdirSync(app.getPath("userData"), { recursive: true })
 
 if (app.isPackaged) {
   loadShellEnv()
