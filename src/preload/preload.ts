@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron"
 import type { CtrlApi } from "../shared/types"
 
 const on =
@@ -26,6 +26,7 @@ const api: CtrlApi = {
   onRecordedKey: on("shortcut:recorded"),
   newSessionHere: () => ipcRenderer.invoke("session:new-here"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  pathForFile: (file) => webUtils.getPathForFile(file),
   resolveLink: (url, next) => ipcRenderer.invoke("links:resolve", url, next), // wrapped-links
   prefetchLinks: () => ipcRenderer.invoke("links:prefetch"), // wrapped-links
   archiveCurrent: () => ipcRenderer.invoke("session:archive-current"),

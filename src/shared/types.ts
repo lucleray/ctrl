@@ -210,6 +210,8 @@ export type CtrlApi = {
   newSessionHere(): Promise<void>
   /** Opens an http(s)/mailto link in the default browser */
   openExternal(url: string): Promise<void>
+  /** Absolute path of a file dropped from Finder ("" if it has none). */
+  pathForFile(file: File): string
   /** wrapped-links: full URL for a link cut at the row's end */
   resolveLink(url: string, next: string): Promise<string>
   prefetchLinks(): Promise<void>

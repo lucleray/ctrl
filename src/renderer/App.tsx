@@ -155,9 +155,9 @@ export function App() {
         <ReferenceDrop
           sessions={state.sessions}
           currentSessionID={state.currentSessionID}
-          onReference={(mention) => {
+          onReference={(text) => {
             // Bracketed paste so the TUI inserts it as text (no submit, no @file search).
-            window.ctrl.ptyWrite(`\x1b[200~${mention} \x1b[201~`)
+            window.ctrl.ptyWrite(`\x1b[200~${text} \x1b[201~`)
             terminal.current?.focus()
           }}
         />
