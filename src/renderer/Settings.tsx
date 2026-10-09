@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { FONT_SIZE, type Appearance, type AppState, type ModelChoices } from "../shared/types"
+import { FONT_SIZE, type Appearance, type AppState, type McpServerItem, type McpStatus, type ModelChoices } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
 import { ShortcutSettings } from "./ShortcutSettings"
@@ -14,7 +14,60 @@ const APPEARANCES: { value: Appearance; label: string }[] = [
 
 const DEFAULT = "__default__"
 
-export function Settings({ state, onClose }: { state: AppState; onClose(): void }) {
+const MCP_LABELS: Record<McpStatus, string> = {
+  connected: "Connected",
+  pending: "Connecting…",
+  disabled: "Disabled",
+  failed: "Failed",
+  needs_auth: "Needs sign-in",
+}
+
+function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
+  const broken = server.status === "failed" || server.status === "needs_auth"
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="setting">
+      <div className="mcp-name">
+        <span className={`mcp-dot ${server.status}`} />
+        <div>
+          <div className="setting-title">{server.name}</div>
+          {server.error && <div className="setting-desc mcp-error">{server.error}</div>}
+        </div>
+      </div>
+      <div className="mcp-actions">
+        {broken ? (
+          <>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                void window.ctrl.reconnectMcp(server.name).finally(() => setBusy(false))
+              }}
+            >
+              {busy ? "Retrying…" : "Retry"}
+            </button>
+            <button className="btn primary" onClick={onFix}>
+              Fix
+            </button>
+          </>
+        ) : (
+          <span className="mcp-status">{MCP_LABELS[server.status]}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function Settings({
+  state,
+  onClose,
+  onFixMcp,
+}: {
+  state: AppState
+  onClose(): void
+  onFixMcp(name: string): void
+}) {
   const { settings, themes } = state
   const key = (id: Parameters<typeof shortcutLabel>[0]) => shortcutLabel(id, settings.shortcuts)
   const zoomKeys = [key("zoom-in"), key("zoom-out"), key("zoom-reset")]
@@ -165,6 +218,19 @@ export function Settings({ state, onClose }: { state: AppState; onClose(): void 
               fallback={{ label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }}
             />
           </div>
+        </div>
+
+        <h2>MCP servers</h2>
+        <div className="settings-card">
+          {state.mcp.length === 0 ? (
+            <div className="setting">
+              <div className="setting-desc">No MCP servers configured.</div>
+            </div>
+          ) : (
+            state.mcp.map((server) => (
+              <McpRow key={server.name} server={server} onFix={() => onFixMcp(server.name)} />
+            ))
+          )}
         </div>
 
         <h2>Shortcuts</h2>

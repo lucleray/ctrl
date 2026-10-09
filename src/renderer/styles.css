@@ -802,6 +802,67 @@ button {
   background: var(--hover-strong);
 }
 
+.btn.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--sidebar-bg);
+}
+
+.btn.primary:hover {
+  opacity: 0.88;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- MCP servers ---------- */
+
+.mcp-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mcp-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+
+.mcp-dot.connected {
+  background: #22c55e;
+}
+
+.mcp-dot.pending {
+  background: #f59e0b;
+}
+
+.mcp-dot.failed,
+.mcp-dot.needs_auth {
+  background: #ef4444;
+}
+
+.mcp-error {
+  max-width: 420px;
+  overflow-wrap: anywhere;
+}
+
+.mcp-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mcp-status {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 /* ---------- model picker ---------- */
 
 .model-trigger {
@@ -1391,6 +1452,10 @@ body.resizing .terminal-wrap {
 .toast > .icon {
   color: var(--icon);
   flex-shrink: 0;
+}
+
+.toast.alert > .icon {
+  color: #ef4444;
 }
 
 .toast-text {

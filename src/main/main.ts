@@ -97,6 +97,7 @@ const state = (): AppState => ({
   sessions: pendingDeletes.size ? opencode.sessions.filter((s) => !pendingDeletes.has(s.id)) : opencode.sessions,
   currentSessionID,
   bridgeConnected,
+  mcp: opencode.mcp,
   problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
   error,
 })
@@ -114,6 +115,7 @@ const push = () => {
 
 const opencode = new OpenCodeService(() => {
   attention.update(opencode.sessions)
+  watchMcp()
   push()
 })
 
@@ -209,12 +211,37 @@ const newSessionHere = () => {
 
 const TOAST_MS = 8000
 const undos = new Map<string, { run(): void; expires: number }>()
+const toastActions = new Map<string, () => void>()
 
-const toast = (t: Omit<Toast, "id" | "undo" | "duration">, undo?: () => void) => {
+type ToastOptions = {
+  undo?: () => void
+  /** Primary button, e.g. { label: "Fix", run } */
+  action?: { label: string; run(): void }
+  /** Stays up until dismissed, for problems that outlive the moment (dismiss it yourself once resolved) */
+  sticky?: boolean
+}
+
+/** The one way to notify inside ctrl (README → Notifications). Returns the toast id. */
+const toast = (t: Pick<Toast, "icon" | "message" | "viewSessionID">, opts: ToastOptions = {}) => {
   const id = `tst_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-  if (undo) undos.set(id, { run: undo, expires: Date.now() + TOAST_MS })
-  send("toast", { ...t, id, undo: !!undo, duration: TOAST_MS } satisfies Toast)
-  setTimeout(() => undos.delete(id), TOAST_MS + 1000)
+  const duration = opts.sticky ? null : TOAST_MS
+  if (opts.undo) undos.set(id, { run: opts.undo, expires: Date.now() + TOAST_MS })
+  if (opts.action) toastActions.set(id, opts.action.run)
+  send("toast", { ...t, id, undo: !!opts.undo, action: opts.action?.label, duration } satisfies Toast)
+  if (!opts.sticky) setTimeout(() => (undos.delete(id), toastActions.delete(id)), TOAST_MS + 1000)
+  return id
+}
+
+const dismissToast = (id: string) => {
+  undos.delete(id)
+  toastActions.delete(id)
+  send("toast:dismiss", id)
+}
+
+const runToastAction = (id: string) => {
+  const run = toastActions.get(id)
+  toastActions.delete(id)
+  run?.()
 }
 
 const runUndo = (id: string) => {
@@ -244,9 +271,11 @@ const archive = (sessionIDs: string[]) => {
       message: ids.length === 1 ? (title ? `Archived “${title}”` : "Archived chat") : `Archived ${ids.length} chats`,
       viewSessionID: ids.length === 1 ? ids[0] : undefined,
     },
-    () => {
-      store.setArchived(ids, false)
-      if (wasCurrent && !currentSessionID) openSession(wasCurrent)
+    {
+      undo: () => {
+        store.setArchived(ids, false)
+        if (wasCurrent && !currentSessionID) openSession(wasCurrent)
+      },
     },
   )
 }
@@ -263,10 +292,15 @@ const deleteSession = (sessionID: string) => {
     setTimeout(() => void commitDelete(sessionID), TOAST_MS),
   )
   push()
-  toast({ icon: "trash", message: title ? `Deleted “${title}”` : "Deleted chat" }, () => {
-    clearTimeout(pendingDeletes.get(sessionID))
-    pendingDeletes.delete(sessionID)
-  })
+  toast(
+    { icon: "trash", message: title ? `Deleted “${title}”` : "Deleted chat" },
+    {
+      undo: () => {
+        clearTimeout(pendingDeletes.get(sessionID))
+        pendingDeletes.delete(sessionID)
+      },
+    },
+  )
 }
 
 const commitDelete = async (sessionID: string) => {
@@ -294,7 +328,62 @@ const deleteSpace = (id: string) => {
     .map(([sessionID]) => sessionID)
   store.deleteSpace(id)
   push()
-  toast({ icon: "trash", message: `Deleted space “${space.name}”` }, () => store.restoreSpace(space, index, sessionIDs))
+  toast(
+    { icon: "trash", message: `Deleted space “${space.name}”` },
+    { undo: () => store.restoreSpace(space, index, sessionIDs) },
+  )
+}
+
+// ---------- MCP servers ----------
+
+const MCP_BROKEN = new Set(["failed", "needs_auth"])
+/** Open "MCP failing" toast per server, keyed by the error it shows, so the same failure doesn't re-toast. */
+const mcpAlerts = new Map<string, { error: string; toastID: string }>()
+
+/** Toasts once per new MCP failure (including at launch) and clears the toast when the server recovers. */
+const watchMcp = () => {
+  for (const server of opencode.mcp) {
+    const alert = mcpAlerts.get(server.name)
+    if (!MCP_BROKEN.has(server.status)) {
+      // pending = reconnecting: keep the toast until it actually settles.
+      if (alert && server.status !== "pending") {
+        dismissToast(alert.toastID)
+        mcpAlerts.delete(server.name)
+      }
+      continue
+    }
+    const error = server.error ?? server.status
+    if (alert?.error === error) continue
+    if (alert) dismissToast(alert.toastID)
+    const what = server.status === "needs_auth" ? "needs sign-in" : "is failing"
+    const toastID = toast(
+      { icon: "alert", message: `MCP “${server.name}” ${what}: ${error}` },
+      { sticky: true, action: { label: "Fix", run: () => fixMcp(server.name) } },
+    )
+    mcpAlerts.set(server.name, { error, toastID })
+  }
+  for (const [name, alert] of mcpAlerts) {
+    if (opencode.mcp.some((s) => s.name === name)) continue
+    dismissToast(alert.toastID)
+    mcpAlerts.delete(name)
+  }
+}
+
+const oneLine = (text: string, max: number) => {
+  const flat = text.replace(/\s+/g, " ").trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+
+/** Opens the TUI's new-session screen with a fix-it prompt typed in, not sent. */
+const fixMcp = (name: string) => {
+  const server = opencode.mcp.find((s) => s.name === name)
+  const status = server?.status ?? "failed"
+  const error = server?.error ? `, error: "${oneLine(server.error, 300)}"` : ""
+  const prompt =
+    `The "${name}" MCP server is broken in opencode (status: ${status}${error}). ` +
+    `Diagnose and fix it: check its entry in my opencode config and \`opencode mcp list\`. ` +
+    `If it only needs sign-in, tell me to run /mcps and select it instead.`
+  terminal.prefill(prompt)
 }
 
 // ---------- shortcuts ----------
@@ -383,6 +472,9 @@ function registerIpc() {
   ipcMain.handle("links:resolve", (_e, url: string, next: string) => wrappedLinks.resolve(currentSessionID, url, next))
   ipcMain.handle("links:prefetch", () => currentSessionID && wrappedLinks.prefetch(currentSessionID))
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
+  ipcMain.handle("toast:action", (_e, id: string) => runToastAction(id))
+  ipcMain.handle("mcp:fix", (_e, name: string) => fixMcp(name))
+  ipcMain.handle("mcp:reconnect", (_e, name: string) => opencode.reconnectMcp(name).catch(report))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
   })

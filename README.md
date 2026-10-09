@@ -18,7 +18,8 @@ single embedded opencode TUI on the right.
 
 - Switching sessions sends `{type:"navigate"}` to the bridge, so the TUI swaps in place (no restart).
 - The bridge reports route changes back, so the sidebar highlight follows navigation done inside the TUI.
-- The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs are turned off there too).
+- The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs and the TUI's
+  own sidebar are turned off there too).
 - The sidebar's session list (`src/main/opencode.ts`) does one full sync on launch and whenever the event stream
   reconnects. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
   re-read only the session they're about (created, run started/ended), so an update costs the same with 50 or
@@ -100,12 +101,44 @@ so both can run side by side.
   Session deletes are held back until the toast expires (or ctrl quits), since opencode can't
   restore them
 
+## Notifications
+
+ctrl has **one** in-app notification: the toast (`src/renderer/Toast.tsx`). Don't add new banners,
+popups or notification types. Raise a toast from main with `toast()` in `src/main/main.ts`:
+
+```ts
+toast({ icon: "archive", message: "Archived “x”", viewSessionID }, { undo })      // 8s, ⌘Z undoes
+toast({ icon: "alert", message }, { sticky: true, action: { label: "Fix", run } }) // until dismissed
+```
+
+- **One at a time.** A newer toast replaces the one showing. The countdown pauses on hover.
+- **Buttons:** View (`viewSessionID`), Undo (`undo`, also ⌘Z), and one primary `action` with any label.
+  The callbacks stay in main; the renderer only sends back the toast id.
+- **Sticky** (`duration: null`) is for problems that last, like a failing MCP server. Whoever raised
+  it dismisses it with `dismissToast(id)` once the problem goes away.
+- Add an icon to the `Toast["icon"]` union and `icons.tsx` if you need a new one.
+
+The two other channels each have a single purpose, so don't use them for anything else:
+
+| Channel | Where | Only for |
+|---|---|---|
+| Sidebar banner (`problem` / `error` in `AppState`) | bottom of the sidebar | ctrl can't reach opencode or the TUI, or a ctrl action failed |
+| macOS notification (`src/main/attention.ts`) | system | a background session needs you, finished or failed, while ctrl isn't focused |
+
+**MCP servers** (Settings → MCP servers) is the first sticky toast: when a server is `failed` or
+`needs_auth`, a toast says so and has a **Fix** button. It opens the TUI's new-session screen with a
+prompt to fix that server already typed in (not sent). The toast clears itself when the server
+reconnects, and the same error doesn't toast twice. Statuses come from `mcp.list` for `~` and
+refresh on `mcp.status.changed` events.
+
 ## Debug hooks
 
 Any of these runs the app headless: hidden window, no dock icon, never takes focus
 (force it with `CTRL_HEADLESS=1`).
 
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir
+- `CTRL_MCP_DIR=/tmp/proj` read MCP statuses for that folder instead of `~` (put a broken server in
+  its `opencode.json` to test the failing-MCP toast)
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load
 - `CTRL_SCREENSHOT=/tmp/shot.png CTRL_SCREENSHOT_DELAY=8000` capture the window
 - `CTRL_SEND='["space:settings","spc_x"]'` send a main → renderer event 2s after load

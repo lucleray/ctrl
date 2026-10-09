@@ -1,8 +1,11 @@
 import { OpenCode, type ModelInfo, type PermissionRequest, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
-import type { ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
+import { homedir } from "node:os"
+import type { McpServerItem, ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
+/** The TUI runs in ~, so that's whose MCP servers count. CTRL_MCP_DIR is a debug hook (README). */
+const MCP_DIR = process.env.CTRL_MCP_DIR || homedir()
 
 type Client = ReturnType<typeof OpenCode.make>
 type Event = { type: string; data?: Record<string, unknown> }
@@ -47,6 +50,9 @@ type Pending = { sessionID: string; detail: string }
 export class OpenCodeService {
   client?: Client
   sessions: SessionItem[] = []
+  /** MCP servers for the TUI's folder (~), where global config applies. */
+  mcp: McpServerItem[] = []
+  private mcpTimer?: ReturnType<typeof setTimeout>
   private setReady!: (client: Client) => void
   /** Resolves once the opencode service is reachable. */
   ready = new Promise<Client>((resolve) => (this.setReady = resolve))
@@ -105,7 +111,33 @@ export class OpenCodeService {
     this.running = new Set(Object.keys(active))
     this.pending = pending
     this.rebuild()
+    this.refreshMcpSoon()
     console.log(`[ctrl] full sync: ${roots.length} sessions`)
+  }
+
+  /** Status changes arrive one server at a time (and per folder); re-list once per burst. */
+  private refreshMcpSoon() {
+    clearTimeout(this.mcpTimer)
+    this.mcpTimer = setTimeout(() => void this.refreshMcp(), FETCH_DEBOUNCE_MS)
+  }
+
+  private async refreshMcp() {
+    try {
+      const res = await this.client!.mcp.list({ location: { directory: MCP_DIR } })
+      this.mcp = res.data.map((s) => ({
+        name: s.name,
+        status: s.status.status,
+        error: "error" in s.status ? s.status.error : undefined,
+      }))
+      this.onChange()
+    } catch (err) {
+      console.error("[ctrl] mcp list failed", err)
+    }
+  }
+
+  async reconnectMcp(server: string) {
+    await this.client!.mcp.connect({ server, location: { directory: MCP_DIR } })
+    await this.refreshMcp()
   }
 
   private async listAll() {
@@ -191,6 +223,8 @@ export class OpenCodeService {
       case "form.cancelled":
         this.pending.delete(String(d.id))
         return this.rebuild()
+      case "mcp.status.changed":
+        return this.refreshMcpSoon()
     }
     if (!id) return
     const info = this.infos.get(id)

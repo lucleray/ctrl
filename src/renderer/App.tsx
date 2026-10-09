@@ -21,6 +21,7 @@ const EMPTY: AppState = {
   sessions: [],
   currentSessionID: null,
   bridgeConnected: false,
+  mcp: [],
 }
 
 export function App() {
@@ -54,6 +55,14 @@ export function App() {
     setSettings(false)
     setSpaceSettingsID(null)
     await window.ctrl.newSession(spaceID)
+    terminal.current?.focus()
+  }, [])
+
+  const fixMcp = useCallback((name: string) => {
+    setPalette(false)
+    setSettings(false)
+    setSpaceSettingsID(null)
+    void window.ctrl.fixMcp(name)
     terminal.current?.focus()
   }, [])
 
@@ -143,8 +152,12 @@ export function App() {
             terminal.current?.focus()
           }}
         />
-        {settings && <Settings state={state} onClose={closeSettings} />}
-        <Toasts onView={open} undoLabel={shortcutLabel("undo", state.settings.shortcuts)} />
+        {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
+        <Toasts
+          onView={open}
+          onAction={() => terminal.current?.focus()}
+          undoLabel={shortcutLabel("undo", state.settings.shortcuts)}
+        />
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}

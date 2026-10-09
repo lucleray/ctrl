@@ -108,6 +108,8 @@ export type AppState = {
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
+  /** MCP servers as opencode reports them for the TUI's folder (~) */
+  mcp: McpServerItem[]
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
   problem?: string
   /** Last failed action; dismissable */
@@ -134,17 +136,31 @@ export type IndexerMessage = { type: "ready" } | { type: "status"; status: Index
 
 export type Shortcut = CommandID
 
-/** Transient notice after an action, optionally undoable (Codex-style). */
+/**
+ * The one in-app notification: a toast at the top of the main area (see README → Notifications).
+ * Raise it from main with `toast()`; buttons call back into main by toast id.
+ */
 export type Toast = {
   id: string
-  icon: "archive" | "trash"
+  icon: "archive" | "trash" | "alert"
   message: string
   /** Show an Undo button */
   undo: boolean
   /** Show a View button that opens this session */
   viewSessionID?: string
-  /** How long it stays up, in ms */
-  duration: number
+  /** Label of a primary button that runs the action registered with the toast */
+  action?: string
+  /** How long it stays up, in ms; null = until dismissed (or main dismisses it) */
+  duration: number | null
+}
+
+export type McpStatus = "connected" | "pending" | "disabled" | "failed" | "needs_auth"
+
+export type McpServerItem = {
+  name: string
+  status: McpStatus
+  /** Set for failed / needs_auth */
+  error?: string
 }
 
 export type CtrlApi = {
@@ -158,6 +174,11 @@ export type CtrlApi = {
   /** A toast was handled elsewhere (⌘Z); undefined = whichever is showing */
   onToastDismiss(cb: (toastID?: string) => void): () => void
   undo(toastID: string): Promise<void>
+  /** Runs the action behind a toast's primary button */
+  toastAction(toastID: string): Promise<void>
+  /** Starts a new session with a prompt to fix this MCP server, ready to send */
+  fixMcp(name: string): Promise<void>
+  reconnectMcp(name: string): Promise<void>
   /** While on, key presses are reported to onRecordedKey instead of running shortcuts */
   recordShortcut(on: boolean): Promise<void>
   onRecordedKey(cb: (accel: string) => void): () => void

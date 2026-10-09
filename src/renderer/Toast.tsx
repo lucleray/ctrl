@@ -2,8 +2,21 @@ import { useEffect, useRef, useState } from "react"
 import type { Toast } from "../shared/types"
 import { Icon } from "./icons"
 
-/** One toast at a time at the top of the main area; a newer one replaces it. */
-export function Toasts({ onView, undoLabel }: { onView(sessionID: string): void; undoLabel: string }) {
+/**
+ * ctrl's only in-app notification (README → Notifications): one toast at a time at the
+ * top of the main area; a newer one replaces it. Sticky toasts (duration null) stay until
+ * dismissed.
+ */
+export function Toasts({
+  onView,
+  onAction,
+  undoLabel,
+}: {
+  onView(sessionID: string): void
+  /** After a toast's action button ran */
+  onAction(): void
+  undoLabel: string
+}) {
   const [toast, setToast] = useState<Toast | null>(null)
   const [hovered, setHovered] = useState(false)
   const remaining = useRef(0)
@@ -11,7 +24,7 @@ export function Toasts({ onView, undoLabel }: { onView(sessionID: string): void;
   useEffect(
     () =>
       window.ctrl.onToast((t) => {
-        remaining.current = t.duration
+        remaining.current = t.duration ?? 0
         setToast(t)
       }),
     [],
@@ -23,7 +36,7 @@ export function Toasts({ onView, undoLabel }: { onView(sessionID: string): void;
 
   // Count down only while not hovered, so it doesn't vanish under the cursor.
   useEffect(() => {
-    if (!toast || hovered) return
+    if (!toast || hovered || toast.duration === null) return
     const started = Date.now()
     const timer = setTimeout(() => setToast(null), remaining.current)
     return () => {
@@ -39,14 +52,14 @@ export function Toasts({ onView, undoLabel }: { onView(sessionID: string): void;
   }
   return (
     <div
-      className="toast"
+      className={`toast ${toast.icon}`}
       role="status"
       key={toast.id}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <Icon name={toast.icon} />
-      <span className="toast-text">{toast.message}</span>
+      <span className="toast-text" title={toast.message}>{toast.message}</span>
       {toast.viewSessionID && (
         <button
           className="toast-btn"
@@ -56,6 +69,18 @@ export function Toasts({ onView, undoLabel }: { onView(sessionID: string): void;
           }}
         >
           View
+        </button>
+      )}
+      {toast.action && (
+        <button
+          className="toast-btn primary"
+          onClick={() => {
+            close()
+            void window.ctrl.toastAction(toast.id)
+            onAction()
+          }}
+        >
+          {toast.action}
         </button>
       )}
       {toast.undo && (

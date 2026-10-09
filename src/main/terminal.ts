@@ -38,6 +38,8 @@ export class Terminal {
   private bridgeUrl = ""
   private size = { cols: 120, rows: 40 }
   private pendingSession: string | null = null
+  /** Prompt text to type into the new-session screen once the TUI shows it. */
+  private pendingPrefill: string | null = null
   private cliOverrides: Record<string, unknown> = {}
   private lastRoute: string | null = null
   private exits: number[] = []
@@ -73,6 +75,7 @@ export class Terminal {
         if (msg.type === "route") {
           this.lastRoute = msg.sessionID ?? null
           this.events.onRoute(this.lastRoute)
+          if (this.lastRoute === null) this.flushPrefill()
         }
       })
       ws.on("close", () => {
@@ -101,6 +104,8 @@ export class Terminal {
         ...this.cliOverrides,
         plugins: [this.pluginDir],
         tabs: { mode: "off" },
+        // ctrl's own sidebar replaces the TUI's.
+        session: { sidebar: "hide" },
       }),
     } as Record<string, string>
 
@@ -190,6 +195,25 @@ export class Terminal {
     proc.kill()
     this.events.onReset()
     this.spawn()
+  }
+
+  /** New-session screen with `text` in the prompt, not sent, so you can edit it first. */
+  prefill(text: string) {
+    this.pendingPrefill = text
+    // Already there: no route change will come to trigger it.
+    if (this.bridge && this.lastRoute === null) this.flushPrefill()
+    else this.home()
+  }
+
+  private flushPrefill() {
+    const text = this.pendingPrefill
+    if (!text) return
+    this.pendingPrefill = null
+    // Typed, not pasted: a long paste collapses into a "[Pasted …]" chip you can't
+    // read or edit. So keep it to one line without "@" (file search) and don't
+    // start with "/" (commands). Give the freshly shown prompt a moment first.
+    const typed = text.replace(/[\r\n]+/g, " ").replace(/@/g, "＠").replace(/^\//, "")
+    setTimeout(() => this.proc?.write(typed), 300)
   }
 
   private navigate(sessionID: string) {
