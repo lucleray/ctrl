@@ -16,6 +16,7 @@ import {
 import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
 import { OpenCodeService } from "./opencode"
+import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
@@ -115,6 +116,8 @@ const opencode = new OpenCodeService(() => {
   attention.update(opencode.sessions)
   push()
 })
+
+const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"))
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -438,6 +441,7 @@ function registerIpc() {
   ipcMain.handle("session:move", (_e, sessionID: string, spaceID: string | null) => move(sessionID, spaceID))
   ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
+  ipcMain.handle("search", (_e, query: string) => search.search(query))
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
@@ -596,6 +600,7 @@ app.whenReady().then(async () => {
   })
   createWindow()
   opencode.start().catch(report)
+  search.start()
 })
 
 app.on("second-instance", () => {
@@ -620,4 +625,7 @@ app.on("before-quit", (event) => {
 
 app.on("window-all-closed", () => app.quit())
 
-app.on("will-quit", () => terminal.dispose())
+app.on("will-quit", () => {
+  terminal.dispose()
+  search.stop()
+})

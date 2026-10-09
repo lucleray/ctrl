@@ -21,6 +21,7 @@ export const configs = [
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   },
   { ...common, entryPoints: ["src/preload/preload.ts"], outfile: "dist/preload.cjs", format: "cjs" },
+  { ...common, entryPoints: ["src/indexer/indexer.ts"], outfile: "dist/indexer.cjs", format: "cjs" },
 ]
 
 // The packaged app can't point opencode at bridge/tui.ts (no node_modules next to

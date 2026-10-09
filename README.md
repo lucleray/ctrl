@@ -21,6 +21,40 @@ single embedded opencode TUI on the right.
 - The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs are turned off there too).
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
+## Principles
+
+- **Fast.** Everything you touch responds instantly. Heavy work (fetching, parsing, indexing) stays off the main
+  process, which relays every keystroke and byte of TUI output. Trade completeness for speed when needed, and
+  write the compromise down next to the code.
+- **Scalable.** ctrl must not get slower as sessions pile up. Work is proportional to what changed, not to how
+  much history exists, and queries touch a bounded number of rows. When adding a feature, ask how it behaves with
+  10× the sessions.
+
+## Search
+
+⌘P matches session titles instantly (in memory) and message text through a local full-text index.
+
+```text
+opencode ──events──► indexer (utility process) ──writes──► search.db (SQLite FTS5, WAL)
+   ▲   └─ messages newer than each session's watermark            │
+   └────────────── session.list on launch (catch-up)              ▼
+                              main: read-only connection ◄── ⌘P query (~1ms)
+```
+
+- **Indexer** (`src/indexer/indexer.ts`) runs in an Electron utility process with its own opencode client and event
+  stream. On launch it lists root sessions and indexes the ones whose `updated` moved since their last pass. Live,
+  a delivered prompt or a finished turn re-indexes just that session.
+- **Incremental:** each session keeps a time watermark. A pass reads messages newest first and stops at the
+  watermark, so an up-to-date session costs one small request. Replies still streaming hold the watermark back and
+  get picked up on the next pass. Reverts and edited content rebuild that session.
+- **Bounded queries** (`src/main/search-db.ts`): rowids follow message time, and a query ranks only the newest 2000
+  matching messages (FTS5 stops early in rowid order). On 300k synthetic messages that's ~5ms for a word in every
+  message, versus ~200ms when ranking all matches.
+- **Compromises:** indexes your prompts and the assistant's text only (no tool calls, reasoning, or subagent
+  sessions). Messages are cut at 16 KB. A word matching more than 2000 messages only reaches the newest ones.
+  Words match as prefixes (`xter` finds `xterm`), not in the middle of words.
+- The index lives in `search.db` next to `state.json`. Delete it (or bump `INDEX_VERSION`) to rebuild from scratch.
+
 ## Run
 
 ```bash

@@ -114,6 +114,24 @@ export type AppState = {
   error?: string
 }
 
+/** A session whose messages match a search, with its best-matching message. */
+export type SearchHit = {
+  sessionID: string
+  /** From the index; prefer the live title when the session is loaded */
+  title: string
+  role: "user" | "assistant"
+  created: number
+  /** Excerpt around the match; matches are wrapped in \uE000…\uE001 */
+  snippet: string
+}
+
+export type IndexStatus = { indexing: boolean; done: number; total: number }
+
+export type SearchResult = { hits: SearchHit[]; status: IndexStatus }
+
+/** Messages from the indexer utility process to main. */
+export type IndexerMessage = { type: "ready" } | { type: "status"; status: IndexStatus }
+
 export type Shortcut = CommandID
 
 /** Transient notice after an action, optionally undoable (Codex-style). */
@@ -167,6 +185,8 @@ export type CtrlApi = {
   moveSession(sessionID: string, spaceID: string | null): Promise<void>
   newSession(spaceID: string | null): Promise<void>
   openSession(sessionID: string): Promise<void>
+  /** Full-text search over session messages */
+  search(query: string): Promise<SearchResult>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

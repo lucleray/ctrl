@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
-import type { AppState } from "../shared/types"
+import type { AppState, IndexStatus, SearchHit } from "../shared/types"
 import { Icon } from "./icons"
 import { shortPath } from "./format"
 import { StatusIcon } from "./StatusIcon"
 
 type Item = {
   key: string
-  section: "Chats" | "Spaces" | "Quick actions"
+  section: "Chats" | "Messages" | "Spaces" | "Quick actions"
   icon?: ReactNode
   label: string
+  /** Second line, e.g. the matching excerpt of a message */
+  detail?: ReactNode
   hint?: string
   shortcut?: string
   run(): void
@@ -25,6 +27,54 @@ type Props = {
 
 const RECENT_LIMIT = 9
 const SEARCH_LIMIT = 50
+/** While the index is filling up, re-run the query so new matches appear. */
+const INDEXING_POLL_MS = 1000
+
+/** Snippet with \uE000…\uE001 match markers → text with <mark>s. */
+function Snippet({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\uE000").map((part, i) => {
+        if (i === 0) return part
+        const [hit, rest = ""] = part.split("\uE001")
+        return (
+          <span key={i}>
+            <mark>{hit}</mark>
+            {rest}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+/** Message hits for the query; null query clears them. Stale responses are dropped. */
+function useMessageSearch(query: string) {
+  const [hits, setHits] = useState<SearchHit[]>([])
+  const [status, setStatus] = useState<IndexStatus | null>(null)
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setHits([])
+      return
+    }
+    let live = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const run = () =>
+      window.ctrl.search(q).then((res) => {
+        if (!live) return
+        setHits(res.hits)
+        setStatus(res.status)
+        if (res.status.indexing) timer = setTimeout(run, INDEXING_POLL_MS)
+      })
+    void run()
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [query])
+  return { hits, status }
+}
 
 function matches(query: string, ...fields: (string | undefined)[]) {
   const hay = fields.filter(Boolean).join(" ").toLowerCase()
@@ -42,6 +92,7 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
   const list = useRef<HTMLDivElement>(null)
 
   useEffect(() => input.current?.focus(), [])
+  const { hits, status } = useMessageSearch(query)
 
   const items = useMemo(() => {
     const q = query.trim()
@@ -70,6 +121,32 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
     })
 
     if (q) {
+      const shown = new Set(sessions.map((s) => s.id))
+      const live = new Map(state.sessions.map((s) => [s.id, s]))
+      const ranked = hits
+        .filter((h) => !shown.has(h.sessionID))
+        .sort((a, b) => Number(!!state.archived[a.sessionID]) - Number(!!state.archived[b.sessionID]))
+      for (const hit of ranked) {
+        const session = live.get(hit.sessionID)
+        out.push({
+          key: `m:${hit.sessionID}`,
+          section: "Messages",
+          icon: session ? <StatusIcon status={session.status} /> : undefined,
+          label: session?.title ?? hit.title,
+          detail: (
+            <>
+              {hit.role === "user" && <span className="palette-detail-role">You: </span>}
+              <Snippet text={hit.snippet} />
+            </>
+          ),
+          hint: state.archived[hit.sessionID]
+            ? "Archived"
+            : (spaceName.get(state.assignments[hit.sessionID]) ??
+              (session ? shortPath(session.directory).split("/").pop() : undefined)),
+          run: () => onOpen(hit.sessionID),
+        })
+      }
+
       for (const space of state.spaces.filter((s) => matches(q, s.name, s.directory))) {
         const count = state.sessions.filter(
           (s) => state.assignments[s.id] === space.id && !state.archived[s.id],
@@ -99,7 +176,7 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
     }
     out.push(...actions.filter((a) => a.key === "a:space" || !q || matches(q, a.label)))
     return out
-  }, [query, state, onOpen, onNew, onRevealSpace])
+  }, [query, hits, state, onOpen, onNew, onRevealSpace])
 
   useEffect(() => setSelected(0), [query])
   useEffect(() => {
@@ -156,7 +233,14 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
                   onClick={() => run(item)}
                 >
                   <span className="palette-icon">{item.icon}</span>
-                  <span className="palette-label">{item.label}</span>
+                  {item.detail ? (
+                    <span className="palette-text">
+                      <span className="palette-label">{item.label}</span>
+                      <span className="palette-detail">{item.detail}</span>
+                    </span>
+                  ) : (
+                    <span className="palette-label">{item.label}</span>
+                  )}
                   {item.hint && <span className="palette-hint">{item.hint}</span>}
                   {item.shortcut && <kbd>{item.shortcut}</kbd>}
                 </div>
@@ -164,6 +248,11 @@ export function Palette({ state, onClose, onOpen, onNew, onRevealSpace }: Props)
             )
           })}
         </div>
+        {query.trim().length >= 2 && status?.indexing && (
+          <div className="palette-footer">
+            Indexing messages… {status.done}/{status.total}
+          </div>
+        )}
       </div>
     </div>
   )

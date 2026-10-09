@@ -459,6 +459,54 @@ button {
   text-overflow: ellipsis;
 }
 
+.palette-item:has(.palette-detail) {
+  height: auto;
+  min-height: 34px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  align-items: flex-start;
+}
+
+.palette-item:has(.palette-detail) .palette-icon {
+  margin-top: 2px;
+}
+
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palette-detail {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.palette-detail mark {
+  background: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.palette-detail-role {
+  opacity: 0.8;
+}
+
+.palette-footer {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 20px 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
 .palette-hint {
   color: var(--muted);
   font-size: 12.5px;
