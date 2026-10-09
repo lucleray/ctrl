@@ -7,10 +7,8 @@
 // order) and bump RESOURCES_VERSION, which re-extracts from already indexed
 // messages, without refetching anything.
 //
-// Live details (PR state, CI…) are separate: a type with `enrich` gets them
-// from that provider (src/main/meta), and describe() receives them as `meta`.
-
-import type { ProviderID, ResourceMeta } from "./types"
+// Live details (PR state, CI…) are separate: resource adapters fetch them
+// (src/main/adapters), and the panel shows their title/subtitle over describe()'s.
 
 export const RESOURCES_VERSION = 2
 
@@ -34,10 +32,8 @@ export type ResourceType = {
   icon: string
   /** null when the URL isn't this type */
   parse(url: URL): { identity: string; url: string; data: ResourceData } | null
-  /** Provider that fetches live details for this type (src/main/meta) */
-  enrich?: ProviderID
-  /** Display from the URL, improved by live details when fetched */
-  describe(data: ResourceData, meta?: ResourceMeta): { title: string; subtitle?: string }
+  /** Display without fetching anything */
+  describe(data: ResourceData): { title: string; subtitle?: string }
 }
 
 const host = (url: URL) => url.hostname.toLowerCase().replace(/^www\./, "")
@@ -91,8 +87,7 @@ const githubPr: ResourceType = {
       data: { repo: r.slug, number: r.rest[1] },
     }
   },
-  enrich: "github",
-  describe: (d, m) => (m?.title ? { title: m.title, subtitle: `${d.repo}#${d.number}` } : { title: `${d.repo}#${d.number}` }),
+  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
 }
 
 const githubIssue: ResourceType = {
@@ -108,8 +103,7 @@ const githubIssue: ResourceType = {
       data: { repo: r.slug, number: r.rest[1] },
     }
   },
-  enrich: "github",
-  describe: (d, m) => (m?.title ? { title: m.title, subtitle: `${d.repo}#${d.number}` } : { title: `${d.repo}#${d.number}` }),
+  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
 }
 
 const githubCommit: ResourceType = {
@@ -126,11 +120,7 @@ const githubCommit: ResourceType = {
       data: { repo: r.slug, sha },
     }
   },
-  enrich: "github",
-  describe: (d, m) => {
-    const id = `${d.repo}@${d.sha.slice(0, 7)}`
-    return m?.title ? { title: m.title, subtitle: id } : { title: id }
-  },
+  describe: (d) => ({ title: `${d.repo}@${d.sha.slice(0, 7)}` }),
 }
 
 const githubRepoType: ResourceType = {
@@ -143,8 +133,7 @@ const githubRepoType: ResourceType = {
     if (!r) return null
     return { identity: r.id, url: `https://github.com/${r.slug}`, data: { repo: r.slug } }
   },
-  enrich: "github",
-  describe: (d, m) => ({ title: d.repo, subtitle: m?.description || undefined }),
+  describe: (d) => ({ title: d.repo }),
 }
 
 // ---------- Linear ----------
@@ -287,12 +276,8 @@ const vercelDeployment: ResourceType = {
       data: { team: d.team, project: d.project, deployment: d.third },
     }
   },
-  enrich: "vercel",
-  describe: (d, m) => {
-    const id = d.host ?? `${d.project} · ${d.deployment.slice(0, 9)}`
-    if (m?.title) return { title: m.title, subtitle: m.branch ? `${id} · ${m.branch}` : id }
-    return d.host ? { title: d.host } : { title: id, subtitle: d.team }
-  },
+  describe: (d) =>
+    d.host ? { title: d.host } : { title: `${d.project} · ${d.deployment.slice(0, 9)}`, subtitle: d.team },
 }
 
 const vercelProject: ResourceType = {
@@ -304,8 +289,7 @@ const vercelProject: ResourceType = {
     if (!d) return null
     return { identity: `${d.team}/${d.project}`, url: `https://vercel.com/${d.team}/${d.project}`, data: { team: d.team, project: d.project } }
   },
-  enrich: "vercel",
-  describe: (d, m) => ({ title: d.project, subtitle: m?.framework ? `${d.team} · ${m.framework}` : d.team }),
+  describe: (d) => ({ title: d.project, subtitle: d.team }),
 }
 
 export const RESOURCE_TYPES: ResourceType[] = [

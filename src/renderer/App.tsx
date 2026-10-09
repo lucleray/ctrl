@@ -20,7 +20,7 @@ const EMPTY: AppState = {
     resourcesWidth: 300,
     resourcesScope: "session",
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false, shortcuts: {} },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false, shortcuts: {}, disabledAdapters: [] },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -30,7 +30,7 @@ const EMPTY: AppState = {
   currentSessionID: null,
   bridgeConnected: false,
   mcp: [],
-  providers: { github: { state: "idle" }, vercel: { state: "idle" } },
+  adapters: [],
 }
 
 export function App() {

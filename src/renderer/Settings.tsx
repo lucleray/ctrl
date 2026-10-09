@@ -6,8 +6,7 @@ import {
   type McpServerItem,
   type McpStatus,
   type ModelChoices,
-  type ProviderID,
-  type ProviderStatus,
+  type AdapterInfo,
 } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -68,56 +67,60 @@ function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
   )
 }
 
-const PROVIDERS: Record<ProviderID, { name: string; cli: string; install: string; what: string }> = {
-  github: { name: "GitHub", cli: "gh", install: "brew install gh", what: "PR, issue and CI status" },
-  vercel: { name: "Vercel", cli: "vercel", install: "npm i -g vercel", what: "deployment and build status" },
-}
-
-/** Live resource details from one service, using its CLI's login. */
-function ProviderRow({ id, status }: { id: ProviderID; status: ProviderStatus }) {
+/** One resource adapter: what it adds, its CLI's status, and an on/off toggle. */
+function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: string[] }) {
   const [busy, setBusy] = useState(false)
-  const p = PROVIDERS[id]
-  const dot = { ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed"
-  const budget =
-    status.remaining !== undefined
-      ? ` · ${status.remaining.toLocaleString()} of ${status.limit?.toLocaleString()} API points left this hour (ctrl used ${status.used ?? 0})`
-      : ""
-  const desc =
-    status.state === "ok"
-      ? `Signed in as ${status.account ?? "?"} through ${p.cli}${budget}`
-      : status.state === "no-cli"
-        ? `Install the ${p.name} CLI (${p.install}), then run ${p.cli} login`
-        : status.state === "logged-out"
-          ? `Run ${p.cli === "gh" ? "gh auth login" : "vercel login"} in a terminal to get ${p.what}`
-          : status.state === "idle"
-            ? `Uses ${p.cli}'s login. Details refresh while the resources panel is open.`
-            : status.state === "paused"
-              ? `Paused: ${status.detail}`
-              : status.detail
-  const problem = status.state === "no-cli" || status.state === "logged-out" || status.state === "error"
+  const { status, cli } = adapter
+  const dot = !adapter.enabled
+    ? "disabled"
+    : ({ ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed")
+  const state =
+    !adapter.enabled
+      ? null
+      : status.state === "ok"
+        ? `Using ${cli.command}${status.account ? ` as ${status.account}` : ""}`
+        : status.state === "no-cli"
+          ? `${cli.command} isn't installed: ${cli.install}, then ${cli.login}`
+          : status.state === "logged-out"
+            ? `${cli.command} isn't logged in: run ${cli.login}`
+            : status.state === "idle"
+              ? `Uses ${cli.command}. Details refresh while the resources panel is open.`
+              : status.state === "paused"
+                ? `Paused: ${status.detail}`
+                : status.detail
+  const problem = adapter.enabled && ["no-cli", "logged-out", "error"].includes(status.state)
   return (
     <div className="setting">
       <div className="mcp-name">
         <span className={`mcp-dot ${dot}`} />
         <div>
-          <div className="setting-title">{p.name}</div>
-          <div className="setting-desc mcp-error">{desc}</div>
+          <div className="setting-title">{adapter.name}</div>
+          <div className="setting-desc">{adapter.description}</div>
+          {state && <div className="setting-desc mcp-error">{state}</div>}
         </div>
       </div>
-      {problem && (
-        <div className="mcp-actions">
+      <div className="mcp-actions">
+        {problem && (
           <button
             className="btn"
             disabled={busy}
             onClick={() => {
               setBusy(true)
-              void window.ctrl.retryProvider(id).finally(() => setTimeout(() => setBusy(false), 1500))
+              void window.ctrl.retryAdapter(adapter.id).finally(() => setTimeout(() => setBusy(false), 1500))
             }}
           >
             {busy ? "Retrying…" : "Retry"}
           </button>
-        </div>
-      )}
+        )}
+        <Toggle
+          on={adapter.enabled}
+          onChange={(on) =>
+            void window.ctrl.setSettings({
+              disabledAdapters: on ? disabled.filter((id) => id !== adapter.id) : [...disabled, adapter.id],
+            })
+          }
+        />
+      </div>
     </div>
   )
 }
@@ -296,10 +299,10 @@ export function Settings({
           )}
         </div>
 
-        <h2>Resource details</h2>
+        <h2>Resource adapters</h2>
         <div className="settings-card">
-          {(Object.keys(PROVIDERS) as ProviderID[]).map((id) => (
-            <ProviderRow key={id} id={id} status={state.providers[id]} />
+          {state.adapters.map((adapter) => (
+            <AdapterRow key={adapter.id} adapter={adapter} disabled={settings.disabledAdapters} />
           ))}
         </div>
 

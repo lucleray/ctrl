@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: FONT_SIZE.default,
   defaultModel: null,
   defaultModelEnabled: false,
+  disabledAdapters: [],
   shortcuts: {},
 }
 

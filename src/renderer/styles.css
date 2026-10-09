@@ -853,6 +853,7 @@ button {
 }
 
 .mcp-actions {
+  align-items: center;
   display: flex;
   gap: 6px;
   flex-shrink: 0;
@@ -1627,7 +1628,7 @@ body.resizing .terminal-wrap {
   display: none;
 }
 
-/* Live details (src/main/meta): the icon takes the state's color, chips sit next to the subtitle. */
+/* Live details from resource adapters (src/main/adapters): tones color the icon and chips. */
 .resource-icon {
   display: inline-flex;
   flex-shrink: 0;
@@ -1636,38 +1637,6 @@ body.resizing .terminal-wrap {
 
 .resource-icon .icon {
   color: inherit;
-}
-
-.resource-icon.state-open,
-.resource-icon.state-ready {
-  color: #1f9d55;
-}
-
-.resource-icon.state-building,
-.resource-icon.state-queued {
-  color: #b7791f;
-}
-
-.resource-icon.state-error {
-  color: #d1242f;
-}
-
-.resource-icon.state-canceled {
-  color: var(--muted);
-}
-
-.resource-icon.state-merged,
-.resource-icon.state-completed {
-  color: #8250df;
-}
-
-.resource-icon.state-closed {
-  color: #d1242f;
-}
-
-.resource-icon.state-draft,
-.resource-icon.state-not-planned {
-  color: var(--muted);
 }
 
 .resource-subtitle {
@@ -1699,51 +1668,55 @@ body.resizing .terminal-wrap {
   white-space: nowrap;
 }
 
-.chip.good {
-  color: #1f9d55;
-  background: rgba(31, 157, 85, 0.12);
-}
-
-.chip.bad,
-.chip.closed {
-  color: #d1242f;
-  background: rgba(209, 36, 47, 0.1);
-}
-
-.chip.warn {
-  color: #b7791f;
-  background: rgba(245, 158, 11, 0.14);
-}
-
-.chip.merged {
-  color: #8250df;
-  background: rgba(130, 80, 223, 0.12);
+:root {
+  --tone-open: #1f9d55;
+  --tone-good: #1f9d55;
+  --tone-done: #8250df;
+  --tone-bad: #d1242f;
+  --tone-warn: #b7791f;
 }
 
 @media (prefers-color-scheme: dark) {
-  .resource-icon.state-open,
-  .resource-icon.state-ready,
-  .chip.good {
-    color: #3fb950;
+  :root {
+    --tone-open: #3fb950;
+    --tone-good: #3fb950;
+    --tone-done: #a371f7;
+    --tone-bad: #f85149;
+    --tone-warn: #d29922;
   }
-  .resource-icon.state-error {
-    color: #f85149;
-  }
-  .resource-icon.state-building,
-  .resource-icon.state-queued {
-    color: #d29922;
-  }
-  .resource-icon.state-merged,
-  .resource-icon.state-completed,
-  .chip.merged {
-    color: #a371f7;
-  }
-  .resource-icon.state-closed,
-  .chip.bad,
-  .chip.closed {
-    color: #f85149;
-  }
-  .chip.warn {
-    color: #d29922;
-  }
+}
+
+.resource-icon.tone-open,
+.resource-icon.tone-good {
+  color: var(--tone-good);
+}
+.resource-icon.tone-done {
+  color: var(--tone-done);
+}
+.resource-icon.tone-bad {
+  color: var(--tone-bad);
+}
+.resource-icon.tone-warn {
+  color: var(--tone-warn);
+}
+.resource-icon.tone-muted {
+  color: var(--muted);
+}
+
+.chip.tone-open,
+.chip.tone-good {
+  color: var(--tone-good);
+  background: color-mix(in srgb, var(--tone-good) 13%, transparent);
+}
+.chip.tone-done {
+  color: var(--tone-done);
+  background: color-mix(in srgb, var(--tone-done) 13%, transparent);
+}
+.chip.tone-bad {
+  color: var(--tone-bad);
+  background: color-mix(in srgb, var(--tone-bad) 11%, transparent);
+}
+.chip.tone-warn {
+  color: var(--tone-warn);
+  background: color-mix(in srgb, var(--tone-warn) 14%, transparent);
 }

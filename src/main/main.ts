@@ -7,7 +7,6 @@ import {
   FONT_SIZE,
   type AppState,
   type Settings,
-  type ProviderID,
   type Space,
   type SpacePatch,
   type ThemeInfo,
@@ -16,7 +15,8 @@ import {
 } from "../shared/types"
 import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
-import { ResourceMetaService } from "./meta"
+import { ADAPTERS } from "./adapters"
+import { AdapterService } from "./adapters/service"
 import { OpenCodeService } from "./opencode"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
@@ -100,7 +100,7 @@ const state = (): AppState => ({
   currentSessionID,
   bridgeConnected,
   mcp: opencode.mcp,
-  providers: resourceMeta.statuses,
+  adapters: adapters.adapters,
   problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
   error,
 })
@@ -125,20 +125,25 @@ const opencode = new OpenCodeService(() => {
   const now = new Set(opencode.sessions.filter((s) => s.status === "running").map((s) => s.id))
   const ended = [...running].filter((id) => !now.has(id))
   running = now
-  if (ended.length) resourceMeta.runsEnded(ended)
+  if (ended.length) adapters.runsEnded(ended)
   push()
 })
 
 const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
   send("resources:changed", ids)
-  resourceMeta.resourcesChanged(ids)
+  adapters.resourcesChanged(ids)
 })
 
-const resourceMeta = new ResourceMetaService(join(app.getPath("userData"), "resource-meta.db"), {
-  list: (sessionIDs) => search.resources(sessionIDs),
-  onMeta: (metas) => send("resources:meta", metas),
-  onStatus: push,
-})
+const adapters = new AdapterService(
+  join(app.getPath("userData"), "resource-meta.db"),
+  ADAPTERS,
+  store.data.settings.disabledAdapters,
+  {
+    list: (sessionIDs) => search.resources(sessionIDs),
+    onMeta: (metas) => send("resources:meta", metas),
+    onStatus: push,
+  },
+)
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -475,6 +480,11 @@ function registerIpc() {
   ipcMain.handle("settings:set", (_e, patch: Partial<Settings>) => {
     if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
     store.setSettings(patch)
+    if (patch.disabledAdapters) {
+      adapters.setDisabled(patch.disabledAdapters)
+      // Panels re-read their resources, with or without that adapter's details.
+      send("resources:changed", null)
+    }
     loadThemes()
     applyTheme()
   })
@@ -559,10 +569,10 @@ function registerIpc() {
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => search.search(query))
   ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
-    search.resources(sessionIDs).map((r) => ({ ...r, meta: resourceMeta.get(r.id) })),
+    search.resources(sessionIDs).map((r) => ({ ...r, meta: adapters.get(r) })),
   )
-  ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => resourceMeta.watch(sessionIDs))
-  ipcMain.handle("provider:retry", (_e, id: ProviderID) => resourceMeta.retry(id))
+  ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => adapters.watch(sessionIDs))
+  ipcMain.handle("adapter:retry", (_e, id: string) => adapters.retry(id))
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
@@ -605,9 +615,9 @@ function createWindow() {
     },
   })
   // Live resource details only refresh while you're looking (test runs never get focus).
-  resourceMeta.setFocused(headless || win.isFocused())
-  win.on("focus", () => resourceMeta.setFocused(true))
-  win.on("blur", () => resourceMeta.setFocused(headless))
+  adapters.setFocused(headless || win.isFocused())
+  win.on("focus", () => adapters.setFocused(true))
+  win.on("blur", () => adapters.setFocused(headless))
 
   // Never open Electron windows for links; hand them to the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -754,5 +764,5 @@ app.on("window-all-closed", () => app.quit())
 app.on("will-quit", () => {
   terminal.dispose()
   search.stop()
-  resourceMeta.stop()
+  adapters.stop()
 })

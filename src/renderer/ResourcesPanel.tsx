@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { RESOURCE_TYPES, resourceType } from "../shared/resources"
-import type { AppState, ProviderID, ResourceItem, ResourceMeta } from "../shared/types"
+import type { AdapterInfo, AppState, ResourceItem, ResourceMeta } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 
@@ -88,7 +88,13 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
           </div>
         ) : (
           groups.map((g) => (
-            <ResourceGroup key={g.type.id} label={g.type.label} items={g.items} spaceScope={scope === "space"} />
+            <ResourceGroup
+              key={g.type.id}
+              label={g.type.label}
+              items={g.items}
+              source={state.adapters.find((a) => a.enabled && a.types.includes(g.type.id))}
+              spaceScope={scope === "space"}
+            />
           ))
         )}
       </div>
@@ -96,7 +102,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
   )
 }
 
-function ResourceGroup(props: { label: string; items: ResourceItem[]; spaceScope: boolean }) {
+function ResourceGroup(props: { label: string; items: ResourceItem[]; source?: AdapterInfo; spaceScope: boolean }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
     <section className="section">
@@ -105,7 +111,7 @@ function ResourceGroup(props: { label: string; items: ResourceItem[]; spaceScope
         <span className="count">{props.items.length}</span>
       </div>
       {props.items.slice(0, shown).map((item) => (
-        <ResourceRow key={item.id} item={item} spaceScope={props.spaceScope} />
+        <ResourceRow key={item.id} item={item} source={props.source} spaceScope={props.spaceScope} />
       ))}
       {props.items.length > shown && (
         <button className="row show-more" onClick={() => setShown((n) => n + PAGE_SIZE)}>
@@ -116,104 +122,45 @@ function ResourceGroup(props: { label: string; items: ResourceItem[]; spaceScope
   )
 }
 
-const STATE_LABELS: Record<string, string> = {
-  open: "Open",
-  draft: "Draft",
-  merged: "Merged",
-  closed: "Closed",
-  completed: "Closed as completed",
-  "not-planned": "Closed as not planned",
-  ready: "Ready",
-  building: "Building",
-  queued: "Queued",
-  error: "Build failed",
-  canceled: "Canceled",
+function metaTooltip(meta: ResourceMeta | undefined, source: AdapterInfo | undefined) {
+  if (!meta || !source) return []
+  if (meta.missing) return [`Not found, or ${source.cli.command}'s account can't see it`]
+  return [...(meta.details ?? []), `Updated from ${source.name} ${age(meta.fetched)} ago`]
 }
 
-/** Vercel deployment states (projects show their latest production deployment's). */
-const DEPLOY_CHIPS: Record<string, { text: string; tone: string }> = {
-  ready: { text: "ready", tone: "good" },
-  building: { text: "● building", tone: "warn" },
-  queued: { text: "queued", tone: "warn" },
-  error: { text: "✗ error", tone: "bad" },
-  canceled: { text: "canceled", tone: "muted" },
-}
-
-/** Small status chips under the title: CI, review, conflicts, or the final state. */
-function Chips({ meta, type }: { meta: ResourceMeta; type: string }) {
-  const chips: { text: string; tone: string; title: string }[] = []
-  if (type.startsWith("vercel-")) {
-    const deploy = meta.state ? DEPLOY_CHIPS[meta.state] : undefined
-    const prod = type === "vercel-project" ? "Latest production deployment: " : ""
-    if (meta.target === "production") chips.push({ text: "prod", tone: "muted", title: "Production deployment" })
-    if (deploy) chips.push({ ...deploy, title: prod + STATE_LABELS[meta.state!] })
-    return chips.length ? <ChipList chips={chips} /> : null
-  }
-  const open = meta.state === "open" || meta.state === "draft"
-  if (meta.state === "merged" || meta.state === "closed") chips.push({ text: meta.state, tone: meta.state, title: STATE_LABELS[meta.state] })
-  if (meta.state === "draft") chips.push({ text: "draft", tone: "muted", title: "Draft" })
-  if (meta.ci && (open || !meta.state))
-    chips.push({
-      text: meta.ci === "success" ? "✓ CI" : meta.ci === "failure" ? "✗ CI" : "● CI",
-      tone: meta.ci === "success" ? "good" : meta.ci === "failure" ? "bad" : "warn",
-      title: meta.ci === "success" ? "Checks passed" : meta.ci === "failure" ? "Checks failed" : "Checks running",
-    })
-  if (open && meta.conflicts) chips.push({ text: "conflicts", tone: "bad", title: "Merge conflicts" })
-  if (open && meta.review === "approved") chips.push({ text: "approved", tone: "good", title: "Approved" })
-  if (open && meta.review === "changes") chips.push({ text: "changes", tone: "bad", title: "Changes requested" })
-  if (open && meta.state !== "draft" && meta.review === "required") chips.push({ text: "review", tone: "muted", title: "Review required" })
-  if (meta.archived) chips.push({ text: "archived", tone: "muted", title: "Archived repository" })
-  return chips.length ? <ChipList chips={chips} /> : null
-}
-
-function ChipList({ chips }: { chips: { text: string; tone: string; title: string }[] }) {
-  return (
-    <span className="chips">
-      {chips.map((c) => (
-        <span key={c.text} className={`chip ${c.tone}`} title={c.title}>
-          {c.text}
-        </span>
-      ))}
-    </span>
-  )
-}
-
-function metaTooltip(meta: ResourceMeta | undefined, provider: ProviderID | undefined) {
-  if (!meta || !provider) return []
-  const service = provider === "github" ? "GitHub" : "Vercel"
-  if (meta.missing) return [`Not found, or the ${provider === "github" ? "gh" : "vercel"} CLI's account can't see it`]
-  const parts = [
-    meta.state && STATE_LABELS[meta.state],
-    meta.branch,
-    meta.author && `by @${meta.author}`,
-    meta.additions !== undefined && `+${meta.additions} −${meta.deletions ?? 0}`,
-  ].filter(Boolean)
-  return [...(parts.length ? [parts.join(" · ")] : []), `Updated from ${service} ${age(meta.fetched)} ago`]
-}
-
-function ResourceRow({ item, spaceScope }: { item: ResourceItem; spaceScope: boolean }) {
+function ResourceRow({ item, source, spaceScope }: { item: ResourceItem; source?: AdapterInfo; spaceScope: boolean }) {
   const type = resourceType(item.type)
   const meta = item.meta?.missing ? undefined : item.meta
-  const { title, subtitle } = type?.describe(item.data, meta) ?? { title: item.url }
+  const parsed = type?.describe(item.data) ?? { title: item.url }
+  const title = meta?.title ?? parsed.title
+  const subtitle = meta?.subtitle ?? parsed.subtitle
   const [copied, setCopied] = useState(false)
   const where = spaceScope && item.sessions > 1 ? ` in ${item.sessions} sessions` : ""
   const tooltip = [
     meta?.title ? `${title}\n${item.url}` : item.url,
-    ...metaTooltip(item.meta, type?.enrich),
+    ...metaTooltip(item.meta, source),
     `Mentioned ${item.mentions}×${where}, last ${age(item.last)} ago${item.sharedByYou ? " · shared by you" : ""}`,
   ].join("\n")
 
   return (
     <div className="row resource" title={tooltip} onClick={() => void window.ctrl.openExternal(item.url)}>
-      <span className={`resource-icon${meta?.state ? ` state-${meta.state}` : ""}`}>
+      <span className={`resource-icon${meta?.tone ? ` tone-${meta.tone}` : ""}`}>
         <Icon name={type?.icon ?? "link"} />
       </span>
       <span className="resource-text">
         <span className="label">{title}</span>
-        {(subtitle || meta) && (
+        {(subtitle || meta?.chips?.length) && (
           <span className="resource-subtitle">
             {subtitle && <span className="resource-subtitle-text">{subtitle}</span>}
-            {meta && <Chips meta={meta} type={item.type} />}
+            {!!meta?.chips?.length && (
+              <span className="chips">
+                {meta.chips.map((c) => (
+                  <span key={c.text} className={`chip tone-${c.tone}`} title={c.title}>
+                    {c.text}
+                  </span>
+                ))}
+              </span>
+            )}
           </span>
         )}
       </span>

@@ -92,6 +92,8 @@ export type Settings = {
   defaultModelEnabled: boolean
   /** Rebound shortcuts; commands not listed use their defaults */
   shortcuts: ShortcutOverrides
+  /** Resource adapters turned off in Settings */
+  disabledAdapters: string[]
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }
@@ -115,8 +117,8 @@ export type AppState = {
   bridgeConnected: boolean
   /** MCP servers as opencode reports them for the TUI's folder (~) */
   mcp: McpServerItem[]
-  /** Live resource details, using the gh and vercel CLIs' logins */
-  providers: Record<ProviderID, ProviderStatus>
+  /** Resource adapters (live details for links), in Settings order */
+  adapters: AdapterInfo[]
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
   problem?: string
   /** Last failed action; dismissable */
@@ -150,50 +152,52 @@ export type ResourceItem = {
   last: number
   /** You pasted it in a prompt (vs only the assistant mentioning it) */
   sharedByYou: boolean
-  /** Live details fetched from the resource's service (types with `enrich` only) */
+  /** Live details from the adapter that handles this type, when there's one (src/main/adapters) */
   meta?: ResourceMeta
 }
 
-/** Live details of a resource, fetched in batches and cached (src/main/meta). Fields depend on the type. */
+/** Colors for a resource's icon and chips. */
+export type Tone = "open" | "good" | "done" | "bad" | "warn" | "muted"
+
+/**
+ * Live details of a resource, from the adapter that handles its type
+ * (src/main/adapters). Display-ready, so the panel needs no per-service code.
+ */
 export type ResourceMeta = {
+  /** Replaces the title parsed from the URL */
   title?: string
-  /**
-   * GitHub: open | draft | merged | closed | completed | not-planned
-   * Vercel: ready | building | queued | error | canceled (projects: their latest production deployment)
-   */
-  state?: string
-  ci?: "success" | "failure" | "pending"
-  review?: "approved" | "changes" | "required"
-  conflicts?: boolean
-  author?: string
-  additions?: number
-  deletions?: number
-  /** Repos */
-  description?: string
-  archived?: boolean
-  /** Vercel deployments: production | preview */
-  target?: string
-  branch?: string
-  /** Vercel projects */
-  framework?: string
-  /** Not found, or no access with this token */
+  /** Replaces the subtitle parsed from the URL */
+  subtitle?: string
+  /** Icon color: open/good green, done purple, bad red, warn amber, muted grey */
+  tone?: Tone
+  chips?: { text: string; tone: Tone; title?: string }[]
+  /** Extra tooltip lines */
+  details?: string[]
+  /** Not found, or not visible to the CLI's account */
   missing?: boolean
   fetched: number
 }
 
-/** Services that live resource details come from (src/main/meta) */
-export type ProviderID = "github" | "vercel"
-
-export type ProviderStatus = {
-  /** ok: fetching works · no-cli: CLI isn't installed · logged-out: CLI has no token · paused: rate limit low */
+export type AdapterStatus = {
+  /** ok: fetching works · no-cli: CLI isn't installed · logged-out: CLI isn't logged in · paused: rate limited */
   state: "idle" | "ok" | "no-cli" | "logged-out" | "error" | "paused"
   /** Who the CLI is logged in as */
   account?: string
-  remaining?: number
-  limit?: number
-  /** Points ctrl itself spent in the current hour */
-  used?: number
   detail?: string
+}
+
+/** A resource adapter as Settings lists it. */
+export type AdapterInfo = {
+  id: string
+  name: string
+  /** What it adds, e.g. "PR, issue and CI status" */
+  description: string
+  /** Resource types it handles (src/shared/resources.ts) */
+  types: string[]
+  /** The CLI whose login it uses */
+  cli: { command: string; install: string; login: string }
+  enabled: boolean
+  status: AdapterStatus
 }
 
 export type SearchResult = { hits: SearchHit[]; status: IndexStatus }
@@ -288,7 +292,7 @@ export type CtrlApi = {
   /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */
   watchResources(sessionIDs: string[]): void
   onResourceMeta(cb: (metas: Record<string, ResourceMeta>) => void): () => void
-  retryProvider(id: ProviderID): Promise<void>
+  retryAdapter(id: string): Promise<void>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void
