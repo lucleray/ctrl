@@ -163,7 +163,7 @@ export function SpaceSettings({
             </div>
             <textarea
               className="setting-textarea"
-              placeholder="e.g. This space is for PR reviews in vercel/front. Use the review-pr skill and keep comments short."
+              placeholder="e.g. This space is for PR reviews in acme/web. Use the review-pr skill and keep comments short."
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               onBlur={saveInstructions}

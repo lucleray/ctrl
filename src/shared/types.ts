@@ -201,7 +201,7 @@ export type IndexStatus = { indexing: boolean; done: number; total: number }
 
 /** A resource (see src/shared/adapters) and how it was mentioned in the queried sessions. */
 export type ResourceItem = {
-  /** Canonical key, e.g. "github-pr:vercel/infra#36612" */
+  /** Canonical key, e.g. "github-pr:vercel/next.js#99932" */
   id: string
   type: string
   url: string

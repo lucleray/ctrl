@@ -20,7 +20,7 @@ function slackChannelPath(url: URL) {
   if (!h.endsWith(".slack.com") || h === "app.slack.com") return null
   const [archives, channel, message] = segments(url)
   if (archives !== "archives" || !channel || !/^[CGD][A-Z0-9]{6,}$/.test(channel)) return null
-  // Enterprise Grid serves one channel from several hosts (vercel.slack.com, vercel.enterprise.slack.com),
+  // Enterprise Grid serves one channel from several hosts (acme.slack.com, acme.enterprise.slack.com),
   // and channel ids are unique across the grid: key on the channel alone.
   const workspace = h.slice(0, -".slack.com".length).replace(/\.enterprise$/, "")
   return { workspace, channel, message }

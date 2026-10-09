@@ -21,7 +21,7 @@ export type ResourceData = Record<string, string>
 
 export type ParsedResource = {
   type: string
-  /** Canonical identity, unique across types: "github-pr:vercel/infra#36612" */
+  /** Canonical identity, unique across types: "github-pr:vercel/next.js#99932" */
   key: string
   /** Canonical URL to open */
   url: string
