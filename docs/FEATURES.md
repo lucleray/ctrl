@@ -118,4 +118,5 @@ where it lives.
 - Packaged macOS app: `npm run install-app`; loads the login shell env at startup, with common bin folders
   added to PATH if that fails (`scripts/package.mjs`, `src/main/shell-env.ts`)
 - Dev runs use a separate `ctrl-dev` state dir, so dev and installed app run side by side
-- Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see README)
+- Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see `docs/DEVELOPMENT.md`)
+- README screenshots and GIF regenerated from a throwaway demo opencode (`scripts/demo/`, `CTRL_FRAMES` hook)

@@ -292,7 +292,7 @@ export type IndexerMessage =
 export type Shortcut = CommandID
 
 /**
- * The one in-app notification: a toast at the top of the main area (see README → Notifications).
+ * The one in-app notification: a toast at the top of the main area (see docs/ARCHITECTURE.md → Notifications).
  * Raise it from main with `toast()`; buttons call back into main by toast id.
  */
 export type Toast = {

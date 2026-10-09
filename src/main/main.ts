@@ -323,7 +323,7 @@ type ToastOptions = {
   sticky?: boolean
 }
 
-/** The one way to notify inside ctrl (README → Notifications). Returns the toast id. */
+/** The one way to notify inside ctrl (docs/ARCHITECTURE.md → Notifications). Returns the toast id. */
 const toast = (t: Pick<Toast, "icon" | "message" | "viewSessionID">, opts: ToastOptions = {}) => {
   const id = `tst_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
   const duration = opts.sticky ? null : TOAST_MS
@@ -820,6 +820,22 @@ function createWindow() {
     }
   }
 
+  // Debug helper: CTRL_FRAMES=<dir>,<startMs>,<intervalMs>,<count> captures numbered frames (for GIFs)
+  const frames = process.env.CTRL_FRAMES?.split(",")
+  if (frames) {
+    const [dir, start, interval, count] = [frames[0], ...frames.slice(1).map(Number)]
+    mkdirSync(dir, { recursive: true })
+    setTimeout(async () => {
+      for (let i = 0; i < count; i++) {
+        const next = Date.now() + interval
+        const image = await win!.webContents.capturePage()
+        writeFileSync(join(dir, `${String(i).padStart(4, "0")}.png`), image.toPNG())
+        await new Promise((r) => setTimeout(r, Math.max(0, next - Date.now())))
+      }
+      console.log(`[ctrl] ${count} frames saved to ${dir}`)
+    }, start)
+  }
+
   const shot = process.env.CTRL_SCREENSHOT
   if (shot) {
     setTimeout(async () => {
@@ -861,7 +877,7 @@ app.whenReady().then(async () => {
       }, 3000),
     )
   }
-  // CTRL_UPDATES=1 is a test hook (README): dev runs don't update themselves otherwise.
+  // CTRL_UPDATES=1 is a test hook (docs/DEVELOPMENT.md): dev runs don't update themselves otherwise.
   if (app.isPackaged || process.env.CTRL_UPDATES === "1") updater.start()
 })
 
