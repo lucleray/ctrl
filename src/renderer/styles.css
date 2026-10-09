@@ -1584,6 +1584,11 @@ body.resizing .terminal-wrap {
   display: inline-flex;
 }
 
+/* The copy button replaces the time on hover: keep it out of the row's height so rows don't jump. */
+.row.resource .row-action {
+  margin: -4px 0;
+}
+
 .row.resource:hover .meta {
   display: none;
 }
