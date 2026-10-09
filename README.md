@@ -77,15 +77,27 @@ indexed message text ──extractResources()──► resources          (one r
 panel ◄── main: GROUP BY resource over the scope's mentions (~3ms)
 ```
 
-- **Types** live in `src/shared/resources.ts`. Each one parses a URL into a canonical identity, a canonical URL
-  and a few fields (`/pull/1/changes`, `/pull/1` and `/pull/1#x` are one PR), and says how to display them.
-  Order matters: the first type that matches wins (PR before repo). URLs no type recognizes are ignored.
-- **Add a type:** append it to `RESOURCE_TYPES` and bump `RESOURCES_VERSION`. The indexer then re-extracts from
-  the stored message text, locally and without refetching (~10ms for 1k messages).
+- **Adapters** live in `src/shared/adapters/`, one file per service, listed in `adapters/index.ts`. Each declares
+  its link types: parse a URL into a canonical identity, a canonical URL and a few fields (`/pull/1/changes`,
+  `/pull/1` and `/pull/1#x` are one PR), plus an icon and an offline title. Order matters: the first type that
+  matches wins (PR before repo). URLs no type recognizes are ignored.
+- **Live details are optional:** an adapter with a `live` part fetches them through its service's CLI (`gh`,
+  `vercel`, `slack-cli`), so ctrl never handles tokens. It returns display-ready details plus a cache policy;
+  `src/main/adapters/service.ts` does the scheduling and caching for all of them. Linear and Notion have no
+  `live` part, so their links are shown as parsed.
+
+```text
+adapter = { id, name, types[], live? }
+              │         │
+              │         └─ live.fetch(batch, { run }) → { meta, cache: { maxAge, refreshOnMention } }
+              └─ parse(url) / describe(data)   ← indexer + renderer, no requests
+```
+
+- **Add an adapter:** a new file implementing `ResourceAdapter`, listed in `ADAPTERS`, and bump
+  `RESOURCES_VERSION`. The indexer then re-extracts from the stored message text, locally and without
+  refetching (~10ms for 1k messages).
 - **Same pipeline as search:** mentions are written in the same transaction as their message and deleted with it.
   Like search, only your prompts and the assistant's text are read, not tool output.
-- **No requests:** everything comes from the URL. Titles that need the network (PR title, status) can be added
-  later as fetched metadata on `resources`, next to the parsed `data`, without changing identities.
 
 ## Run
 
