@@ -122,6 +122,14 @@ function ResourceGroup(props: { label: string; items: ResourceItem[]; source?: A
   )
 }
 
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "")
+  } catch {
+    return undefined
+  }
+}
+
 function metaTooltip(meta: ResourceMeta | undefined, source: AdapterInfo | undefined) {
   if (!meta || !source) return []
   if (meta.missing) return [`Not found, or ${source.cli?.command ?? source.name}'s account can't see it`]
@@ -133,7 +141,8 @@ function ResourceRow({ item, source, spaceScope }: { item: ResourceItem; source?
   const meta = item.meta?.missing ? undefined : item.meta
   const parsed = type?.describe(item.data) ?? { title: item.url }
   const title = meta?.title ?? parsed.title
-  const subtitle = meta?.subtitle ?? parsed.subtitle
+  // Every row has a second line, so rows keep their height when live details arrive.
+  const subtitle = meta?.subtitle ?? parsed.subtitle ?? hostOf(item.url)
   const [copied, setCopied] = useState(false)
   const where = spaceScope && item.sessions > 1 ? ` in ${item.sessions} sessions` : ""
   const tooltip = [
@@ -149,20 +158,18 @@ function ResourceRow({ item, source, spaceScope }: { item: ResourceItem; source?
       </span>
       <span className="resource-text">
         <span className="label">{title}</span>
-        {(subtitle || meta?.chips?.length) && (
-          <span className="resource-subtitle">
-            {subtitle && <span className="resource-subtitle-text">{subtitle}</span>}
-            {!!meta?.chips?.length && (
-              <span className="chips">
-                {meta.chips.map((c) => (
-                  <span key={c.text} className={`chip tone-${c.tone}`} title={c.title}>
-                    {c.text}
-                  </span>
-                ))}
-              </span>
-            )}
-          </span>
-        )}
+        <span className="resource-subtitle">
+          {subtitle && <span className="resource-subtitle-text">{subtitle}</span>}
+          {!!meta?.chips?.length && (
+            <span className="chips">
+              {meta.chips.map((c) => (
+                <span key={c.text} className={`chip tone-${c.tone}`} title={c.title}>
+                  {c.text}
+                </span>
+              ))}
+            </span>
+          )}
+        </span>
       </span>
       <span className="meta">{age(item.last)}</span>
       <button

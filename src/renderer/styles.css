@@ -1639,10 +1639,12 @@ body.resizing .terminal-wrap {
   color: inherit;
 }
 
+/* Fixed height: chips must not make an enriched row taller than a plain one. */
 .resource-subtitle {
   display: flex;
   align-items: center;
   gap: 6px;
+  height: 16px;
 }
 
 .resource-subtitle-text {
