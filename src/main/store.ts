@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import { FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
+import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
 
 const DEFAULT_UI: UiState = {
   recentsCollapsed: false,
@@ -15,6 +15,9 @@ const DEFAULT_SETTINGS: Settings = {
   tuiTheme: null,
   dockBadge: true,
   notifications: true,
+  sounds: true,
+  soundsWhenFocused: false,
+  soundChoices: DEFAULT_SOUND_CHOICES,
   fontSize: FONT_SIZE.default,
   defaultModel: null,
   defaultModelEnabled: false,
@@ -50,6 +53,7 @@ export class Store {
         // State from before the toggle: a saved default model meant "on".
         defaultModelEnabled: !!loaded.settings?.defaultModel,
         ...loaded.settings,
+        soundChoices: { ...DEFAULT_SOUND_CHOICES, ...loaded.settings?.soundChoices },
       },
     }
   }

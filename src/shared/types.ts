@@ -84,6 +84,12 @@ export type Settings = {
   dockBadge: boolean
   /** macOS notifications when a background session needs you or finishes */
   notifications: boolean
+  /** Play a sound when a session needs you, finishes or fails */
+  sounds: boolean
+  /** Also play sounds while ctrl is focused (otherwise only in the background, like notifications) */
+  soundsWhenFocused: boolean
+  /** Per event: a macOS system sound name (SYSTEM_SOUNDS), an absolute file path, or null for silence */
+  soundChoices: Record<SoundEvent, string | null>
   /** Terminal font size in px */
   fontSize: number
   /** Model for new sessions (spaces can override), used when defaultModelEnabled */
@@ -97,6 +103,27 @@ export type Settings = {
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }
+
+/** Session transitions that can play a sound, most urgent first. */
+export type SoundEvent = "needs-input" | "failed" | "finished"
+
+export const SOUND_EVENTS: { id: SoundEvent; label: string }[] = [
+  { id: "needs-input", label: "Needs your input" },
+  { id: "failed", label: "Failed" },
+  { id: "finished", label: "Finished" },
+]
+
+/** In /System/Library/Sounds/<name>.aiff */
+export const SYSTEM_SOUNDS = [
+  "Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero",
+  "Morse", "Ping", "Pop", "Purr", "Sosumi", "Submarine", "Tink",
+]
+
+export const DEFAULT_SOUND_CHOICES: Record<SoundEvent, string | null> = {
+  "needs-input": "Glass",
+  failed: "Basso",
+  finished: "Hero",
+}
 
 export type ThemeInfo = {
   builtin: string[]
@@ -279,6 +306,10 @@ export type CtrlApi = {
   setArchived(sessionID: string, archived: boolean): Promise<void>
   setUi(patch: Partial<UiState>): Promise<void>
   setSettings(patch: Partial<Settings>): Promise<void>
+  /** Plays a sound choice (system sound name or file path) as a preview */
+  playSound(choice: string): Promise<void>
+  /** Picks an audio file for this event and saves it; resolves to its path, or null if canceled */
+  pickSoundFile(event: SoundEvent): Promise<string | null>
   toggleSpace(id: string): Promise<void>
   showSpaceMenu(id: string): Promise<void>
   showSessionMenu(sessionID: string): Promise<void>

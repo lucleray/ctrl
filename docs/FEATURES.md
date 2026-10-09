@@ -82,6 +82,9 @@ where it lives.
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
 - Notifications: dock badge with sessions waiting on you, macOS notifications when a background session
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
+- Sounds when a session needs you / fails / finishes: on/off, a macOS system sound or your own audio file per
+  event (or None), preview button, optional "also when ctrl is focused". One sound per burst (most urgent wins),
+  played with `afplay`, and it replaces the system notification sound (`src/main/sound.ts`)
 - Resizable sidebar (200–520px, double-click edge to reset), width saved (`src/renderer/ResizeHandle.tsx`)
 
 ## Feedback

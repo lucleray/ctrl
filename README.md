@@ -163,6 +163,7 @@ The two other channels each have a single purpose, so don't use them for anythin
 |---|---|---|
 | Sidebar banner (`problem` / `error` in `AppState`) | bottom of the sidebar | ctrl can't reach opencode or the TUI, or a ctrl action failed |
 | macOS notification (`src/main/attention.ts`) | system | a background session needs you, finished or failed, while ctrl isn't focused |
+| Sound (`src/main/sound.ts`, via `attention.ts`) | speakers | the same transitions; in the background only unless **Also when ctrl is focused** is on |
 
 **MCP servers** (Settings → MCP servers) is the first sticky toast: when a server is `failed` or
 `needs_auth`, a toast says so and has a **Fix** button. It opens the TUI's new-session screen with a

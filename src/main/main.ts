@@ -8,6 +8,7 @@ import {
   type AppState,
   type Settings,
   type Space,
+  type SoundEvent,
   type SpacePatch,
   type ThemeInfo,
   type Toast,
@@ -15,6 +16,7 @@ import {
 } from "../shared/types"
 import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
+import { playSound } from "./sound"
 import { ADAPTERS } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
 import { OpenCodeService } from "./opencode"
@@ -487,6 +489,22 @@ function registerIpc() {
     }
     loadThemes()
     applyTheme()
+  })
+  ipcMain.handle("sound:play", (_e, choice: string) => playSound(choice))
+  ipcMain.handle("sound:pick", async (_e, event: SoundEvent) => {
+    if (!win) return null
+    const current = store.data.settings.soundChoices[event]
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      defaultPath: current?.startsWith("/") ? current : homedir(),
+      filters: [{ name: "Audio", extensions: ["aiff", "aif", "wav", "mp3", "m4a", "caf", "aac"] }],
+    })
+    const file = res.filePaths[0]
+    if (res.canceled || !file) return null
+    store.setSettings({ soundChoices: { ...store.data.settings.soundChoices, [event]: file } })
+    playSound(file)
+    push()
+    return file
   })
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)

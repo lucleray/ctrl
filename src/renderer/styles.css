@@ -1722,3 +1722,25 @@ body.resizing .terminal-wrap {
   color: var(--tone-warn);
   background: color-mix(in srgb, var(--tone-warn) 14%, transparent);
 }
+
+.setting.setting-indent {
+  padding: 6px 16px 6px 32px;
+}
+
+.setting.setting-indent:last-child {
+  padding-bottom: 14px;
+}
+
+.setting + .setting.setting-indent {
+  border-top-color: transparent;
+}
+
+.setting-path-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setting-actions .icon-btn:disabled {
+  opacity: 0.4;
+}

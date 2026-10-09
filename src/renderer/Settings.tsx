@@ -7,6 +7,10 @@ import {
   type McpStatus,
   type ModelChoices,
   type AdapterInfo,
+  type Settings as SettingsData,
+  type SoundEvent,
+  SOUND_EVENTS,
+  SYSTEM_SOUNDS,
 } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -125,6 +129,58 @@ function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: str
           />
         </div>
       )}
+    </div>
+  )
+}
+
+const NONE = "__none__"
+const PICK = "__pick__"
+
+/** Sound for one event: a system sound, a custom file or none, with a preview button. */
+function SoundRow({ event, label, choices }: { event: SoundEvent; label: string; choices: SettingsData["soundChoices"] }) {
+  const choice = choices[event]
+  const custom = choice?.startsWith("/") ? choice : null
+  return (
+    <div className="setting setting-indent">
+      <div>
+        <div className="setting-title">{label}</div>
+        {custom && (
+          <div className="setting-desc setting-path-desc" title={custom}>
+            {custom.replace(/^\/Users\/[^/]+/, "~")}
+          </div>
+        )}
+      </div>
+      <div className="setting-actions">
+        <button
+          className="icon-btn"
+          title="Play"
+          disabled={!choice}
+          onClick={() => choice && void window.ctrl.playSound(choice)}
+        >
+          <Icon name="play" />
+        </button>
+        <select
+          value={choice ?? NONE}
+          onChange={(e) => {
+            const value = e.target.value
+            if (value === PICK) return void window.ctrl.pickSoundFile(event)
+            const next = value === NONE ? null : value
+            void window.ctrl.setSettings({ soundChoices: { ...choices, [event]: next } })
+            if (next) void window.ctrl.playSound(next)
+          }}
+        >
+          <option value={NONE}>None</option>
+          {custom && <option value={custom}>{custom.split("/").pop()}</option>}
+          <optgroup label="macOS">
+            {SYSTEM_SOUNDS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </optgroup>
+          <option value={PICK}>Choose file…</option>
+        </select>
+      </div>
     </div>
   )
 }
@@ -337,6 +393,33 @@ export function Settings({
               onChange={(notifications) => void window.ctrl.setSettings({ notifications })}
             />
           </div>
+          <div className="setting">
+            <div>
+              <div className="setting-title">Sounds</div>
+              <div className="setting-desc">
+                Play a sound when a session needs your input, finishes or fails. Replaces the system notification
+                sound.
+              </div>
+            </div>
+            <Toggle on={settings.sounds} onChange={(sounds) => void window.ctrl.setSettings({ sounds })} />
+          </div>
+          {settings.sounds && (
+            <>
+              {SOUND_EVENTS.map((e) => (
+                <SoundRow key={e.id} event={e.id} label={e.label} choices={settings.soundChoices} />
+              ))}
+              <div className="setting setting-indent">
+                <div>
+                  <div className="setting-title">Also when ctrl is focused</div>
+                  <div className="setting-desc">Otherwise sounds only play while you're in another app.</div>
+                </div>
+                <Toggle
+                  on={settings.soundsWhenFocused}
+                  onChange={(soundsWhenFocused) => void window.ctrl.setSettings({ soundsWhenFocused })}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
