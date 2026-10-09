@@ -19,6 +19,23 @@
 ctrl puts a sidebar around the real fx and opencode terminals. Group sessions into spaces (both kinds can
 share one), see which ones need you, and switch between them instantly.
 
+## 📦 Install
+
+You need a Mac and [fx](https://fx.sh), [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), or both:
+
+```bash
+curl -fsSL https://fx.sh/setup.sh | bash           # fx
+curl -fsSL https://opencode.ai/v2/install | bash   # opencode
+```
+
+Then install ctrl:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lucleray/ctrl/main/install.sh | sh
+```
+
+ctrl updates itself. [docs/USAGE.md](docs/USAGE.md) covers updates, uninstalling and everyday use.
+
 ## ✨ Highlights
 
 ### 🗂️ Spaces, and what needs you
@@ -75,23 +92,6 @@ Hold ⌘ to see a number next to each session, then press it.
     <td><img src="docs/media/jump.png" width="250" alt="Sidebar of opencode sessions with ⌘1 to ⌘9 badges" /></td>
   </tr>
 </table>
-
-## 📦 Install
-
-You need a Mac and [fx](https://fx.sh), [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), or both:
-
-```bash
-curl -fsSL https://fx.sh/setup.sh | bash           # fx
-curl -fsSL https://opencode.ai/v2/install | bash   # opencode
-```
-
-Then install ctrl:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lucleray/ctrl/main/install.sh | sh
-```
-
-ctrl updates itself. [docs/USAGE.md](docs/USAGE.md) covers updates, uninstalling and everyday use.
 
 ## 📚 Docs
 
