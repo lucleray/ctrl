@@ -6,7 +6,7 @@
 set -e
 
 REPO=lucleray/ctrl
-APP=/Applications/ctrl.app
+APP=${CTRL_APP:-/Applications/ctrl.app}
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "ctrl installs through the GitHub CLI: brew install gh && gh auth login" >&2
@@ -45,4 +45,4 @@ if ! command -v opencode >/dev/null 2>&1 && [ ! -x "$HOME/.opencode/bin/opencode
   echo "ctrl needs opencode V2: curl -fsSL https://opencode.ai/v2/install | bash"
 fi
 
-open "$APP"
+[ -n "$CTRL_NO_OPEN" ] || open "$APP"
