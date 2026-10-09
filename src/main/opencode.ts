@@ -5,7 +5,7 @@ import { findOpencode } from "./opencode-bin"
 import type { McpServerItem, ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
-/** The TUI runs in ~, so that's whose MCP servers count. CTRL_MCP_DIR is a debug hook (README). */
+/** The TUI runs in ~, so that's whose MCP servers count. CTRL_MCP_DIR is a debug hook (docs/DEVELOPMENT.md). */
 const MCP_DIR = process.env.CTRL_MCP_DIR || homedir()
 
 type Client = ReturnType<typeof OpenCode.make>

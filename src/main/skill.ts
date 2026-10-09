@@ -21,7 +21,7 @@ export class Skill {
   private elsewhere: string[]
 
   constructor(private source: string) {
-    // CTRL_SKILLS_DIR is a test hook (README): it also stops looking at the real folders.
+    // CTRL_SKILLS_DIR is a test hook (docs/DEVELOPMENT.md): it also stops looking at the real folders.
     const override = process.env.CTRL_SKILLS_DIR
     const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
     this.target = join(override || join(config, "opencode", "skills"), NAME)

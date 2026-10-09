@@ -3,7 +3,7 @@ import type { Toast } from "../shared/types"
 import { Icon } from "./icons"
 
 /**
- * ctrl's only in-app notification (README → Notifications): one toast at a time, as a card
+ * ctrl's only in-app notification (docs/ARCHITECTURE.md → Notifications): one toast at a time, as a card
  * at the bottom of the sidebar; a newer one replaces it. Sticky toasts (duration null) stay
  * until dismissed.
  */

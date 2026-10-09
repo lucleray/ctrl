@@ -121,7 +121,7 @@ export class Updater {
           `B=${JSON.stringify(bundle)}`,
           `if mv "$B" "$B.old" && mv "$B.new" "$B"; then rm -rf "$B.old"; else [ -d "$B" ] || mv "$B.old" "$B"; fi`,
           `xattr -dr com.apple.quarantine "$B" 2>/dev/null`,
-          // CTRL_UPDATE_NO_RELAUNCH=1 is a test hook (README): swap without opening a window.
+          // CTRL_UPDATE_NO_RELAUNCH=1 is a test hook (docs/DEVELOPMENT.md): swap without opening a window.
           process.env.CTRL_UPDATE_NO_RELAUNCH === "1" ? "" : `open "$B"`,
           `rm -rf ${JSON.stringify(tmp)}`,
         ].join("\n"),
