@@ -30,6 +30,7 @@ const EMPTY: AppState = {
   currentSessionID: null,
   bridgeConnected: false,
   mcp: [],
+  github: { state: "idle" },
 }
 
 export function App() {

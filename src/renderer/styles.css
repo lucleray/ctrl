@@ -1626,3 +1626,102 @@ body.resizing .terminal-wrap {
 .row.resource:hover .meta {
   display: none;
 }
+
+/* Live details (src/main/meta): the icon takes the state's color, chips sit next to the subtitle. */
+.resource-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--icon);
+}
+
+.resource-icon .icon {
+  color: inherit;
+}
+
+.resource-icon.state-open {
+  color: #1f9d55;
+}
+
+.resource-icon.state-merged,
+.resource-icon.state-completed {
+  color: #8250df;
+}
+
+.resource-icon.state-closed {
+  color: #d1242f;
+}
+
+.resource-icon.state-draft,
+.resource-icon.state-not-planned {
+  color: var(--muted);
+}
+
+.resource-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.resource-subtitle-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chips {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chip {
+  font-size: 10.5px;
+  line-height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--hover-strong);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chip.good {
+  color: #1f9d55;
+  background: rgba(31, 157, 85, 0.12);
+}
+
+.chip.bad,
+.chip.closed {
+  color: #d1242f;
+  background: rgba(209, 36, 47, 0.1);
+}
+
+.chip.warn {
+  color: #b7791f;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.chip.merged {
+  color: #8250df;
+  background: rgba(130, 80, 223, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .resource-icon.state-open,
+  .chip.good {
+    color: #3fb950;
+  }
+  .resource-icon.state-merged,
+  .resource-icon.state-completed,
+  .chip.merged {
+    color: #a371f7;
+  }
+  .resource-icon.state-closed,
+  .chip.bad,
+  .chip.closed {
+    color: #f85149;
+  }
+  .chip.warn {
+    color: #d29922;
+  }
+}

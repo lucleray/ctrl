@@ -115,6 +115,8 @@ export type AppState = {
   bridgeConnected: boolean
   /** MCP servers as opencode reports them for the TUI's folder (~) */
   mcp: McpServerItem[]
+  /** Live resource details from GitHub (via the gh CLI's token) */
+  github: GithubStatus
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
   problem?: string
   /** Last failed action; dismissable */
@@ -148,6 +150,38 @@ export type ResourceItem = {
   last: number
   /** You pasted it in a prompt (vs only the assistant mentioning it) */
   sharedByYou: boolean
+  /** Live details fetched from the resource's service (types with `enrich` only) */
+  meta?: ResourceMeta
+}
+
+/** Live details of a resource, fetched in batches and cached (src/main/meta). Fields depend on the type. */
+export type ResourceMeta = {
+  title?: string
+  /** open | draft | merged | closed | completed | not-planned */
+  state?: string
+  ci?: "success" | "failure" | "pending"
+  review?: "approved" | "changes" | "required"
+  conflicts?: boolean
+  author?: string
+  additions?: number
+  deletions?: number
+  /** Repos */
+  description?: string
+  archived?: boolean
+  /** Not found, or no access with this token */
+  missing?: boolean
+  fetched: number
+}
+
+export type GithubStatus = {
+  /** ok: fetching works · no-cli: gh isn't installed · logged-out: gh has no token · paused: rate limit low */
+  state: "idle" | "ok" | "no-cli" | "logged-out" | "error" | "paused"
+  login?: string
+  remaining?: number
+  limit?: number
+  /** Points ctrl itself spent in the current hour */
+  used?: number
+  detail?: string
 }
 
 export type SearchResult = { hits: SearchHit[]; status: IndexStatus }
@@ -239,6 +273,10 @@ export type CtrlApi = {
   listResources(sessionIDs: string[]): Promise<ResourceItem[]>
   /** Resources changed in these sessions; null = possibly all */
   onResourcesChanged(cb: (sessionIDs: string[] | null) => void): () => void
+  /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */
+  watchResources(sessionIDs: string[]): void
+  onResourceMeta(cb: (metas: Record<string, ResourceMeta>) => void): () => void
+  retryGithub(): Promise<void>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

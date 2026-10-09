@@ -15,6 +15,7 @@ import {
 } from "../shared/types"
 import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
+import { ResourceMetaService } from "./meta"
 import { OpenCodeService } from "./opencode"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
@@ -98,6 +99,7 @@ const state = (): AppState => ({
   currentSessionID,
   bridgeConnected,
   mcp: opencode.mcp,
+  github: resourceMeta.status,
   problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
   error,
 })
@@ -113,15 +115,29 @@ const push = () => {
   })
 }
 
+/** Sessions running as of the last update, to notice runs ending. */
+let running = new Set<string>()
+
 const opencode = new OpenCodeService(() => {
   attention.update(opencode.sessions)
   watchMcp()
+  const now = new Set(opencode.sessions.filter((s) => s.status === "running").map((s) => s.id))
+  const ended = [...running].filter((id) => !now.has(id))
+  running = now
+  if (ended.length) resourceMeta.runsEnded(ended)
   push()
 })
 
-const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) =>
-  send("resources:changed", ids),
-)
+const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
+  send("resources:changed", ids)
+  resourceMeta.resourcesChanged(ids)
+})
+
+const resourceMeta = new ResourceMetaService(join(app.getPath("userData"), "resource-meta.db"), {
+  list: (sessionIDs) => search.resources(sessionIDs),
+  onMeta: (metas) => send("resources:meta", metas),
+  onStatus: push,
+})
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -541,7 +557,11 @@ function registerIpc() {
   ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => search.search(query))
-  ipcMain.handle("resources:list", (_e, sessionIDs: string[]) => search.resources(sessionIDs))
+  ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
+    search.resources(sessionIDs).map((r) => ({ ...r, meta: resourceMeta.get(r.id) })),
+  )
+  ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => resourceMeta.watch(sessionIDs))
+  ipcMain.handle("github:retry", () => resourceMeta.retry())
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))
@@ -583,6 +603,11 @@ function createWindow() {
       sandbox: false,
     },
   })
+  // Live resource details only refresh while you're looking (test runs never get focus).
+  resourceMeta.setFocused(headless || win.isFocused())
+  win.on("focus", () => resourceMeta.setFocused(true))
+  win.on("blur", () => resourceMeta.setFocused(headless))
+
   // Never open Electron windows for links; hand them to the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url)
@@ -728,4 +753,5 @@ app.on("window-all-closed", () => app.quit())
 app.on("will-quit", () => {
   terminal.dispose()
   search.stop()
+  resourceMeta.stop()
 })

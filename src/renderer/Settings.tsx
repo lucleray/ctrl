@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { FONT_SIZE, type Appearance, type AppState, type McpServerItem, type McpStatus, type ModelChoices } from "../shared/types"
+import {
+  FONT_SIZE,
+  type Appearance,
+  type AppState,
+  type GithubStatus,
+  type McpServerItem,
+  type McpStatus,
+  type ModelChoices,
+} from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
 import { ShortcutSettings } from "./ShortcutSettings"
@@ -55,6 +63,50 @@ function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
           <span className="mcp-status">{MCP_LABELS[server.status]}</span>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Live PR/issue/commit details in the resources panel, using gh's login. */
+function GithubRow({ status }: { status: GithubStatus }) {
+  const [busy, setBusy] = useState(false)
+  const dot = { ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed"
+  const desc =
+    status.state === "ok"
+      ? `Signed in as @${status.login} through gh · ${status.remaining?.toLocaleString()} of ${status.limit?.toLocaleString()} API points left this hour (ctrl used ${status.used ?? 0})`
+      : status.state === "no-cli"
+        ? "Install the GitHub CLI (brew install gh), then run gh auth login"
+        : status.state === "logged-out"
+          ? "Run gh auth login in a terminal to get PR, issue and CI status"
+          : status.state === "idle"
+            ? "Uses gh's login. Details refresh while the resources panel is open."
+            : status.detail
+  const problem = status.state === "no-cli" || status.state === "logged-out" || status.state === "error"
+  return (
+    <div className="setting">
+      <div className="mcp-name">
+        <span className={`mcp-dot ${dot}`} />
+        <div>
+          <div className="setting-title">GitHub</div>
+          <div className="setting-desc mcp-error">
+            {status.state === "paused" ? `Paused: ${status.detail}` : desc}
+          </div>
+        </div>
+      </div>
+      {problem && (
+        <div className="mcp-actions">
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true)
+              void window.ctrl.retryGithub().finally(() => setTimeout(() => setBusy(false), 1500))
+            }}
+          >
+            {busy ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -231,6 +283,11 @@ export function Settings({
               <McpRow key={server.name} server={server} onFix={() => onFixMcp(server.name)} />
             ))
           )}
+        </div>
+
+        <h2>Resource details</h2>
+        <div className="settings-card">
+          <GithubRow status={state.github} />
         </div>
 
         <h2>Shortcuts</h2>

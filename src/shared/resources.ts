@@ -6,6 +6,11 @@
 // Adding a type: append an entry to RESOURCE_TYPES (order = priority and panel
 // order) and bump RESOURCES_VERSION, which re-extracts from already indexed
 // messages, without refetching anything.
+//
+// Live details (PR state, CI…) are separate: a type with `enrich` gets them
+// from that provider (src/main/meta), and describe() receives them as `meta`.
+
+import type { ResourceMeta } from "./types"
 
 export const RESOURCES_VERSION = 2
 
@@ -29,8 +34,10 @@ export type ResourceType = {
   icon: string
   /** null when the URL isn't this type */
   parse(url: URL): { identity: string; url: string; data: ResourceData } | null
-  /** Display without fetching anything */
-  describe(data: ResourceData): { title: string; subtitle?: string }
+  /** Provider that fetches live details for this type (src/main/meta) */
+  enrich?: "github"
+  /** Display from the URL, improved by live details when fetched */
+  describe(data: ResourceData, meta?: ResourceMeta): { title: string; subtitle?: string }
 }
 
 const host = (url: URL) => url.hostname.toLowerCase().replace(/^www\./, "")
@@ -84,7 +91,8 @@ const githubPr: ResourceType = {
       data: { repo: r.slug, number: r.rest[1] },
     }
   },
-  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+  enrich: "github",
+  describe: (d, m) => (m?.title ? { title: m.title, subtitle: `${d.repo}#${d.number}` } : { title: `${d.repo}#${d.number}` }),
 }
 
 const githubIssue: ResourceType = {
@@ -100,7 +108,8 @@ const githubIssue: ResourceType = {
       data: { repo: r.slug, number: r.rest[1] },
     }
   },
-  describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+  enrich: "github",
+  describe: (d, m) => (m?.title ? { title: m.title, subtitle: `${d.repo}#${d.number}` } : { title: `${d.repo}#${d.number}` }),
 }
 
 const githubCommit: ResourceType = {
@@ -117,7 +126,11 @@ const githubCommit: ResourceType = {
       data: { repo: r.slug, sha },
     }
   },
-  describe: (d) => ({ title: `${d.repo}@${d.sha.slice(0, 7)}` }),
+  enrich: "github",
+  describe: (d, m) => {
+    const id = `${d.repo}@${d.sha.slice(0, 7)}`
+    return m?.title ? { title: m.title, subtitle: id } : { title: id }
+  },
 }
 
 const githubRepoType: ResourceType = {
@@ -130,7 +143,8 @@ const githubRepoType: ResourceType = {
     if (!r) return null
     return { identity: r.id, url: `https://github.com/${r.slug}`, data: { repo: r.slug } }
   },
-  describe: (d) => ({ title: d.repo }),
+  enrich: "github",
+  describe: (d, m) => ({ title: d.repo, subtitle: m?.description || undefined }),
 }
 
 // ---------- Linear ----------
