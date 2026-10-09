@@ -3,9 +3,9 @@ import type { Toast } from "../shared/types"
 import { Icon } from "./icons"
 
 /**
- * ctrl's only in-app notification (README → Notifications): one toast at a time at the
- * top of the main area; a newer one replaces it. Sticky toasts (duration null) stay until
- * dismissed.
+ * ctrl's only in-app notification (README → Notifications): one toast at a time, as a card
+ * at the bottom of the sidebar; a newer one replaces it. Sticky toasts (duration null) stay
+ * until dismissed.
  */
 export function Toasts({
   onView,
@@ -58,46 +58,52 @@ export function Toasts({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Icon name={toast.icon} />
-      <span className="toast-text" title={toast.message}>{toast.message}</span>
-      {toast.viewSessionID && (
-        <button
-          className="toast-btn"
-          onClick={() => {
-            close()
-            onView(toast.viewSessionID!)
-          }}
-        >
-          View
+      <div className="toast-head">
+        <Icon name={toast.icon} />
+        <span className="toast-text" title={toast.message}>{toast.message}</span>
+        <button className="icon-btn" title="Dismiss" onClick={close}>
+          <Icon name="close" />
         </button>
+      </div>
+      {(toast.viewSessionID || toast.action || toast.undo) && (
+        <div className="toast-actions">
+          {toast.viewSessionID && (
+            <button
+              className="toast-btn"
+              onClick={() => {
+                close()
+                onView(toast.viewSessionID!)
+              }}
+            >
+              View
+            </button>
+          )}
+          {toast.action && (
+            <button
+              className="toast-btn primary"
+              onClick={() => {
+                close()
+                void window.ctrl.toastAction(toast.id)
+                onAction()
+              }}
+            >
+              {toast.action}
+            </button>
+          )}
+          {toast.undo && (
+            <button
+              className="toast-btn primary"
+              title={undoLabel ? `Undo (${undoLabel})` : "Undo"}
+              onClick={() => {
+                close()
+                void window.ctrl.undo(toast.id)
+              }}
+            >
+              Undo
+            </button>
+          )}
+        </div>
       )}
-      {toast.action && (
-        <button
-          className="toast-btn primary"
-          onClick={() => {
-            close()
-            void window.ctrl.toastAction(toast.id)
-            onAction()
-          }}
-        >
-          {toast.action}
-        </button>
-      )}
-      {toast.undo && (
-        <button
-          className="toast-btn primary"
-          title={undoLabel ? `Undo (${undoLabel})` : "Undo"}
-          onClick={() => {
-            close()
-            void window.ctrl.undo(toast.id)
-          }}
-        >
-          Undo
-        </button>
-      )}
-      <button className="icon-btn" title="Dismiss" onClick={close}>
-        <Icon name="close" />
-      </button>
     </div>
   )
 }

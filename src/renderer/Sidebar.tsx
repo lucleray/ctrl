@@ -18,13 +18,15 @@ type Props = {
   onSearch(): void
   onSettings(): void
   onToggleResources(): void
+  /** Pinned under the list, above the connection banner (the toast) */
+  footer?: ReactNode
   /** sessionID → ⌘ number while ⌘ is held */
   hints: Map<string, number> | null
 }
 
 type Reorder = { id: string; pos: "before" | "after" }
 
-export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onToggleResources }: Props) {
+export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onToggleResources, footer }: Props) {
   const [creating, setCreating] = useState(false)
   const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
@@ -267,6 +269,8 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
           </FoldSection>
         )}
       </div>
+
+      {footer}
 
       {(state.problem || state.error) && (
         <div className={`sidebar-alert ${state.problem ? "problem" : "error"}`} role="alert">

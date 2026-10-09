@@ -1425,45 +1425,64 @@ body.resizing .terminal-wrap {
 /* ---------- toast ---------- */
 
 .toast {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(560px, calc(100% - 48px));
-  padding: 7px 8px 7px 14px;
-  background: var(--panel-bg);
+  flex-shrink: 0;
+  margin-top: 8px;
+  padding: 10px 8px 10px 12px;
+  background: var(--card-bg);
   border: 1px solid var(--panel-border);
   border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   animation: toast-in 160ms ease-out;
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -6px);
+    transform: translateY(6px);
   }
 }
 
-.toast > .icon {
+.toast-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.toast-head > .icon {
+  margin-top: 1px;
+}
+
+.toast-head .icon-btn {
+  margin: -2px 0 -2px auto;
+}
+
+.toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  padding-right: 2px;
+}
+
+.toast-head > .icon {
   color: var(--icon);
   flex-shrink: 0;
 }
 
-.toast.alert > .icon {
+.toast.alert .toast-head > .icon {
   color: #ef4444;
 }
 
 .toast-text {
+  flex: 1;
   min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  padding-right: 4px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
 }
 
 .toast-btn {

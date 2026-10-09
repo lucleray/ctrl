@@ -46,7 +46,7 @@ where it lives.
 
 ## Resources panel
 
-- Right panel (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
+- Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable
   (`src/renderer/ResourcesPanel.tsx`, `src/shared/resources.ts`)
 

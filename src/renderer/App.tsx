@@ -148,6 +148,13 @@ export function App() {
           setSettings((v) => !v)
         }}
         onToggleResources={() => void window.ctrl.setUi({ resourcesOpen: !state.ui.resourcesOpen })}
+        footer={
+          <Toasts
+            onView={open}
+            onAction={() => terminal.current?.focus()}
+            undoLabel={shortcutLabel("undo", state.settings.shortcuts)}
+          />
+        }
       />
       <main className="main">
         <div className="main-drag" />
@@ -162,11 +169,6 @@ export function App() {
           }}
         />
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
-        <Toasts
-          onView={open}
-          onAction={() => terminal.current?.focus()}
-          undoLabel={shortcutLabel("undo", state.settings.shortcuts)}
-        />
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}
