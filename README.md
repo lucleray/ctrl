@@ -1,9 +1,30 @@
-# ctrl
+<p align="center">
+  <img src="build/icon.png" width="128" alt="ctrl icon" />
+</p>
 
-A Codex-style desktop shell around the opencode TUI: sidebar with **spaces** (named groups of sessions) and a
-single embedded opencode TUI on the right.
+<h1 align="center">ctrl</h1>
 
-## Install
+<p align="center">
+  A cozy desktop home for your <a href="https://opencode.ai">opencode</a> sessions 🌊
+  <br />
+  <sub>Codex-style sidebar on the left, the real opencode TUI on the right.</sub>
+</p>
+
+---
+
+## ✨ Why you'll like it
+
+- 🗂️ **Spaces**: group sessions by project, each with its own folder, model and instructions
+- ⚡ **Instant switching**: one opencode TUI that swaps sessions in place, plus ⌘1–9 and ⌘P search
+  (titles and full message text)
+- 🔔 **Know what needs you**: status dots for waiting, running, failed or unread, plus dock badge,
+  notifications and sounds
+- 🔗 **Resources panel**: every PR, deploy, Linear issue or Slack thread shared in a session, with live status
+- 🧠 **Reference sessions**: drag one session onto the terminal and the agent reads its context
+- 🗄️ **Archive, undo, rename, drag and drop**: the usual comforts, all in ctrl's own state, so opencode is
+  left untouched
+
+## 📦 Install
 
 You need a Mac (Apple silicon or Intel), access to this repo, and:
 
@@ -28,6 +49,8 @@ gh api repos/lucleray/ctrl/contents/install.sh -H "Accept: application/vnd.githu
 - **Uninstall:** delete `/Applications/ctrl.app` and `~/Library/Application Support/ctrl`, plus
   `~/.config/opencode/skills/read-session` if you installed the skill. Your opencode sessions aren't touched.
 
+## 🛠️ How it works
+
 ```text
 ┌─ Electron main ─────────────────────────────────────────┐
 │ @opencode/client ──► background service (sessions, SSE) │
@@ -51,12 +74,12 @@ gh api repos/lucleray/ctrl/contents/install.sh -H "Accept: application/vnd.githu
   5,000 sessions.
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
-## Features
+## 📋 Features
 
 [`docs/FEATURES.md`](docs/FEATURES.md) lists every user-facing feature, so you don't have to read the code
 to know what ctrl does. **When you add, change or remove a feature, update that file in the same commit.**
 
-## Principles
+## 🌿 Principles
 
 - **Fast.** Everything you touch responds instantly. Heavy work (fetching, parsing, indexing) stays off the main
   process, which relays every keystroke and byte of TUI output. Trade completeness for speed when needed, and
@@ -65,7 +88,7 @@ to know what ctrl does. **When you add, change or remove a feature, update that 
   much history exists, and queries touch a bounded number of rows. When adding a feature, ask how it behaves with
   10× the sessions.
 
-## Search
+## 🔍 Search
 
 ⌘P matches session titles instantly (in memory) and message text through a local full-text index.
 
@@ -90,7 +113,7 @@ opencode ──events──► indexer (utility process) ──writes──► s
   Words match as prefixes (`xter` finds `xterm`), not in the middle of words.
 - The index lives in `search.db` next to `state.json`. Delete it (or bump `INDEX_VERSION`) to rebuild from scratch.
 
-## Resources
+## 🔗 Resources
 
 The right panel (⇧⌘R, or the panel button next to search) lists the links shared in the current session, or in
 every session of its space: PRs, issues, commits, repos, Linear issues, Notion pages, Slack threads and channels,
@@ -128,7 +151,7 @@ adapter = { id, name, types[], live? }
 - **Same pipeline as search:** mentions are written in the same transaction as their message and deleted with it.
   Like search, only your prompts and the assistant's text are read, not tool output.
 
-## Development
+## 🧑‍💻 Development
 
 ```bash
 npm install
@@ -157,7 +180,7 @@ installed app keeps its state in `~/Library/Application Support/ctrl`; dev runs
 use `ctrl-dev` next to it (seeded from a copy of the real state on first run),
 so both can run side by side.
 
-## Usage
+## 🎛️ Usage
 
 - **+** next to Spaces: create a space
 - Drag sessions between spaces, or onto **Recents** to unassign
@@ -184,7 +207,7 @@ so both can run side by side.
   Session deletes are held back until the toast expires (or ctrl quits), since opencode can't
   restore them
 
-## Notifications
+## 🔔 Notifications
 
 ctrl has **one** in-app notification: the toast (`src/renderer/Toast.tsx`). Don't add new banners,
 popups or notification types. Raise a toast from main with `toast()` in `src/main/main.ts`:
@@ -215,7 +238,7 @@ prompt to fix that server already typed in (not sent). The toast clears itself w
 reconnects, and the same error doesn't toast twice. Statuses come from `mcp.list` for `~` and
 refresh on `mcp.status.changed` events.
 
-## Debug hooks
+## 🐛 Debug hooks
 
 Any of these runs the app headless: hidden window, no dock icon, never takes focus
 (force it with `CTRL_HEADLESS=1`).
