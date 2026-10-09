@@ -178,7 +178,7 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && (
+        {state.ui.resourcesOpen && !settings && !editingSpace && (
           <ResourcesPanel
             state={state}
             onClose={() => {
