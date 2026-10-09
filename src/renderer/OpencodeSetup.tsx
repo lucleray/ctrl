@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
-import { OPENCODE_INSTALL, OPENCODE_UPGRADE, type OpencodeCheck } from "../shared/types"
+import { FX_INSTALL, OPENCODE_INSTALL, OPENCODE_UPGRADE, type OpencodeCheck } from "../shared/types"
 import { Icon } from "./icons"
 
 /**
- * Shown instead of the terminal until a recent enough opencode is installed. Checks again
+ * Shown instead of the terminal until a recent enough opencode (or fx) is installed. Checks again
  * when you come back to the window, so installing it in a terminal is enough.
  */
 export function OpencodeSetup({ check }: { check: Exclude<OpencodeCheck, { state: "ok" | "checking" }> }) {
@@ -54,6 +54,10 @@ export function OpencodeSetup({ check }: { check: Exclude<OpencodeCheck, { state
           </p>
         )}
         {check.state === "missing" && check.detail && <p className="setup-note">{check.detail}</p>}
+        <p className="setup-note">
+          Prefer <a href="https://fx.sh" onClick={(e) => (e.preventDefault(), void window.ctrl.openExternal("https://fx.sh"))}>fx</a>?
+          ctrl runs it too: <code>{FX_INSTALL}</code>
+        </p>
         <button className="btn primary" disabled={busy} onClick={recheck}>
           {busy ? "Checking…" : "Check again"}
         </button>

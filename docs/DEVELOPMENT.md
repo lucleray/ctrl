@@ -36,6 +36,8 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir (created if missing)
 - `CTRL_OPENCODE=/path/to/opencode` use that binary (a missing path or a fake that prints an old
   version shows the setup screen)
+- `CTRL_FX_HOME=/tmp/fx` read fx sessions from there instead of `~/.fx`. fx itself has no profile override,
+  so sessions a test run creates land in `~/.fx/sessions`: delete them afterwards
 - `CTRL_SKILLS_DIR=/tmp/skills` install the read-session skill there, ignoring the real skill folders
 - `CTRL_UPDATES=1` check for updates in dev runs too; `CTRL_UPDATE_NO_RELAUNCH=1` swaps the app on
   update without reopening it

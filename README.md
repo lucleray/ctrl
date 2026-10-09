@@ -5,15 +5,15 @@
 <h1 align="center">ctrl</h1>
 
 <p align="center">
-  A cozy desktop home for your <a href="https://opencode.ai">opencode</a> sessions 🌊
+  A cozy desktop home for your <a href="https://opencode.ai">opencode</a> and <a href="https://fx.sh">fx</a> sessions 🌊
 </p>
 
 <p align="center">
   <img src="docs/media/hero.png" alt="ctrl: spaces and sessions in the sidebar, an opencode session on the right, and the links it shared in the resources panel" />
 </p>
 
-ctrl puts a sidebar around the real opencode TUI. Group sessions into spaces, see which ones need you, and
-switch between them instantly.
+ctrl puts a sidebar around the real opencode and fx terminals. Group sessions into spaces (both kinds can
+share one), see which ones need you, and switch between them instantly.
 
 ## ✨ Highlights
 
@@ -50,10 +50,11 @@ Hold ⌘ to see a number next to each session, then press it.
 
 ## 📦 Install
 
-You need a Mac and [opencode V2](https://opencode.ai/v2/docs/), version 2.0.25 or newer:
+You need a Mac and [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), [fx](https://fx.sh), or both:
 
 ```bash
-curl -fsSL https://opencode.ai/v2/install | bash
+curl -fsSL https://opencode.ai/v2/install | bash   # opencode
+curl -fsSL https://fx.sh/setup.sh | bash           # fx
 ```
 
 Then install ctrl:
@@ -68,5 +69,6 @@ ctrl updates itself. [docs/USAGE.md](docs/USAGE.md) covers updates, uninstalling
 
 - [Usage](docs/USAGE.md): install details, spaces, shortcuts, settings
 - [Features](docs/FEATURES.md): everything ctrl does
+- [Harnesses](docs/HARNESSES.md): opencode and fx, and what ctrl supports for each
 - [Architecture](docs/ARCHITECTURE.md): how it works inside
 - [Development](docs/DEVELOPMENT.md): run, release, debug hooks, screenshots

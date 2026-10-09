@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react"
-import type { SessionItem } from "../shared/types"
+import type { Harness, SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 
 export const SESSION_DRAG = "application/x-ctrl-session"
 
-/** `@session[Title](ses_…)`: resolved by the read-session skill on the agent side. */
-export function sessionMention(s: Pick<SessionItem, "id" | "title">) {
+/**
+ * `@session[Title](id)`, resolved by the read-session skill on the agent side, for either kind of
+ * session (`ses_…` or `fx:…`). fx reads a leading "@" as a file attachment, so it gets `session[Title](id)`.
+ */
+export function sessionMention(s: Pick<SessionItem, "id" | "title">, target: Harness) {
   const title = s.title.replace(/[[\]()\n\r]/g, " ").replace(/\s+/g, " ").trim()
-  return `@session[${title}](${s.id})`
+  return `${target === "fx" ? "" : "@"}session[${title}](${s.id})`
 }
 
 /** Backslash-escape like Terminal.app does when you drop a file on it. */
@@ -23,6 +26,8 @@ const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files")
 export function ReferenceDrop(props: {
   sessions: SessionItem[]
   currentSessionID: string | null
+  /** Harness of the terminal on screen, which decides the mention's format */
+  target: Harness
   onReference(text: string, kind: "session" | "files"): void
 }) {
   const [dragging, setDragging] = useState<"session" | "files" | null>(null)
@@ -94,7 +99,7 @@ export function ReferenceDrop(props: {
         }
         const id = e.dataTransfer.getData(SESSION_DRAG)
         const session = props.sessions.find((s) => s.id === id)
-        if (session && id !== props.currentSessionID) props.onReference(sessionMention(session), "session")
+        if (session && id !== props.currentSessionID) props.onReference(sessionMention(session, props.target), "session")
       }}
     >
       <div className="reference-card">
@@ -107,7 +112,7 @@ export function ReferenceDrop(props: {
         ) : (
           <div>
             <div className="reference-title">Reference in this session</div>
-            <div className="reference-desc">Adds an @session mention so the agent can read its context</div>
+            <div className="reference-desc">Adds a session mention so the agent can read its context</div>
           </div>
         )}
       </div>

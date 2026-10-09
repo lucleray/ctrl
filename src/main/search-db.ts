@@ -40,7 +40,9 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
       -- session.updated as of the last completed index pass; NULL = never indexed
       indexed_updated INTEGER,
       -- messages created before this are indexed (in-progress replies hold it back)
-      watermark INTEGER NOT NULL DEFAULT 0
+      watermark INTEGER NOT NULL DEFAULT 0,
+      -- fx sessions ("fx:…"): bytes of events.jsonl already indexed (fx only appends to it)
+      offset INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
@@ -84,6 +86,9 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     PRAGMA user_version = ${INDEX_VERSION};
   `)
+  // Indexes from before fx support: add the column instead of rebuilding everything.
+  const columns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]
+  if (!columns.some((c) => c.name === "offset")) db.exec("ALTER TABLE sessions ADD COLUMN offset INTEGER NOT NULL DEFAULT 0")
   return db
 }
 

@@ -1,16 +1,24 @@
-// WORKAROUND: opencode wraps long lines itself, so a URL split over two rows only
-// links its first half. On ⌘-click we look the full URL up in the session's own
-// text and only extend it when the next screen row confirms the continuation.
+// WORKAROUND: opencode and fx wrap long lines themselves, so a URL split over two
+// rows only links its first half. On ⌘-click we look the full URL up in the
+// session's own text and only extend it when the next screen row confirms the
+// continuation.
 //
-// Remove once opencode emits OSC 8 hyperlinks for wrapped URLs
+// Remove once both emit OSC 8 hyperlinks for wrapped URLs
 // (https://github.com/anomalyco/opencode/issues/35649): delete this file and
 // src/renderer/wrapped-links.ts, then the lines tagged `wrapped-links`.
 import type { OpenCode } from "@opencode/client"
+import { open, stat } from "node:fs/promises"
+import { join } from "node:path"
+import { harnessOf } from "../shared/types"
+import { rawID, SESSIONS_DIR } from "./fx"
 
 type Client = ReturnType<typeof OpenCode.make>
 const URL_RE = /https?:\/\/[^\s"'<>`\\]+/g
 
 type Entry = { updated: number; urls: Promise<string[]> }
+
+/** fx: only the end of the log matters for what's on screen; keeps big sessions cheap. */
+const TAIL_BYTES = 4 * 1024 * 1024
 
 export class WrappedLinks {
   private cache = new Map<string, Entry>()
@@ -51,13 +59,23 @@ export class WrappedLinks {
     const updated = this.updatedAt(sessionID) ?? 0
     const cached = this.cache.get(sessionID)
     if (cached && cached.updated === updated) return cached.urls
-    const client = this.client()
-    if (!client) return Promise.resolve([])
-    const urls = client.session.context({ sessionID }).then((messages) => {
-      const found = new Set<string>()
-      collect(messages, found)
-      return [...found]
-    })
+    let urls: Promise<string[]>
+    if (harnessOf(sessionID) === "fx") {
+      urls = fxTail(sessionID).then((text) => {
+        const found = new Set<string>()
+        // URLs inside JSON strings: undo the escapes that matter for URLs.
+        collect(text.replaceAll("\\/", "/").replaceAll("\\u0026", "&"), found)
+        return [...found]
+      })
+    } else {
+      const client = this.client()
+      if (!client) return Promise.resolve([])
+      urls = client.session.context({ sessionID }).then((messages) => {
+        const found = new Set<string>()
+        collect(messages, found)
+        return [...found]
+      })
+    }
     this.cache.set(sessionID, { updated, urls })
     urls.catch(() => this.cache.delete(sessionID))
     // Only the sessions you're looking at matter; keep the cache small.
@@ -73,5 +91,19 @@ function collect(value: unknown, out: Set<string>) {
     for (const v of value) collect(v, out)
   } else if (value && typeof value === "object") {
     for (const v of Object.values(value)) collect(v, out)
+  }
+}
+
+async function fxTail(sessionID: string) {
+  const file = join(SESSIONS_DIR, rawID(sessionID), "events.jsonl")
+  const { size } = await stat(file)
+  const len = Math.min(size, TAIL_BYTES)
+  const fh = await open(file, "r")
+  try {
+    const buf = Buffer.alloc(len)
+    await fh.read(buf, 0, len, size - len)
+    return buf.toString("utf8")
+  } finally {
+    await fh.close()
   }
 }

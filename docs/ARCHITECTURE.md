@@ -20,12 +20,26 @@ How ctrl works inside. For what it does, see [FEATURES.md](FEATURES.md); for run
 │ state.json       ──► spaces + session→space assignments │
 │ node-pty         ──► `opencode` TUI (one process)       │
 │ ws://127.0.0.1:N ◄─► bridge plugin inside the TUI       │
+│ ~/.fx/sessions   ──► fx sessions (scan + fs watcher)    │
+│ node-pty         ──► `fx resume` (one per open session) │
 └─────────────────────────────────────────────────────────┘
         ▲ IPC                                  │ navigate / route
 ┌─ renderer ─────────────┐               ┌─ bridge/tui.ts ──────┐
-│ React sidebar + xterm  │               │ router.navigate(...) │
+│ React sidebar + xterms │               │ router.navigate(...) │
 └────────────────────────┘               └──────────────────────┘
 ```
+
+Two harnesses, opencode and fx, share everything ctrl owns (spaces, archive, search, resources,
+notifications) and differ only in where sessions come from and how their terminals run. What each
+supports: [HARNESSES.md](HARNESSES.md).
+
+- **Session ids:** opencode's as they are (`ses_…`), fx's prefixed (`fx:<id>`, `harnessOf()` in
+  `src/shared/types.ts`). Older `state.json` files keep working unchanged.
+- **One session list:** `src/main/opencode.ts` and `src/main/fx.ts` each keep theirs; main merges them by
+  update time, and attention, the dock badge and the renderer only see the merged list.
+- **Terminals:** the renderer keeps one xterm per terminal in `AppState.terms`, stacked, with only
+  `activeTermID` visible (`src/renderer/TerminalStack.tsx`). The opencode TUI is the terminal `opencode`;
+  each open fx session is `fx_N`. Output goes through one `pty:data` channel tagged with the terminal id.
 
 - Switching sessions sends `{type:"navigate"}` to the bridge, so the TUI swaps in place (no restart).
 - The bridge reports route changes back, so the sidebar highlight follows navigation done inside the TUI.
@@ -37,6 +51,31 @@ How ctrl works inside. For what it does, see [FEATURES.md](FEATURES.md); for run
   5,000 sessions.
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
+## fx
+
+fx has no server and no plugin API, so ctrl works from its files and its terminal output.
+
+```text
+~/.fx/sessions/<id>/ ── session.json (title, folder) ┐
+                     ── events.jsonl (last line)     ├─► src/main/fx.ts ─► sidebar
+                     ── owner.live (pid)             ┘
+fx process in a pty ── OSC 7501 status reports ─────────► running / needs you / failed
+```
+
+- **List:** one scan on launch, then a recursive fs watcher re-reads just the session folder that changed.
+  Sessions fx creates but never uses stay hidden.
+- **Status:** OSC 7501 (Program Status Protocol) reports from the processes ctrl runs give running, needs you
+  and failed. Otherwise the last line of `events.jsonl` says whether a turn is in progress. Read state is
+  ctrl's own (`viewed` in `state.json`); turns that ended before ctrl first saw fx count as read.
+- **Processes:** `src/main/fx-terminals.ts` runs one `fx resume --id <id>` per open session, up to 12, and
+  closes the least recently used idle ones past that. `owner.live` tells which session a process has, so
+  `/new` and `/resume` inside fx move the sidebar highlight (`claim()`), and a new session joins the space it
+  was started from once fx reports its id.
+- **Quit and relaunch:** fx processes die with ctrl. The open ones are saved (`open` in `state.json`) and
+  resumed at launch, one at a time in the background.
+- **Writes:** renames go into `session.json` (kept `0600`, fx refuses files others can read) only once no
+  fx process has the session, since fx rewrites it while it runs. Deletes move the folder to the Trash.
+
 ## Search
 
 ⌘P matches session titles instantly (in memory) and message text through a local full-text index.
@@ -45,8 +84,12 @@ How ctrl works inside. For what it does, see [FEATURES.md](FEATURES.md); for run
 opencode ──events──► indexer (utility process) ──writes──► search.db (SQLite FTS5, WAL)
    ▲   └─ messages newer than each session's watermark            │
    └────────────── session.list on launch (catch-up)              ▼
-                              main: read-only connection ◄── ⌘P query (~1ms)
+fx ──fs watcher──► (same indexer)   main: read-only connection ◄── ⌘P query (~1ms)
+   └─ events.jsonl from each session's byte offset
 ```
+
+- **fx:** fx only appends to `events.jsonl`, so each session keeps a byte offset (`sessions.offset`) and a
+  pass reads only the new lines. A log that shrank is reindexed from scratch.
 
 - **Indexer** (`src/indexer/indexer.ts`) runs in an Electron utility process with its own opencode client and event
   stream. On launch it lists root sessions and indexes the ones whose `updated` moved since their last pass. Live,

@@ -146,8 +146,9 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
           e.preventDefault()
           void window.ctrl.showSessionMenu(s.id)
         }}
-        title={[statusText(s), s.title, shortPath(s.directory)].filter(Boolean).join("\n")}
+        title={[statusText(s), s.title, `${s.harness} · ${shortPath(s.directory)}`].filter(Boolean).join("\n")}
       >
+        {s.harness === "fx" && <span className="harness-tag">fx</span>}
         <span className="label">{s.title}</span>
         {hints?.has(s.id) ? (
           <kbd className="jump-hint">⌘{hints.get(s.id)}</kbd>

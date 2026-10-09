@@ -9,12 +9,13 @@ import { ResourcesPanel } from "./ResourcesPanel"
 import { Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
-import { TerminalView, type TerminalHandle } from "./TerminalView"
+import { TerminalStack, type TerminalHandle } from "./TerminalStack"
 import { Toasts } from "./Toast"
 
 const EMPTY: AppState = {
   version: "",
   opencode: { state: "checking" },
+  fx: { state: "checking" },
   skill: { state: "missing" },
   update: { state: "idle" },
   ui: {
@@ -25,7 +26,7 @@ const EMPTY: AppState = {
     resourcesWidth: 300,
     resourcesScope: "session",
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultModel: null, defaultModelEnabled: false, shortcuts: {}, adapterModes: {} },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, shortcuts: {}, adapterModes: {} },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -34,6 +35,8 @@ const EMPTY: AppState = {
   sessions: [],
   currentSessionID: null,
   bridgeConnected: false,
+  terms: [],
+  activeTermID: null,
   mcp: [],
   adapters: [],
 }
@@ -50,6 +53,9 @@ export function App() {
     if (id) open(id)
   })
   const terminal = useRef<TerminalHandle>(null)
+  // Either harness is enough: without opencode, ctrl runs fx sessions only (and the other way round).
+  const ready = state.opencode.state === "ok" || state.fx.state === "ok"
+  const activeTerm = state.terms.find((t) => t.id === state.activeTermID)
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -164,33 +170,43 @@ export function App() {
       />
       <main className="main">
         <div className="main-drag" />
-        {state.opencode.state === "ok" ? (
+        {ready ? (
           <>
-            <TerminalView ref={terminal} dark={state.dark} fontSize={state.settings.fontSize} />
-            <ReferenceDrop
-              sessions={state.sessions}
-              currentSessionID={state.currentSessionID}
-              onReference={(text, kind) => {
-                // Bracketed paste so the TUI inserts it as text (no submit, no @file search).
-                window.ctrl.ptyWrite(`\x1b[200~${text} \x1b[201~`)
-                terminal.current?.focus()
-                if (kind === "session") void window.ctrl.sessionReferenced()
-              }}
+            <TerminalStack
+              ref={terminal}
+              terms={state.terms}
+              activeID={state.activeTermID}
+              dark={state.dark}
+              fontSize={state.settings.fontSize}
             />
+            {activeTerm && (
+              <ReferenceDrop
+                sessions={state.sessions}
+                currentSessionID={state.currentSessionID}
+                target={activeTerm.harness}
+                onReference={(text, kind) => {
+                  terminal.current?.paste(`${text} `)
+                  if (kind === "session") void window.ctrl.sessionReferenced()
+                }}
+              />
+            )}
           </>
         ) : (
-          state.opencode.state !== "checking" && <OpencodeSetup check={state.opencode} />
+          state.opencode.state !== "checking" &&
+          state.opencode.state !== "ok" &&
+          state.fx.state !== "checking" && <OpencodeSetup check={state.opencode} />
         )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}
             space={editingSpace}
-            appDefault={state.settings.defaultModelEnabled ? state.settings.defaultModel : null}
+            settings={state.settings}
+            fx={state.fx}
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && !settings && !editingSpace && state.opencode.state === "ok" && (
+        {state.ui.resourcesOpen && !settings && !editingSpace && ready && (
           <ResourcesPanel
             state={state}
             onClose={() => {
