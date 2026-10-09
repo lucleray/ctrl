@@ -71,9 +71,10 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
             <button
               key={s}
               className={scope === s ? "on" : ""}
+              title={s === "space" ? `Every session in ${space.name}` : undefined}
               onClick={() => void window.ctrl.setUi({ resourcesScope: s })}
             >
-              {s === "session" ? "This session" : space.name}
+              {s === "session" ? "This session" : "This space"}
             </button>
           ))}
         </div>
