@@ -10,7 +10,7 @@
 // Live details (PR state, CI…) are separate: a type with `enrich` gets them
 // from that provider (src/main/meta), and describe() receives them as `meta`.
 
-import type { ResourceMeta } from "./types"
+import type { ProviderID, ResourceMeta } from "./types"
 
 export const RESOURCES_VERSION = 2
 
@@ -35,7 +35,7 @@ export type ResourceType = {
   /** null when the URL isn't this type */
   parse(url: URL): { identity: string; url: string; data: ResourceData } | null
   /** Provider that fetches live details for this type (src/main/meta) */
-  enrich?: "github"
+  enrich?: ProviderID
   /** Display from the URL, improved by live details when fetched */
   describe(data: ResourceData, meta?: ResourceMeta): { title: string; subtitle?: string }
 }
@@ -287,8 +287,12 @@ const vercelDeployment: ResourceType = {
       data: { team: d.team, project: d.project, deployment: d.third },
     }
   },
-  describe: (d) =>
-    d.host ? { title: d.host } : { title: `${d.project} · ${d.deployment.slice(0, 9)}`, subtitle: d.team },
+  enrich: "vercel",
+  describe: (d, m) => {
+    const id = d.host ?? `${d.project} · ${d.deployment.slice(0, 9)}`
+    if (m?.title) return { title: m.title, subtitle: m.branch ? `${id} · ${m.branch}` : id }
+    return d.host ? { title: d.host } : { title: id, subtitle: d.team }
+  },
 }
 
 const vercelProject: ResourceType = {
@@ -300,7 +304,8 @@ const vercelProject: ResourceType = {
     if (!d) return null
     return { identity: `${d.team}/${d.project}`, url: `https://vercel.com/${d.team}/${d.project}`, data: { team: d.team, project: d.project } }
   },
-  describe: (d) => ({ title: d.project, subtitle: d.team }),
+  enrich: "vercel",
+  describe: (d, m) => ({ title: d.project, subtitle: m?.framework ? `${d.team} · ${m.framework}` : d.team }),
 }
 
 export const RESOURCE_TYPES: ResourceType[] = [

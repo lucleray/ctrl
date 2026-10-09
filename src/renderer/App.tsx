@@ -30,7 +30,7 @@ const EMPTY: AppState = {
   currentSessionID: null,
   bridgeConnected: false,
   mcp: [],
-  github: { state: "idle" },
+  providers: { github: { state: "idle" }, vercel: { state: "idle" } },
 }
 
 export function App() {

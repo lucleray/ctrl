@@ -115,8 +115,8 @@ export type AppState = {
   bridgeConnected: boolean
   /** MCP servers as opencode reports them for the TUI's folder (~) */
   mcp: McpServerItem[]
-  /** Live resource details from GitHub (via the gh CLI's token) */
-  github: GithubStatus
+  /** Live resource details, using the gh and vercel CLIs' logins */
+  providers: Record<ProviderID, ProviderStatus>
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
   problem?: string
   /** Last failed action; dismissable */
@@ -157,7 +157,10 @@ export type ResourceItem = {
 /** Live details of a resource, fetched in batches and cached (src/main/meta). Fields depend on the type. */
 export type ResourceMeta = {
   title?: string
-  /** open | draft | merged | closed | completed | not-planned */
+  /**
+   * GitHub: open | draft | merged | closed | completed | not-planned
+   * Vercel: ready | building | queued | error | canceled (projects: their latest production deployment)
+   */
   state?: string
   ci?: "success" | "failure" | "pending"
   review?: "approved" | "changes" | "required"
@@ -168,15 +171,24 @@ export type ResourceMeta = {
   /** Repos */
   description?: string
   archived?: boolean
+  /** Vercel deployments: production | preview */
+  target?: string
+  branch?: string
+  /** Vercel projects */
+  framework?: string
   /** Not found, or no access with this token */
   missing?: boolean
   fetched: number
 }
 
-export type GithubStatus = {
-  /** ok: fetching works · no-cli: gh isn't installed · logged-out: gh has no token · paused: rate limit low */
+/** Services that live resource details come from (src/main/meta) */
+export type ProviderID = "github" | "vercel"
+
+export type ProviderStatus = {
+  /** ok: fetching works · no-cli: CLI isn't installed · logged-out: CLI has no token · paused: rate limit low */
   state: "idle" | "ok" | "no-cli" | "logged-out" | "error" | "paused"
-  login?: string
+  /** Who the CLI is logged in as */
+  account?: string
   remaining?: number
   limit?: number
   /** Points ctrl itself spent in the current hour */
@@ -276,7 +288,7 @@ export type CtrlApi = {
   /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */
   watchResources(sessionIDs: string[]): void
   onResourceMeta(cb: (metas: Record<string, ResourceMeta>) => void): () => void
-  retryGithub(): Promise<void>
+  retryProvider(id: ProviderID): Promise<void>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

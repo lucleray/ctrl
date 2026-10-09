@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { RESOURCE_TYPES, resourceType } from "../shared/resources"
-import type { AppState, ResourceItem, ResourceMeta } from "../shared/types"
+import type { AppState, ProviderID, ResourceItem, ResourceMeta } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 
@@ -123,11 +123,32 @@ const STATE_LABELS: Record<string, string> = {
   closed: "Closed",
   completed: "Closed as completed",
   "not-planned": "Closed as not planned",
+  ready: "Ready",
+  building: "Building",
+  queued: "Queued",
+  error: "Build failed",
+  canceled: "Canceled",
+}
+
+/** Vercel deployment states (projects show their latest production deployment's). */
+const DEPLOY_CHIPS: Record<string, { text: string; tone: string }> = {
+  ready: { text: "ready", tone: "good" },
+  building: { text: "● building", tone: "warn" },
+  queued: { text: "queued", tone: "warn" },
+  error: { text: "✗ error", tone: "bad" },
+  canceled: { text: "canceled", tone: "muted" },
 }
 
 /** Small status chips under the title: CI, review, conflicts, or the final state. */
-function Chips({ meta }: { meta: ResourceMeta }) {
+function Chips({ meta, type }: { meta: ResourceMeta; type: string }) {
   const chips: { text: string; tone: string; title: string }[] = []
+  if (type.startsWith("vercel-")) {
+    const deploy = meta.state ? DEPLOY_CHIPS[meta.state] : undefined
+    const prod = type === "vercel-project" ? "Latest production deployment: " : ""
+    if (meta.target === "production") chips.push({ text: "prod", tone: "muted", title: "Production deployment" })
+    if (deploy) chips.push({ ...deploy, title: prod + STATE_LABELS[meta.state!] })
+    return chips.length ? <ChipList chips={chips} /> : null
+  }
   const open = meta.state === "open" || meta.state === "draft"
   if (meta.state === "merged" || meta.state === "closed") chips.push({ text: meta.state, tone: meta.state, title: STATE_LABELS[meta.state] })
   if (meta.state === "draft") chips.push({ text: "draft", tone: "muted", title: "Draft" })
@@ -142,7 +163,10 @@ function Chips({ meta }: { meta: ResourceMeta }) {
   if (open && meta.review === "changes") chips.push({ text: "changes", tone: "bad", title: "Changes requested" })
   if (open && meta.state !== "draft" && meta.review === "required") chips.push({ text: "review", tone: "muted", title: "Review required" })
   if (meta.archived) chips.push({ text: "archived", tone: "muted", title: "Archived repository" })
-  if (!chips.length) return null
+  return chips.length ? <ChipList chips={chips} /> : null
+}
+
+function ChipList({ chips }: { chips: { text: string; tone: string; title: string }[] }) {
   return (
     <span className="chips">
       {chips.map((c) => (
@@ -154,15 +178,17 @@ function Chips({ meta }: { meta: ResourceMeta }) {
   )
 }
 
-function metaTooltip(meta?: ResourceMeta) {
-  if (!meta) return []
-  if (meta.missing) return ["Not found, or gh's account can't see it"]
+function metaTooltip(meta: ResourceMeta | undefined, provider: ProviderID | undefined) {
+  if (!meta || !provider) return []
+  const service = provider === "github" ? "GitHub" : "Vercel"
+  if (meta.missing) return [`Not found, or the ${provider === "github" ? "gh" : "vercel"} CLI's account can't see it`]
   const parts = [
     meta.state && STATE_LABELS[meta.state],
+    meta.branch,
     meta.author && `by @${meta.author}`,
     meta.additions !== undefined && `+${meta.additions} −${meta.deletions ?? 0}`,
   ].filter(Boolean)
-  return [...(parts.length ? [parts.join(" · ")] : []), `Updated from GitHub ${age(meta.fetched)} ago`]
+  return [...(parts.length ? [parts.join(" · ")] : []), `Updated from ${service} ${age(meta.fetched)} ago`]
 }
 
 function ResourceRow({ item, spaceScope }: { item: ResourceItem; spaceScope: boolean }) {
@@ -173,7 +199,7 @@ function ResourceRow({ item, spaceScope }: { item: ResourceItem; spaceScope: boo
   const where = spaceScope && item.sessions > 1 ? ` in ${item.sessions} sessions` : ""
   const tooltip = [
     meta?.title ? `${title}\n${item.url}` : item.url,
-    ...metaTooltip(item.meta),
+    ...metaTooltip(item.meta, type?.enrich),
     `Mentioned ${item.mentions}×${where}, last ${age(item.last)} ago${item.sharedByYou ? " · shared by you" : ""}`,
   ].join("\n")
 
@@ -187,7 +213,7 @@ function ResourceRow({ item, spaceScope }: { item: ResourceItem; spaceScope: boo
         {(subtitle || meta) && (
           <span className="resource-subtitle">
             {subtitle && <span className="resource-subtitle-text">{subtitle}</span>}
-            {meta && <Chips meta={meta} />}
+            {meta && <Chips meta={meta} type={item.type} />}
           </span>
         )}
       </span>

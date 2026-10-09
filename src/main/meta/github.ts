@@ -1,31 +1,12 @@
 import { execFile } from "node:child_process"
 import type { ResourceMeta } from "../../shared/types"
-
-/** A resource to fetch: its key and the fields its URL gave (see src/shared/resources.ts). */
-export type MetaRequest = { id: string; type: string; data: Record<string, string> }
-
-export class GithubError extends Error {
-  constructor(
-    message: string,
-    readonly kind: "no-cli" | "logged-out" | "rate-limited" | "network",
-    /** When to try again (rate limits) */
-    readonly retryAt?: number,
-  ) {
-    super(message)
-  }
-}
-
-export type GithubBatch = {
-  metas: Map<string, ResourceMeta>
-  login?: string
-  rate?: { remaining: number; limit: number; resetAt: number; cost: number }
-}
+import { DAY, MINUTE, ProviderError, type MetaRequest, type Provider, type ProviderResult } from "./provider"
 
 /**
  * Reuses the gh CLI's login, so there's nothing to set up in ctrl. GH_TOKEN /
  * GITHUB_TOKEN win, like they do for gh itself.
  */
-export class GithubToken {
+class GithubToken {
   private token?: Promise<string>
 
   get(): Promise<string> {
@@ -48,8 +29,8 @@ export class GithubToken {
         const token = stdout?.trim()
         if (token && !err) return resolve(token)
         if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT")
-          return reject(new GithubError("GitHub CLI (gh) isn't installed", "no-cli"))
-        reject(new GithubError("gh isn't logged in", "logged-out"))
+          return reject(new ProviderError("GitHub CLI (gh) isn't installed", "no-cli"))
+        reject(new ProviderError("gh isn't logged in", "logged-out"))
       })
     })
   }
@@ -109,7 +90,7 @@ const alias = (prefix: string, raw: string) => prefix + raw.replace(/[^A-Za-z0-9
  */
 type RepoGroup = { alias: string; owner: string; name: string; items: { req: MetaRequest; field: string }[] }
 
-export async function fetchGithub(token: string, items: MetaRequest[]): Promise<GithubBatch> {
+async function fetchGithub(token: string, items: MetaRequest[]): Promise<ProviderResult> {
   const repos = new Map<string, RepoGroup>()
   for (const req of items) {
     const [owner, name] = (req.data.repo ?? "").split("/")
@@ -150,20 +131,20 @@ export async function fetchGithub(token: string, items: MetaRequest[]): Promise<
       signal: AbortSignal.timeout(20_000),
     })
   } catch (err) {
-    throw new GithubError(`Can't reach GitHub: ${err instanceof Error ? err.message : err}`, "network")
+    throw new ProviderError(`Can't reach GitHub: ${err instanceof Error ? err.message : err}`, "network")
   }
-  if (res.status === 401) throw new GithubError("GitHub rejected gh's token", "logged-out")
+  if (res.status === 401) throw new ProviderError("GitHub rejected gh's token", "logged-out")
   if (res.status === 403 || res.status === 429) {
     const retryAfter = Number(res.headers.get("retry-after"))
     const reset = Number(res.headers.get("x-ratelimit-reset"))
     const retryAt = retryAfter ? Date.now() + retryAfter * 1000 : reset ? reset * 1000 : Date.now() + 5 * 60_000
-    throw new GithubError("GitHub rate limit reached", "rate-limited", retryAt)
+    throw new ProviderError("GitHub rate limit reached", "rate-limited", retryAt)
   }
-  if (!res.ok) throw new GithubError(`GitHub returned ${res.status}`, "network")
+  if (!res.ok) throw new ProviderError(`GitHub returned ${res.status}`, "network")
 
   const body = (await res.json()) as { data?: Node; errors?: { type?: string; message: string }[] }
   const data = body.data
-  if (!data) throw new GithubError(body.errors?.[0]?.message ?? "Empty response from GitHub", "network")
+  if (!data) throw new ProviderError(body.errors?.[0]?.message ?? "Empty response from GitHub", "network")
 
   const fetched = Date.now()
   const metas = new Map<string, ResourceMeta>()
@@ -192,9 +173,41 @@ export async function fetchGithub(token: string, items: MetaRequest[]): Promise<
   const rl = data.rateLimit as Node | undefined
   return {
     metas,
-    login: data.viewer?.login,
+    account: data.viewer?.login,
     rate: rl
       ? { remaining: rl.remaining, limit: rl.limit, resetAt: Date.parse(rl.resetAt), cost: rl.cost }
       : undefined,
+  }
+}
+
+/** Things that are moving (CI running, GitHub computing mergeability) refresh every minute, settled ones rarely. */
+function ttl(type: string, m: ResourceMeta) {
+  if (m.missing) return DAY
+  if (type === "github-repo") return 7 * DAY
+  if (type === "github-commit") return m.ci === "pending" ? MINUTE : DAY
+  const open = m.state === "open" || m.state === "draft"
+  if (!open) return DAY
+  if (type === "github-pr" && (m.ci === "pending" || m.conflicts === undefined)) return MINUTE
+  if (m.state === "draft") return 10 * MINUTE
+  return type === "github-pr" ? 5 * MINUTE : 10 * MINUTE
+}
+
+export function githubProvider(): Provider {
+  const token = new GithubToken()
+  return {
+    id: "github",
+    batchSize: 40,
+    ttl,
+    resetAuth: () => token.reset(),
+    async fetch(batch) {
+      try {
+        return await fetchGithub(await token.get(), batch)
+      } catch (err) {
+        // gh may have refreshed or switched accounts: re-read the token once.
+        if (!(err instanceof ProviderError && err.kind === "logged-out")) throw err
+        token.reset()
+        return fetchGithub(await token.get(), batch)
+      }
+    },
   }
 }

@@ -1638,8 +1638,22 @@ body.resizing .terminal-wrap {
   color: inherit;
 }
 
-.resource-icon.state-open {
+.resource-icon.state-open,
+.resource-icon.state-ready {
   color: #1f9d55;
+}
+
+.resource-icon.state-building,
+.resource-icon.state-queued {
+  color: #b7791f;
+}
+
+.resource-icon.state-error {
+  color: #d1242f;
+}
+
+.resource-icon.state-canceled {
+  color: var(--muted);
 }
 
 .resource-icon.state-merged,
@@ -1708,8 +1722,16 @@ body.resizing .terminal-wrap {
 
 @media (prefers-color-scheme: dark) {
   .resource-icon.state-open,
+  .resource-icon.state-ready,
   .chip.good {
     color: #3fb950;
+  }
+  .resource-icon.state-error {
+    color: #f85149;
+  }
+  .resource-icon.state-building,
+  .resource-icon.state-queued {
+    color: #d29922;
   }
   .resource-icon.state-merged,
   .resource-icon.state-completed,

@@ -7,6 +7,7 @@ import {
   FONT_SIZE,
   type AppState,
   type Settings,
+  type ProviderID,
   type Space,
   type SpacePatch,
   type ThemeInfo,
@@ -99,7 +100,7 @@ const state = (): AppState => ({
   currentSessionID,
   bridgeConnected,
   mcp: opencode.mcp,
-  github: resourceMeta.status,
+  providers: resourceMeta.statuses,
   problem: opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined),
   error,
 })
@@ -561,7 +562,7 @@ function registerIpc() {
     search.resources(sessionIDs).map((r) => ({ ...r, meta: resourceMeta.get(r.id) })),
   )
   ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => resourceMeta.watch(sessionIDs))
-  ipcMain.handle("github:retry", () => resourceMeta.retry())
+  ipcMain.handle("provider:retry", (_e, id: ProviderID) => resourceMeta.retry(id))
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))

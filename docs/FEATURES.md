@@ -49,10 +49,13 @@ where it lives.
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable
   (`src/renderer/ResourcesPanel.tsx`, `src/shared/resources.ts`)
-- Live GitHub details on PRs, issues, commits and repos: title, state color, CI, review, conflicts. Uses gh's
-  login (no setup), one batched GraphQL request (~1 point), only while the panel is open and the window focused,
-  TTL by state (1 min while CI runs, 5 min open, 24h merged/closed), refreshed early when a run in scope ends or
-  a resource is mentioned again, cached on disk; status in Settings → Resource details (`src/main/meta/`)
+- Live details from the services' own CLI logins (no setup), only while the panel is open and the window
+  focused, TTL by state, refreshed early when a run in scope ends or a resource is mentioned again, cached on
+  disk; status per service in Settings → Resource details (`src/main/meta/`, one file per provider)
+  - GitHub (gh's token): PRs, issues, commits, repos: title, state color, CI, review, conflicts. One batched
+    GraphQL request (~1 point); 1 min while CI runs, 5 min open, 24h merged/closed
+  - Vercel (vercel CLI's token, refreshed via `vercel whoami` when it expires): deployments (commit, branch,
+    target, build state) and projects (latest production deployment); 15s while building
 
 ## Terminal
 

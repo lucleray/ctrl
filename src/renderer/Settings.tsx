@@ -3,10 +3,11 @@ import {
   FONT_SIZE,
   type Appearance,
   type AppState,
-  type GithubStatus,
   type McpServerItem,
   type McpStatus,
   type ModelChoices,
+  type ProviderID,
+  type ProviderStatus,
 } from "../shared/types"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -67,30 +68,40 @@ function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
   )
 }
 
-/** Live PR/issue/commit details in the resources panel, using gh's login. */
-function GithubRow({ status }: { status: GithubStatus }) {
+const PROVIDERS: Record<ProviderID, { name: string; cli: string; install: string; what: string }> = {
+  github: { name: "GitHub", cli: "gh", install: "brew install gh", what: "PR, issue and CI status" },
+  vercel: { name: "Vercel", cli: "vercel", install: "npm i -g vercel", what: "deployment and build status" },
+}
+
+/** Live resource details from one service, using its CLI's login. */
+function ProviderRow({ id, status }: { id: ProviderID; status: ProviderStatus }) {
   const [busy, setBusy] = useState(false)
+  const p = PROVIDERS[id]
   const dot = { ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed"
+  const budget =
+    status.remaining !== undefined
+      ? ` · ${status.remaining.toLocaleString()} of ${status.limit?.toLocaleString()} API points left this hour (ctrl used ${status.used ?? 0})`
+      : ""
   const desc =
     status.state === "ok"
-      ? `Signed in as @${status.login} through gh · ${status.remaining?.toLocaleString()} of ${status.limit?.toLocaleString()} API points left this hour (ctrl used ${status.used ?? 0})`
+      ? `Signed in as ${status.account ?? "?"} through ${p.cli}${budget}`
       : status.state === "no-cli"
-        ? "Install the GitHub CLI (brew install gh), then run gh auth login"
+        ? `Install the ${p.name} CLI (${p.install}), then run ${p.cli} login`
         : status.state === "logged-out"
-          ? "Run gh auth login in a terminal to get PR, issue and CI status"
+          ? `Run ${p.cli === "gh" ? "gh auth login" : "vercel login"} in a terminal to get ${p.what}`
           : status.state === "idle"
-            ? "Uses gh's login. Details refresh while the resources panel is open."
-            : status.detail
+            ? `Uses ${p.cli}'s login. Details refresh while the resources panel is open.`
+            : status.state === "paused"
+              ? `Paused: ${status.detail}`
+              : status.detail
   const problem = status.state === "no-cli" || status.state === "logged-out" || status.state === "error"
   return (
     <div className="setting">
       <div className="mcp-name">
         <span className={`mcp-dot ${dot}`} />
         <div>
-          <div className="setting-title">GitHub</div>
-          <div className="setting-desc mcp-error">
-            {status.state === "paused" ? `Paused: ${status.detail}` : desc}
-          </div>
+          <div className="setting-title">{p.name}</div>
+          <div className="setting-desc mcp-error">{desc}</div>
         </div>
       </div>
       {problem && (
@@ -100,7 +111,7 @@ function GithubRow({ status }: { status: GithubStatus }) {
             disabled={busy}
             onClick={() => {
               setBusy(true)
-              void window.ctrl.retryGithub().finally(() => setTimeout(() => setBusy(false), 1500))
+              void window.ctrl.retryProvider(id).finally(() => setTimeout(() => setBusy(false), 1500))
             }}
           >
             {busy ? "Retrying…" : "Retry"}
@@ -287,7 +298,9 @@ export function Settings({
 
         <h2>Resource details</h2>
         <div className="settings-card">
-          <GithubRow status={state.github} />
+          {(Object.keys(PROVIDERS) as ProviderID[]).map((id) => (
+            <ProviderRow key={id} id={id} status={state.providers[id]} />
+          ))}
         </div>
 
         <h2>Shortcuts</h2>
