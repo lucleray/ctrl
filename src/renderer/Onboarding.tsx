@@ -8,6 +8,7 @@ import {
   type OpencodeCheck,
 } from "../shared/types"
 import { Icon } from "./icons"
+import logo from "../../build/icon.png"
 
 type Card = {
   id: Harness
@@ -28,23 +29,23 @@ function cards(opencode: OpencodeCheck, fx: FxCheck): Card[] {
     {
       id: "fx",
       name: "fx",
-      blurb: "Fast, native coding agent from Vercel Labs. One process per session.",
+      blurb: "Fast, native coding agent from Vercel Labs.",
       url: "https://fx.sh",
       ok: fx.state === "ok",
-      status: fx.state === "ok" ? `Installed · ${fx.version}` : "Not installed",
+      status: fx.state === "ok" ? `v${fx.version}` : "Not installed",
       command: fx.state === "ok" ? undefined : FX_INSTALL,
     },
     {
       id: "opencode",
       name: "opencode",
-      blurb: "Open source coding agent with a background service, so turns keep running when ctrl quits.",
+      blurb: "Open source agent with a background service, so turns keep going when ctrl quits.",
       url: "https://opencode.ai/v2/docs/",
       ok: opencode.state === "ok",
       status:
         opencode.state === "ok"
-          ? `Installed · ${opencode.version}`
+          ? `v${opencode.version}`
           : outdated
-            ? `Version ${opencode.version} is too old, ctrl needs ${opencode.min}`
+            ? `v${opencode.version}, needs ${opencode.min}`
             : "Not installed",
       command: opencode.state === "ok" ? undefined : outdated && !v1 ? OPENCODE_UPGRADE : OPENCODE_INSTALL,
     },
@@ -86,16 +87,23 @@ export function Onboarding({
 
   const intro =
     installed.length === 0
-      ? "ctrl is a home for your coding agent sessions. Install fx, opencode or both in a terminal to get started."
+      ? "A cozy home for your coding agent sessions. Install fx, opencode or both to get started."
       : installed.length === 1
-        ? `${installed[0].name} is installed, so you're all set. You can add the other one any time, and both kinds of session live side by side.`
-        : "Both are installed. Pick the one new sessions start with. You can change it any time in Settings, or per space."
+        ? `A cozy home for your coding agent sessions. ${installed[0].name} is installed, so you're all set.`
+        : "A cozy home for your coding agent sessions. Both agents are installed: pick the one new sessions start with."
+  const note =
+    installed.length === 0
+      ? "Run a command in a terminal. ctrl notices as soon as you come back."
+      : installed.length === 1
+        ? "You can add the other one any time. Both kinds of session live side by side."
+        : "You can change it any time in Settings, or per space."
 
   return (
     <div className="onboarding">
-      <div className="setup-card onboarding-card">
+      <div className="onboarding-card">
+        <img className="onboarding-logo" src={logo} alt="" draggable={false} />
         <h1>Welcome to ctrl</h1>
-        <p>{intro}</p>
+        <p className="onboarding-intro">{intro}</p>
         <div className="harness-cards">
           {list.map((c) => {
             const selectable = installed.length === 2
@@ -112,14 +120,9 @@ export function Onboarding({
               >
                 <div className="harness-card-head">
                   <span className="harness-card-name">{c.name}</span>
-                  <span className={`harness-card-status ${c.ok ? "ok" : ""}`}>
-                    {c.ok && <Icon name="check" />}
-                    {c.status}
-                  </span>
-                </div>
-                <div className="harness-card-blurb">
-                  {c.blurb}{" "}
+                  <span className={`harness-card-status ${c.ok ? "ok" : ""}`}>{c.status}</span>
                   <a
+                    className="harness-card-link"
                     href={c.url}
                     onClick={(e) => {
                       e.preventDefault()
@@ -127,26 +130,26 @@ export function Onboarding({
                       void window.ctrl.openExternal(c.url)
                     }}
                   >
-                    Learn more
+                    {c.id === "fx" ? "fx.sh" : "opencode.ai"} ↗
                   </a>
+                  {c.ok && <span className={`harness-card-mark ${selected ? "on" : ""}`}>{selected && <Icon name="check" />}</span>}
                 </div>
+                <div className="harness-card-blurb">{c.blurb}</div>
                 {c.command && <Command command={c.command} />}
               </div>
             )
           })}
         </div>
         {installed.length === 0 ? (
-          <>
-            <button className="btn primary" disabled={busy} onClick={recheck}>
-              {busy ? "Checking…" : "Check again"}
-            </button>
-            <p className="setup-note">ctrl also checks again when you come back to this window.</p>
-          </>
+          <button className="btn primary onboarding-cta" disabled={busy} onClick={recheck}>
+            {busy ? "Checking…" : "Check again"}
+          </button>
         ) : (
-          <button className="btn primary" onClick={() => onDone(choice)}>
+          <button className="btn primary onboarding-cta" onClick={() => onDone(choice)}>
             Start with {choiceName}
           </button>
         )}
+        <p className="onboarding-note">{note}</p>
       </div>
     </div>
   )
@@ -155,7 +158,7 @@ export function Onboarding({
 function Command({ command }: { command: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="setup-command" onClick={(e) => e.stopPropagation()}>
+    <div className="harness-command" onClick={(e) => e.stopPropagation()}>
       <code>{command}</code>
       <button
         className="icon-btn"

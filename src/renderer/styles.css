@@ -1907,16 +1907,40 @@ body.resizing .terminal-pane.active {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 40px 32px;
   background: var(--titlebar-bg);
-  user-select: text;
   overflow: auto;
 }
 
 .onboarding-card {
-  max-width: 560px;
   width: 100%;
-  gap: 16px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.onboarding-logo {
+  width: 84px;
+  height: 84px;
+  margin-bottom: 16px;
+  user-select: none;
+}
+
+.onboarding-card h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.onboarding-intro {
+  margin: 8px 0 28px;
+  max-width: 420px;
+  color: var(--dim);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .harness-cards {
@@ -1924,16 +1948,23 @@ body.resizing .terminal-pane.active {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  text-align: left;
 }
 
 .harness-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 6px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--card-bg);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.harness-card.missing {
+  background: transparent;
+  border-style: dashed;
 }
 
 .harness-card.selectable {
@@ -1945,42 +1976,114 @@ body.resizing .terminal-pane.active {
 }
 
 .harness-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
 }
 
 .harness-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  min-height: 20px;
 }
 
 .harness-card-name {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 15px;
 }
 
-.harness-card-status {
+/* Radio-style mark on installed cards: filled with a check when it's the one new sessions start with. */
+.harness-card-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12.5px;
-  color: var(--muted);
+  justify-content: center;
+  flex: none;
 }
 
-.harness-card-status.ok {
-  color: var(--tone-good);
+.harness-card-mark.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--titlebar-bg);
+}
+
+.harness-card-mark .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.8;
+  color: var(--titlebar-bg);
 }
 
 .harness-card-blurb {
   font-size: 12.5px;
   color: var(--dim);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
-.harness-card-blurb a {
-  color: var(--accent);
+.harness-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.harness-card-status.ok::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone-good);
+}
+
+.harness-card-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
   text-decoration: none;
+}
+
+.harness-card-link:hover {
+  color: var(--text);
+}
+
+.harness-command {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px 4px 6px 10px;
+  border-radius: 8px;
+  background: var(--hover-strong);
+}
+
+.harness-command code {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.4;
+  user-select: all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.onboarding-cta {
+  margin-top: 24px;
+  min-width: 200px;
+  padding: 8px 18px;
+  font-size: 13.5px;
+  border-radius: 9px;
+}
+
+.onboarding-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
