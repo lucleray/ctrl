@@ -28,7 +28,7 @@ export const COMMANDS: Command[] = [
     id: "toggle-resources",
     label: "Resources panel",
     desc: "Links shared in the session or its space",
-    defaults: ["Cmd+Shift+R"],
+    defaults: ["Shift+Cmd+R"],
   },
   { id: "zoom-in", label: "Larger text", defaults: ["Cmd+=", "Cmd++"] },
   { id: "zoom-out", label: "Smaller text", defaults: ["Cmd+-"] },
