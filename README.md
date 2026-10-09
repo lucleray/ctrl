@@ -85,10 +85,14 @@ panel ◄── main: GROUP BY resource over the scope's mentions (~3ms)
   `vercel`, `slack-cli`), so ctrl never handles tokens. It returns display-ready details plus a cache policy;
   `src/main/adapters/service.ts` does the scheduling and caching for all of them. Linear and Notion have no
   `live` part, so their links are shown as parsed.
+- **Modes and status:** each adapter is Off (links hidden), Links only or Live details in Settings. A live
+  adapter's `check()` verifies its CLI is installed and logged in without fetching, so Settings can show
+  whether it works and offer a setup prompt built from `live.cli` (install, login, verify commands).
 
 ```text
 adapter = { id, name, types[], live? }
               │         │
+              │         ├─ live.check({ run }) → { account }   ← Settings status
               │         └─ live.fetch(batch, { run }) → { meta, cache: { maxAge, refreshOnMention } }
               └─ parse(url) / describe(data)   ← indexer + renderer, no requests
 ```

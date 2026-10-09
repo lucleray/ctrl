@@ -137,7 +137,18 @@ export const slack: ResourceAdapter = {
   types: [slackThread, slackChannel],
   // One CLI call per link, 3 at a time.
   live: {
-    cli: { command: "slack-cli", install: "npm i -g @vercel/slack-cli", login: "slack-cli auth login" },
+    cli: {
+      command: "slack-cli",
+      install: "npm i -g @vercel/slack-cli",
+      login: "slack-cli auth login",
+      verify: "slack-cli auth status",
+    },
+    async check({ run }) {
+      const status = await slackCli(run, ["auth", "status"])
+      if (!status?.authenticated) throw new AdapterError("slack-cli isn't logged in", "logged-out")
+      account = status.user ? `${status.user} (${status.team})` : undefined
+      return { account }
+    },
     batchSize: 15,
     async fetch(batch, { run }) {
       if (!account) {

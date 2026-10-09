@@ -859,6 +859,35 @@ button {
   flex-shrink: 0;
 }
 
+.adapter-status.connected {
+  color: #22c55e;
+}
+
+.adapter-status.pending {
+  color: #f59e0b;
+}
+
+.adapter-status.failed {
+  color: #ef4444;
+}
+
+.adapter-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.adapter-actions .btn {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+}
+
+.adapter-actions .btn svg {
+  height: 12px;
+  width: 12px;
+}
+
 .mcp-status {
   color: var(--muted);
   font-size: 12.5px;

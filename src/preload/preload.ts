@@ -55,6 +55,7 @@ const api: CtrlApi = {
   watchResources: (sessionIDs) => ipcRenderer.send("resources:watch", sessionIDs),
   onResourceMeta: on("resources:meta"),
   retryAdapter: (id) => ipcRenderer.invoke("adapter:retry", id),
+  checkAdapters: () => ipcRenderer.invoke("adapters:check"),
   ptyStart: (cols, rows) => ipcRenderer.send("pty:start", cols, rows),
   ptyWrite: (data) => ipcRenderer.send("pty:write", data),
   ptyResize: (cols, rows) => ipcRenderer.send("pty:resize", cols, rows),

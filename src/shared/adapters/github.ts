@@ -228,7 +228,14 @@ export const github: ResourceAdapter = {
   types: [githubPr, githubIssue, githubCommit, githubRepoType],
   // ~40 links per request, for about 1 point of GitHub's 5,000/hour.
   live: {
-    cli: { command: "gh", install: "brew install gh", login: "gh auth login" },
+    cli: { command: "gh", install: "brew install gh", login: "gh auth login", verify: "gh api user --jq .login" },
+    async check({ run }) {
+      const res = await run("gh", ["api", "user", "--jq", ".login"])
+      if (res.code === 0) return { account: res.stdout.trim() || undefined }
+      const err = res.stderr.trim()
+      if (res.code === 4 || /gh auth login|not logged|authentication/i.test(err)) throw new AdapterError("gh isn't logged in", "logged-out")
+      throw new AdapterError(err.split("\n")[0] || "gh api failed", "network")
+    },
     batchSize: 40,
     async fetch(batch, { run }) {
       const { repos, query } = buildQuery(batch)

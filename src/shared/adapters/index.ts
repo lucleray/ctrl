@@ -1,4 +1,4 @@
-import type { ParsedResource, ResourceAdapter, ResourceType } from "./adapter"
+import type { AdapterMode, ParsedResource, ResourceAdapter, ResourceType } from "./adapter"
 import { github } from "./github"
 import { linear } from "./linear"
 import { notion } from "./notion"
@@ -25,6 +25,12 @@ export const RESOURCE_TYPES: ResourceType[] = ADAPTERS.flatMap((a) => a.types)
 
 const ADAPTER_OF = new Map(ADAPTERS.flatMap((a) => a.types.map((t) => [t.id, a] as const)))
 export const adapterOf = (typeID: string) => ADAPTER_OF.get(typeID)
+
+/** An adapter's mode per Settings: live details by default when it has them, never live without. */
+export function adapterMode(adapter: ResourceAdapter, modes: Record<string, AdapterMode>): AdapterMode {
+  const mode = modes[adapter.id] ?? (adapter.live ? "live" : "links")
+  return mode === "live" && !adapter.live ? "links" : mode
+}
 
 const TYPES = new Map(RESOURCE_TYPES.map((t) => [t.id, t]))
 export const resourceType = (id: string) => TYPES.get(id)

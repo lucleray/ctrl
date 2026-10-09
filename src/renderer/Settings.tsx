@@ -7,6 +7,8 @@ import {
   type McpStatus,
   type ModelChoices,
   type AdapterInfo,
+  type AdapterMode,
+  type CliInfo,
   type Settings as SettingsData,
   type SoundEvent,
   SOUND_EVENTS,
@@ -71,29 +73,43 @@ function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
   )
 }
 
-/** One resource adapter: what it adds and, when it fetches live details, its CLI's status and an on/off toggle. */
-function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: string[] }) {
+const ADAPTER_MODES: { value: AdapterMode; label: string; live?: boolean }[] = [
+  { value: "off", label: "Off" },
+  { value: "links", label: "Links only" },
+  { value: "live", label: "Live details", live: true },
+]
+
+/** Its status: a dot color (mcp-dot classes) and a line saying whether it works. */
+function adapterStatus({ mode, cli, status }: AdapterInfo): { dot: string; text: string } {
+  if (mode === "off") return { dot: "disabled", text: "Off, its links are hidden from the resources panel" }
+  if (!cli || !status) return { dot: "connected", text: "Ready, nothing to set up" }
+  const s = status.state
+  if (s === "ok") return { dot: "connected", text: `Ready, using ${cli.command}${status.account ? ` as ${status.account}` : ""}` }
+  if (s === "checking") return { dot: "disabled", text: `Checking ${cli.command}…` }
+  if (s === "no-cli") return { dot: "failed", text: `Not set up, ${cli.command} isn't installed` }
+  if (s === "logged-out") return { dot: "pending", text: `Not set up, ${cli.command} isn't logged in` }
+  if (s === "paused") return { dot: "pending", text: `Rate limited, retrying later${status.detail ? ` (${status.detail})` : ""}` }
+  return { dot: "failed", text: `Error: ${status.detail ?? "unknown"}` }
+}
+
+/** A prompt for an agent to install and log in an adapter's CLI. */
+const setupPrompt = (name: string, cli: CliInfo) =>
+  [
+    `Set up the \`${cli.command}\` CLI on my Mac so ctrl can fetch live ${name} details for links.`,
+    "",
+    `1. If \`${cli.command}\` isn't installed, install it: \`${cli.install}\``,
+    `2. Log in with \`${cli.login}\`. It's interactive: if you can't finish it yourself, tell me exactly what to run in my terminal.`,
+    `3. Verify with \`${cli.verify}\` and tell me which account it's logged in as.`,
+  ].join("\n")
+
+/** One resource adapter: what it adds, whether it works, and its mode (off, links only, live details). */
+function AdapterRow({ adapter, modes }: { adapter: AdapterInfo; modes: SettingsData["adapterModes"] }) {
   const [busy, setBusy] = useState(false)
-  const { status, cli } = adapter
-  const live = !!cli && !!status
-  const on = live && adapter.enabled
-  const dot = !on ? "disabled" : ({ ok: "connected", paused: "pending", idle: "disabled" }[status.state as string] ?? "failed")
-  const line = !live
-    ? "Links only, nothing is fetched"
-    : !adapter.enabled
-      ? null
-      : status.state === "ok"
-        ? `Using ${cli.command}${status.account ? ` as ${status.account}` : ""}`
-        : status.state === "no-cli"
-          ? `${cli.command} isn't installed: ${cli.install}, then ${cli.login}`
-          : status.state === "logged-out"
-            ? `${cli.command} isn't logged in: run ${cli.login}`
-            : status.state === "idle"
-              ? `Uses ${cli.command}. Details refresh while the resources panel is open.`
-              : status.state === "paused"
-                ? `Paused: ${status.detail}`
-                : status.detail
-  const problem = on && ["no-cli", "logged-out", "error"].includes(status.state)
+  const [copied, setCopied] = useState(false)
+  const { cli, status } = adapter
+  const { dot, text } = adapterStatus(adapter)
+  const notSetUp = adapter.mode !== "off" && !!cli && (status?.state === "no-cli" || status?.state === "logged-out")
+  const failing = adapter.mode !== "off" && status?.state === "error"
   return (
     <div className="setting">
       <div className="mcp-name">
@@ -101,34 +117,48 @@ function AdapterRow({ adapter, disabled }: { adapter: AdapterInfo; disabled: str
         <div>
           <div className="setting-title">{adapter.name}</div>
           <div className="setting-desc">{adapter.description}</div>
-          {line && <div className="setting-desc mcp-error">{line}</div>}
+          <div className={`setting-desc adapter-status ${dot}`}>{text}</div>
+          {(notSetUp || failing) && cli && (
+            <div className="adapter-actions">
+              {notSetUp && (
+                <button
+                  className="btn"
+                  title={setupPrompt(adapter.name, cli)}
+                  onClick={() =>
+                    void navigator.clipboard.writeText(setupPrompt(adapter.name, cli)).then(() => {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1500)
+                    })
+                  }
+                >
+                  <Icon name={copied ? "check" : "copy"} />
+                  {copied ? "Copied" : "Copy setup prompt"}
+                </button>
+              )}
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true)
+                  void window.ctrl.retryAdapter(adapter.id).finally(() => setBusy(false))
+                }}
+              >
+                {busy ? "Checking…" : "Check again"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
-      {live && (
-        <div className="mcp-actions">
-          {problem && (
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true)
-                void window.ctrl.retryAdapter(adapter.id).finally(() => setTimeout(() => setBusy(false), 1500))
-              }}
-            >
-              {busy ? "Retrying…" : "Retry"}
-            </button>
-          )}
-          <Toggle
-            on={adapter.enabled}
-            title="Fetch live details"
-            onChange={(enabled) =>
-              void window.ctrl.setSettings({
-                disabledAdapters: enabled ? disabled.filter((id) => id !== adapter.id) : [...disabled, adapter.id],
-              })
-            }
-          />
-        </div>
-      )}
+      <select
+        value={adapter.mode}
+        onChange={(e) => void window.ctrl.setSettings({ adapterModes: { ...modes, [adapter.id]: e.target.value as AdapterMode } })}
+      >
+        {ADAPTER_MODES.filter((m) => !m.live || cli).map((m) => (
+          <option key={m.value} value={m.value}>
+            {m.label}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -202,6 +232,7 @@ export function Settings({
 
   // Take focus away from the terminal so keystrokes don't leak into the TUI.
   useEffect(() => root.current?.focus(), [])
+  useEffect(() => void window.ctrl.checkAdapters(), [])
 
   const [choices, setChoices] = useState<ModelChoices | null>(null)
   const [modelError, setModelError] = useState<string>()
@@ -362,7 +393,7 @@ export function Settings({
         <h2>Resource adapters</h2>
         <div className="settings-card">
           {state.adapters.map((adapter) => (
-            <AdapterRow key={adapter.id} adapter={adapter} disabled={settings.disabledAdapters} />
+            <AdapterRow key={adapter.id} adapter={adapter} modes={settings.adapterModes} />
           ))}
         </div>
 

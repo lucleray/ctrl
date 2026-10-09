@@ -54,8 +54,10 @@ where it lives.
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are
   display-ready (title, subtitle, tone, chips) and carry a cache policy (max age, refetch when mentioned
   again); one scheduler fetches only while the panel is open and the window focused, and caches on disk
-  (`src/main/adapters/service.ts`). Settings → Resource adapters lists them, with CLI status and an on/off
-  toggle for live ones
+  (`src/main/adapters/service.ts`). Settings → Resource adapters lists them with a status
+  dot (CLI checked on launch and when Settings opens: ready, not installed, not logged in), a mode select
+  (Off hides its links, Links only, Live details) and, when the CLI isn't set up, a copyable agent prompt to
+  install and log it in, plus Check again
   - GitHub (live, `gh api graphql`, ~40 per request): PR state, CI, reviews, conflicts; merged PRs are final
   - Vercel (live, `vercel api`): deployment commit/branch/build state (15s while building), projects' latest production
   - Slack (live, `slack-cli`): thread root message, channel, author; channel names; kept until mentioned again

@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: FONT_SIZE.default,
   defaultModel: null,
   defaultModelEnabled: false,
-  disabledAdapters: [],
+  adapterModes: {},
   shortcuts: {},
 }
 
@@ -54,8 +54,16 @@ export class Store {
         defaultModelEnabled: !!loaded.settings?.defaultModel,
         ...loaded.settings,
         soundChoices: { ...DEFAULT_SOUND_CHOICES, ...loaded.settings?.soundChoices },
+        // State from before modes: a disabled adapter still showed its links.
+        adapterModes: {
+          ...Object.fromEntries(
+            ((loaded.settings as { disabledAdapters?: string[] } | undefined)?.disabledAdapters ?? []).map((id) => [id, "links" as const]),
+          ),
+          ...loaded.settings?.adapterModes,
+        },
       },
     }
+    delete (this.data.settings as { disabledAdapters?: unknown }).disabledAdapters
   }
 
   setSettings(patch: Partial<Settings>) {

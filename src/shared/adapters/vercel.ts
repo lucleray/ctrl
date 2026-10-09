@@ -176,7 +176,12 @@ export const vercel: ResourceAdapter = {
   types: [vercelDeployment, vercelProject],
   // Vercel's API has no batching: one CLI call per link, 4 at a time.
   live: {
-    cli: { command: "vercel", install: "npm i -g vercel", login: "vercel login" },
+    cli: { command: "vercel", install: "npm i -g vercel", login: "vercel login", verify: "vercel whoami" },
+    async check({ run }) {
+      account = (await get(run, "/v2/user", ""))?.user?.username
+      if (!account) throw new AdapterError("vercel isn't logged in", "logged-out")
+      return { account }
+    },
     batchSize: 20,
     async fetch(batch, { run }) {
       account ??= (await get(run, "/v2/user", ""))?.user?.username

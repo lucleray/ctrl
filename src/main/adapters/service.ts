@@ -4,10 +4,12 @@ import {
   DAY,
   MINUTE,
   SECOND,
+  type AdapterMode,
   type CachePolicy,
   type MetaRequest,
   type ResourceAdapter,
 } from "../../shared/adapters/adapter"
+import { adapterMode } from "../../shared/adapters"
 import type { AdapterInfo, AdapterStatus, ResourceItem, ResourceMeta } from "../../shared/types"
 import { runCli } from "./cli"
 
@@ -33,6 +35,7 @@ type Runner = {
   pausedUntil: number
   failures: number
   status: AdapterStatus
+  checking?: Promise<void>
 }
 
 const nextFetch = (c: Cached) => c.meta.fetched + c.cache.maxAge
@@ -49,7 +52,7 @@ export class AdapterService {
   private adapterList: ResourceAdapter[]
   private runners: Runner[]
   private byType = new Map<string, Runner>()
-  private disabled: Set<string>
+  private modes: Record<string, AdapterMode>
   private watched = new Map<string, Watched>()
   private watchedSessions = new Set<string>()
   private focused = false
@@ -58,7 +61,7 @@ export class AdapterService {
   constructor(
     dbPath: string,
     adapters: ResourceAdapter[],
-    disabled: string[],
+    modes: Record<string, AdapterMode>,
     private hooks: {
       /** Resources of these sessions, from the search index */
       list(sessionIDs: string[]): ResourceItem[]
@@ -66,11 +69,11 @@ export class AdapterService {
       onStatus(): void
     },
   ) {
-    this.disabled = new Set(disabled)
+    this.modes = modes
     this.adapterList = adapters
     this.runners = adapters
       .filter((a): a is LiveAdapter => !!a.live)
-      .map((adapter) => ({ adapter, busy: false, pausedUntil: 0, failures: 0, status: { state: "idle" } }))
+      .map((adapter) => ({ adapter, busy: false, pausedUntil: 0, failures: 0, status: { state: "checking" } }))
     for (const r of this.runners) for (const type of r.adapter.types) this.byType.set(type.id, r)
 
     this.db = new DatabaseSync(dbPath)
@@ -106,19 +109,55 @@ export class AdapterService {
       description: a.description,
       types: a.types.map((t) => t.id),
       cli: a.live?.cli,
-      enabled: !this.disabled.has(a.id),
+      mode: adapterMode(a, this.modes),
       status: this.runners.find((r) => r.adapter === a)?.status,
     }))
   }
 
-  /** Cached details, if an enabled adapter handles this resource's type. */
+  /** Whether resources of this type are shown at all (their adapter isn't off). */
+  shows(type: string) {
+    const a = this.adapterList.find((a) => a.types.some((t) => t.id === type))
+    return !a || adapterMode(a, this.modes) !== "off"
+  }
+
+  /** Cached details, if an adapter fetching live details handles this resource's type. */
   get(item: { id: string; type: string }) {
     return this.runnerFor(item.type) ? this.cache.get(item.id)?.meta : undefined
   }
 
-  setDisabled(ids: string[]) {
-    this.disabled = new Set(ids)
+  setModes(modes: Record<string, AdapterMode>) {
+    this.modes = modes
     this.refreshWatched()
+  }
+
+  /**
+   * Checks each CLI is installed and logged in (Settings' status), whatever
+   * the adapter's mode, so Settings can tell whether turning it on would work.
+   */
+  check(id?: string) {
+    return Promise.all(this.runners.filter((r) => !id || r.adapter.id === id).map((r) => this.checkOne(r)))
+  }
+
+  private checkOne(r: Runner) {
+    r.checking ??= (async () => {
+      try {
+        const { account } = await r.adapter.live.check({ run: runCli })
+        // Set up since the last failure: fetch again right away.
+        if (r.status.state !== "ok" && r.status.state !== "paused") {
+          r.pausedUntil = 0
+          r.failures = 0
+          this.schedule(0)
+        }
+        if (r.status.state !== "paused") this.setStatus(r, { state: "ok", account: account ?? r.status.account })
+      } catch (err) {
+        const e = err instanceof AdapterError ? err : new AdapterError(String(err), "network")
+        if (e.kind === "rate-limited") return
+        this.setStatus(r, { state: e.kind === "network" ? "error" : e.kind, detail: e.message })
+      } finally {
+        r.checking = undefined
+      }
+    })()
+    return r.checking
   }
 
   /** The panel shows these sessions' resources ([] = hidden). */
@@ -152,13 +191,13 @@ export class AdapterService {
     else clearTimeout(this.timer)
   }
 
-  /** Settings → Retry. */
-  retry(id: string) {
+  /** Settings → Check again. */
+  async retry(id: string) {
     const r = this.runners.find((r) => r.adapter.id === id)
     if (!r) return
     r.pausedUntil = 0
     r.failures = 0
-    this.setStatus(r, { state: "idle" })
+    await this.checkOne(r)
     this.schedule(0)
   }
 
@@ -169,7 +208,7 @@ export class AdapterService {
 
   private runnerFor(type: string) {
     const r = this.byType.get(type)
-    return r && !this.disabled.has(r.adapter.id) ? r : undefined
+    return r && adapterMode(r.adapter, this.modes) === "live" ? r : undefined
   }
 
   private refreshWatched() {
@@ -211,7 +250,7 @@ export class AdapterService {
     const now = Date.now()
     await Promise.all(
       this.runners.map(async (r) => {
-        if (r.busy || now < r.pausedUntil || this.disabled.has(r.adapter.id)) return
+        if (r.busy || now < r.pausedUntil || adapterMode(r.adapter, this.modes) !== "live") return
         const batch = this.due(r, now).slice(0, r.adapter.live.batchSize)
         if (!batch.length) return
         r.busy = true

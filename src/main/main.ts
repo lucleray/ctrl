@@ -141,13 +141,14 @@ const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("user
 const adapters = new AdapterService(
   join(app.getPath("userData"), "resource-meta.db"),
   ADAPTERS,
-  store.data.settings.disabledAdapters,
+  store.data.settings.adapterModes,
   {
     list: (sessionIDs) => search.resources(sessionIDs),
     onMeta: (metas) => send("resources:meta", metas),
     onStatus: push,
   },
 )
+void adapters.check()
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -484,9 +485,9 @@ function registerIpc() {
   ipcMain.handle("settings:set", (_e, patch: Partial<Settings>) => {
     if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
     store.setSettings(patch)
-    if (patch.disabledAdapters) {
-      adapters.setDisabled(patch.disabledAdapters)
-      // Panels re-read their resources, with or without that adapter's details.
+    if (patch.adapterModes) {
+      adapters.setModes(patch.adapterModes)
+      // Panels re-read their resources: without an adapter that's off, with or without its details.
       send("resources:changed", null)
     }
     loadThemes()
@@ -589,10 +590,14 @@ function registerIpc() {
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => search.search(query))
   ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
-    search.resources(sessionIDs).map((r) => ({ ...r, meta: adapters.get(r) })),
+    search
+      .resources(sessionIDs)
+      .filter((r) => adapters.shows(r.type))
+      .map((r) => ({ ...r, meta: adapters.get(r) })),
   )
   ipcMain.on("resources:watch", (_e, sessionIDs: string[]) => adapters.watch(sessionIDs))
   ipcMain.handle("adapter:retry", (_e, id: string) => adapters.retry(id))
+  ipcMain.handle("adapters:check", () => adapters.check())
 
   ipcMain.on("pty:start", (_e, cols: number, rows: number) => terminal.start(cols, rows))
   ipcMain.on("pty:write", (_e, data: string) => terminal.write(data))

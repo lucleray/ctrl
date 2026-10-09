@@ -98,8 +98,8 @@ export type Settings = {
   defaultModelEnabled: boolean
   /** Rebound shortcuts; commands not listed use their defaults */
   shortcuts: ShortcutOverrides
-  /** Resource adapters turned off in Settings */
-  disabledAdapters: string[]
+  /** Per resource adapter id; adapters not listed use defaultAdapterMode */
+  adapterModes: Record<string, AdapterMode>
 }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }
@@ -205,9 +205,26 @@ export type ResourceMeta = {
   fetched: number
 }
 
+/** Settings: hide its links, show links only, or also fetch live details. */
+export type AdapterMode = "off" | "links" | "live"
+
+/** The CLI a live adapter fetches with. Commands are shown in Settings' setup prompt. */
+export type CliInfo = {
+  command: string
+  /** Shell command that installs it */
+  install: string
+  /** Shell command that logs in (usually interactive) */
+  login: string
+  /** Shell command that prints who it's logged in as */
+  verify: string
+}
+
 export type AdapterStatus = {
-  /** ok: fetching works · no-cli: CLI isn't installed · logged-out: CLI isn't logged in · paused: rate limited */
-  state: "idle" | "ok" | "no-cli" | "logged-out" | "error" | "paused"
+  /**
+   * checking: first check running · ok: CLI ready · no-cli: not installed ·
+   * logged-out: not logged in · paused: rate limited · error: last fetch or check failed
+   */
+  state: "checking" | "ok" | "no-cli" | "logged-out" | "error" | "paused"
   /** Who the CLI is logged in as */
   account?: string
   detail?: string
@@ -222,9 +239,9 @@ export type AdapterInfo = {
   /** Link types it recognizes */
   types: string[]
   /** The CLI it fetches live details with; none = links only */
-  cli?: { command: string; install: string; login: string }
-  /** Live details on (Settings toggle); only matters with a CLI */
-  enabled: boolean
+  cli?: CliInfo
+  /** Never "live" without a CLI */
+  mode: AdapterMode
   /** Live adapters only */
   status?: AdapterStatus
 }
@@ -325,7 +342,10 @@ export type CtrlApi = {
   /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */
   watchResources(sessionIDs: string[]): void
   onResourceMeta(cb: (metas: Record<string, ResourceMeta>) => void): () => void
+  /** Re-checks the adapter's CLI (installed, logged in) and resumes fetching */
   retryAdapter(id: string): Promise<void>
+  /** Checks every live adapter's CLI, e.g. when Settings opens */
+  checkAdapters(): Promise<void>
   ptyStart(cols: number, rows: number): void
   ptyWrite(data: string): void
   ptyResize(cols: number, rows: number): void

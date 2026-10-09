@@ -7,7 +7,9 @@
 // shows icons and titles, the main process fetches. So adapters import nothing
 // from Node: `live.fetch` gets a CLI runner from the main process instead.
 
-import type { ResourceMeta, Tone } from "../types"
+import type { CliInfo, ResourceMeta, Tone } from "../types"
+
+export type { AdapterMode, CliInfo } from "../types"
 
 export const SECOND = 1000
 export const MINUTE = 60 * SECOND
@@ -80,8 +82,13 @@ export interface ResourceAdapter {
   types: ResourceType[]
   /** Live details. Leave it out to only collect and show links, without fetching anything. */
   live?: {
-    /** The CLI whose login it uses, for Settings' setup hints */
-    cli: { command: string; install: string; login: string }
+    /** The CLI whose login it uses, for Settings' status and setup prompt */
+    cli: CliInfo
+    /**
+     * Checks the CLI is installed and logged in, without fetching anything
+     * (Settings' status). Throws an AdapterError when it isn't.
+     */
+    check(ctx: { run: RunCli }): Promise<{ account?: string }>
     /** Most resources per fetch() call */
     batchSize: number
     fetch(batch: MetaRequest[], ctx: { run: RunCli }): Promise<AdapterResult>

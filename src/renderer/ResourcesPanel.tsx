@@ -92,7 +92,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
               key={g.type.id}
               label={g.type.label}
               items={g.items}
-              source={state.adapters.find((a) => a.enabled && a.types.includes(g.type.id))}
+              source={state.adapters.find((a) => a.mode === "live" && a.types.includes(g.type.id))}
               spaceScope={scope === "space"}
             />
           ))
