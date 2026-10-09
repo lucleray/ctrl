@@ -26,6 +26,11 @@ single embedded opencode TUI on the right.
   5,000 sessions.
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
+## Features
+
+[`docs/FEATURES.md`](docs/FEATURES.md) lists every user-facing feature, so you don't have to read the code
+to know what ctrl does. **When you add, change or remove a feature, update that file in the same commit.**
+
 ## Principles
 
 - **Fast.** Everything you touch responds instantly. Heavy work (fetching, parsing, indexing) stays off the main
