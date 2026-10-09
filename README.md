@@ -19,6 +19,10 @@ single embedded opencode TUI on the right.
 - Switching sessions sends `{type:"navigate"}` to the bridge, so the TUI swaps in place (no restart).
 - The bridge reports route changes back, so the sidebar highlight follows navigation done inside the TUI.
 - The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs are turned off there too).
+- The sidebar's session list (`src/main/opencode.ts`) does one full sync on launch and whenever the event stream
+  reconnects. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
+  re-read only the session they're about (created, run started/ended), so an update costs the same with 50 or
+  5,000 sessions.
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
 ## Principles
