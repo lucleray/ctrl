@@ -151,6 +151,10 @@ where it lives.
 - App name **ctrl** and dot-matrix `c_` icon (`build/icon.svg`, `scripts/icon.mjs`)
 - Packaged macOS app: `npm run install-app`; loads the login shell env at startup, with common bin folders
   added to PATH if that fails (`scripts/package.mjs`, `src/main/shell-env.ts`)
+- Signed with the self-signed "ctrl Code Signing" certificate, so macOS folder access (Documents, Desktop, …)
+  survives rebuilds and updates; ad hoc when the certificate is missing, and releases refuse to ship without it
+  (`scripts/sign.mjs`)
+- Folder access alerts explain why ctrl asks (`build.mac.extendInfo` in `package.json`, copied into the dev app)
 - Dev runs use a separate `ctrl-dev` state dir, so dev and installed app run side by side
 - Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see `docs/DEVELOPMENT.md`)
 - README screenshots and GIF regenerated from a throwaway demo opencode, and fx versions from throwaway fx sessions shown next to them (`scripts/demo/`, `--harness fx`, `CTRL_FRAMES` hook)

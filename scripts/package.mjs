@@ -1,10 +1,11 @@
-// Builds ctrl.app for macOS, ad-hoc signed.
+// Builds ctrl.app for macOS, signed with the "ctrl Code Signing" certificate (ad hoc without it, releases refuse).
 //   node scripts/package.mjs                  this Mac's arch → release/mac*/ctrl.app
 //   node scripts/package.mjs --install        same, then replaces /Applications/ctrl.app (quitting it first)
 //   node scripts/package.mjs --arch all --zip arm64 + x64, zipped as release/ctrl-mac-<arch>.zip
 import { execFileSync, execSync } from "node:child_process"
 import { existsSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
+import { sign } from "./sign.mjs"
 
 const argv = process.argv.slice(2)
 const flag = (name) => argv.includes(name)
@@ -32,10 +33,11 @@ const appFor = (arch) => {
 
 for (const arch of archs) {
   const app = appFor(arch)
-  // Not notarized (no Developer ID), but Apple Silicon still needs a valid signature to
-  // launch: sign it ad hoc. Downloads through curl or ctrl's updater aren't quarantined, so Gatekeeper lets it run.
-  execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" })
-  console.log(`[package] built ${app}`)
+  // Not notarized (no Developer ID). Downloads through curl or ctrl's updater aren't quarantined,
+  // so Gatekeeper lets it run. Releases must use the certificate: an ad-hoc release would make
+  // every user grant folder access again.
+  const signer = sign(app, { requireIdentity: flag("--zip") })
+  console.log(`[package] built ${app} (signed: ${signer})`)
   if (flag("--zip")) {
     // No version in the name, so install.sh can download releases/latest/download/ctrl-mac-<arch>.zip.
     const zip = join("release", `ctrl-mac-${arch}.zip`)

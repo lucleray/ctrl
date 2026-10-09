@@ -75,7 +75,14 @@
       "target": "dir",
       "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
-      "identity": null
+      "identity": null,
+      "extendInfo": {
+        "NSDocumentsFolderUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
+        "NSDesktopFolderUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
+        "NSDownloadsFolderUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
+        "NSNetworkVolumesUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
+        "NSRemovableVolumesUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in."
+      }
     },
     "electronLanguages": [
       "en"

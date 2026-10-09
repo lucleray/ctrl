@@ -4,8 +4,9 @@
 // `electron` package at it. Runs on postinstall; packaged builds get this from
 // electron-builder instead.
 import { execFileSync } from "node:child_process"
-import { copyFileSync, existsSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { sign } from "./sign.mjs"
 
 if (process.platform !== "darwin") process.exit(0)
 
@@ -34,12 +35,15 @@ const set = (key, value) => {
 set("CFBundleName", NAME)
 set("CFBundleDisplayName", NAME)
 set("CFBundleIdentifier", BUNDLE_ID)
+// Same folder-access explanations as the packaged app (package.json → build.mac.extendInfo).
+const { extendInfo } = JSON.parse(readFileSync("package.json", "utf8")).build.mac
+for (const [key, value] of Object.entries(extendInfo)) set(key, `"${value}"`)
 
 const icon = join("build", "icon.icns")
 if (existsSync(icon)) copyFileSync(icon, join(target, "Contents", "Resources", "electron.icns"))
 
-// Editing the bundle breaks its signature; re-sign ad hoc so macOS still launches it.
-execFileSync("codesign", ["--force", "--deep", "--sign", "-", target], { stdio: "pipe" })
+// Editing the bundle breaks its signature; re-sign so macOS still launches it (and keeps folder grants).
+sign(target, { stdio: "pipe" })
 
 const lsregister =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs (or reinstalls) the latest ctrl release into /Applications.
 #   curl -fsSL https://raw.githubusercontent.com/lucleray/ctrl/main/install.sh | sh
-# curl doesn't quarantine what it downloads (browsers do), so the ad-hoc signed app opens
+# curl doesn't quarantine what it downloads (browsers do), so the self-signed app opens
 # without a Gatekeeper prompt.
 set -e
 

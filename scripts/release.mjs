@@ -3,6 +3,7 @@
 // Installed apps see the new release within a few hours (src/main/updater.ts).
 import { execFileSync, execSync } from "node:child_process"
 import { readFileSync } from "node:fs"
+import { hasIdentity, IDENTITY } from "./sign.mjs"
 
 const REPO = "lucleray/ctrl"
 const { version } = JSON.parse(readFileSync("package.json", "utf8"))
@@ -17,6 +18,7 @@ const ok = (cmd, args) => {
   }
 }
 
+if (!hasIdentity()) throw new Error(`No "${IDENTITY}" certificate in the keychain (docs/DEVELOPMENT.md → Signing)`)
 if (out("git", ["status", "--porcelain"])) throw new Error("Commit or stash your changes first")
 if (ok("gh", ["release", "view", tag, "--repo", REPO])) throw new Error(`${tag} is already released. Bump the version first`)
 const sha = out("git", ["rev-parse", "HEAD"])

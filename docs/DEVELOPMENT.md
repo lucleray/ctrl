@@ -4,7 +4,7 @@
 npm install
 npm run dev     # vite + esbuild watch + electron
 npm start       # production build + electron
-npm run package       # build release/mac-*/ctrl.app for this Mac (ad-hoc signed)
+npm run package       # build release/mac-*/ctrl.app for this Mac (see Signing)
 npm run install-app   # build + replace /Applications/ctrl.app (restarts it if running)
 ```
 
@@ -13,9 +13,23 @@ the merged commit. It builds arm64 and x64 apps (`scripts/package.mjs --arch all
 as a GitHub release, `ctrl-mac-<arch>.zip` (no version in the name, so `install.sh` can always download
 `releases/latest/download/ctrl-mac-<arch>.zip`). Installed apps find it within a few hours (`src/main/updater.ts`).
 
-**Signing:** builds are ad-hoc signed, not notarized (no Developer ID). That's fine as long as the app
-arrives through `install.sh` (curl) or the in-app updater, which don't quarantine it. Notarizing would need
-an Apple Developer account plus `codesign --options runtime` and `notarytool` in `scripts/package.mjs`.
+**Signing:** builds are signed with a self-signed **"ctrl Code Signing"** certificate (`scripts/sign.mjs`),
+not notarized (no Developer ID). That's fine as long as the app arrives through `install.sh` (curl) or the
+in-app updater, which don't quarantine it. The certificate matters for macOS privacy grants: they're tied to
+the app's designated requirement, which ad hoc is the binary's hash (every build asks for Documents, Desktop,
+… again), and with the certificate is `identifier "im.luc.ctrl" and certificate leaf = H"934b…"`, which
+survives rebuilds and updates on every Mac. Users install nothing; only the Mac that signs needs it.
+
+- Without the certificate, `package`, `install-app` and the dev app (`npm run brand`) fall back to ad hoc.
+  `npm run release` refuses: an ad-hoc release would make every user grant folder access again.
+- Never replace the certificate (valid until 2036): a new one means everyone gets asked once more.
+  Override the name with `CTRL_SIGN_IDENTITY` if needed.
+- Setting it up on a new Mac: import the backup `.p12` (`security import ctrl-code-signing.p12 -k
+  ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`), then let codesign use it without a password
+  prompt per binary: `security set-key-partition-list -S apple-tool:,apple: -s -l "ctrl Code Signing"
+  ~/Library/Keychains/login.keychain-db` (asks for the login password once).
+- Notarizing later would need an Apple Developer account, a Developer ID certificate in `CTRL_SIGN_IDENTITY`,
+  plus `codesign --options runtime` and `notarytool`. Switching certificates re-asks everyone once.
 
 **opencode:** ctrl needs `MIN_OPENCODE` (`src/main/opencode-bin.ts`) or newer and shows a setup screen
 otherwise. Raise it when ctrl starts using a newer API, and update the version in the README install section

@@ -17,7 +17,7 @@ type Release = { version: string; asset: string; url: string }
 /**
  * Updates from GitHub Releases, through GitHub's public API (no login; unauthenticated calls
  * allow 60 an hour, and ctrl makes one every 6h). Files ctrl downloads itself aren't
- * quarantined by Gatekeeper (it isn't a browser), so the unsigned app keeps launching.
+ * quarantined by Gatekeeper (it isn't a browser), so the non-notarized app keeps launching.
  *
  * Installing downloads the release zip, unpacks it next to the running app, quits, and a
  * detached script swaps the bundles once ctrl has exited, then relaunches it. The old
