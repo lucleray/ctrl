@@ -68,7 +68,7 @@ const cursor: ArgSpec = { name: "cursor", type: "string", description: "`next` f
 const harnessArg: ArgSpec = { name: "harness", type: "enum", values: ["opencode", "fx"], description: "Harness" }
 
 const spaceSettingFlags: ArgSpec[] = [
-  { name: "directory", type: "string", description: "Folder new sessions start in; \"\" clears it (back to ~)" },
+  { name: "directory", type: "string", description: "Folder new sessions start in; \"\" clears it (back to the defaultDirectory setting, else ~)" },
   {
     name: "harness",
     type: "enum",
@@ -753,7 +753,7 @@ export const OBJECTS: Record<string, string> = {
   name: string
   index: number              // position in the sidebar, 0 = top
   collapsed: boolean
-  directory: string | null   // folder new sessions start in; null = ~
+  directory: string | null   // folder new sessions start in; null = defaultDirectory setting, else ~
   harness: "opencode" | "fx" | null   // null = app default
   model: string | null       // opencode model ref, "<provider>/<model>[#<variant>]"
   fxModel: string | null     // fx model ref, "<model>[#<effort>]"

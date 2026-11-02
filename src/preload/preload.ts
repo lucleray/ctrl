@@ -39,6 +39,7 @@ const api: CtrlApi = {
   uninstallCli: () => ipcRenderer.invoke("cli:uninstall"),
   updateSpace: (id, patch) => ipcRenderer.invoke("space:update", id, patch),
   pickSpaceFolder: (id) => ipcRenderer.invoke("space:pick-folder", id),
+  pickDefaultFolder: () => ipcRenderer.invoke("settings:pick-folder"),
   listModels: (harness, directory) => ipcRenderer.invoke("models:list", harness, directory),
   moveSpace: (id, index) => ipcRenderer.invoke("space:move", id, index),
   renameSession: (sessionID, title) => ipcRenderer.invoke("session:rename", sessionID, title),

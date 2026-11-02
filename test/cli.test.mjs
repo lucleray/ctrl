@@ -362,3 +362,17 @@ describe("child sessions", () => {
     assert.deepEqual(["ses_kid", "ses_grandkid"].map(where), [null, null])
   })
 })
+
+describe("settings set defaultDirectory", () => {
+  test("expands ~ and relative paths, refuses missing folders, clears with \"\"", async () => {
+    const host = fakeHost({ adapters: () => [] })
+    host.setSettings = (patch) => Object.assign(host.store.data.settings, patch)
+    const handlers = createHandlers(host)
+    const set = (value, caller = {}) =>
+      handlers["settings set"]({ key: "defaultDirectory", value }, { v: 1, command: "settings set", args: {}, caller }, {})
+    assert.equal(set("~").value, (await import("node:os")).homedir())
+    assert.equal(set(".", { cwd: tmp }).value, tmp)
+    assert.throws(() => set(join(tmp, "missing")), { code: "NOT_FOUND" })
+    assert.equal(set("").value, null)
+  })
+})

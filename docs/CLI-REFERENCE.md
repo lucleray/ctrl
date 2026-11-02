@@ -448,7 +448,7 @@ ctrl space create <name> [--index <n>] [--directory <directory>] [--harness open
 |---|---|
 | `<name>` | Name · required |
 | `--index <n>` | Position, 0 = top |
-| `--directory <directory>` | Folder new sessions start in; "" clears it (back to ~) |
+| `--directory <directory>` | Folder new sessions start in; "" clears it (back to the defaultDirectory setting, else ~) |
 | `--harness opencode\|fx\|default` | Harness for new sessions; `default` follows the app setting |
 | `--model <model>` | opencode model for new sessions, `<provider>/<model>[#<variant>]`; "" clears it |
 | `--fx-model <fx-model>` | fx model for new sessions, `<model>[#<effort>]`; "" clears it |
@@ -484,7 +484,7 @@ ctrl space set <space> [--directory <directory>] [--harness opencode|fx|default]
 | Argument | Meaning |
 |---|---|
 | `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
-| `--directory <directory>` | Folder new sessions start in; "" clears it (back to ~) |
+| `--directory <directory>` | Folder new sessions start in; "" clears it (back to the defaultDirectory setting, else ~) |
 | `--harness opencode\|fx\|default` | Harness for new sessions; `default` follows the app setting |
 | `--model <model>` | opencode model for new sessions, `<provider>/<model>[#<variant>]`; "" clears it |
 | `--fx-model <fx-model>` | fx model for new sessions, `<model>[#<effort>]`; "" clears it |
@@ -966,7 +966,7 @@ ctrl events [--type <type>...] [--session <session>...]
   name: string
   index: number              // position in the sidebar, 0 = top
   collapsed: boolean
-  directory: string | null   // folder new sessions start in; null = ~
+  directory: string | null   // folder new sessions start in; null = defaultDirectory setting, else ~
   harness: "opencode" | "fx" | null   // null = app default
   model: string | null       // opencode model ref, "<provider>/<model>[#<variant>]"
   fxModel: string | null     // fx model ref, "<model>[#<effort>]"
@@ -1014,6 +1014,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `tuiTheme` | string \| null | opencode TUI theme name; null follows opencode's cli.json (choices in `values`) |
 | `fontSize` | integer 9-24 | Terminal text size in px |
 | `defaultHarness` | "opencode" \| "fx" | Harness new sessions start with; spaces can override |
+| `defaultDirectory` | folder path \| null | Folder new sessions start in when their space doesn't set one; null = ~ |
 | `defaultModelEnabled` | boolean | Off: ctrl passes no model and the harness picks its own |
 | `defaultModel` | "<provider>/<model>[#<variant>]" \| {providerID,id,variant?} \| null | opencode model for new sessions, used when defaultModelEnabled |
 | `defaultFxModel` | "<model>[#<effort>]" \| {providerID:"fx",id,variant?} \| null | fx model for new sessions, used when defaultModelEnabled |

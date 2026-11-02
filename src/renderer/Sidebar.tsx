@@ -603,7 +603,7 @@ function SpaceGroup(props: {
             e.preventDefault()
             void window.ctrl.showSpaceMenu(space.id)
           }}
-          title={space.directory ?? "No folder set (sessions start in ~)"}
+          title={space.directory ?? "No folder set (follows Settings → Sessions → Folder)"}
         >
           <Icon name={open ? "folder-open" : "folder"} />
           <span className="label">{space.name}</span>

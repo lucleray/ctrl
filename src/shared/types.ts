@@ -143,6 +143,8 @@ export type Settings = {
   fontSize: number
   /** Harness for new sessions; spaces can override */
   defaultHarness: Harness
+  /** Folder new sessions start in when their space doesn't set one; null = ~ */
+  defaultDirectory: string | null
   /** opencode model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
   /** fx model for new sessions, same rules */
@@ -458,6 +460,8 @@ export type CtrlApi = {
   onUiPalette(cb: (query: string) => void): () => void
   updateSpace(id: string, patch: SpacePatch): Promise<void>
   pickSpaceFolder(id: string): Promise<void>
+  /** Settings → Sessions → Folder */
+  pickDefaultFolder(): Promise<void>
   listModels(harness: Harness, directory?: string): Promise<ModelChoices>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>

@@ -9,6 +9,7 @@ export type SettingType =
   | { kind: "bool" }
   | { kind: "int"; min: number; max: number }
   | { kind: "string"; nullable: true }
+  | { kind: "folder" }
   | { kind: "model"; harness: "opencode" | "fx" }
   | { kind: "sound" }
   | { kind: "accelerators" }
@@ -27,6 +28,11 @@ export const SETTING_KEYS: SettingKey[] = [
     key: "defaultHarness",
     type: { kind: "enum", values: ["opencode", "fx"] },
     description: "Harness new sessions start with; spaces can override",
+  },
+  {
+    key: "defaultDirectory",
+    type: { kind: "folder" },
+    description: "Folder new sessions start in when their space doesn't set one; null = ~",
   },
   {
     key: "defaultModelEnabled",
@@ -88,6 +94,8 @@ export function describeType(t: SettingType): string {
       return `integer ${t.min}-${t.max}`
     case "string":
       return "string | null"
+    case "folder":
+      return "folder path | null"
     case "model":
       return t.harness === "fx"
         ? '"<model>[#<effort>]" | {providerID:"fx",id,variant?} | null'

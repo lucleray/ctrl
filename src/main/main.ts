@@ -601,6 +601,12 @@ const openFxSession = (sessionID: string) => {
   })
 }
 
+/** Settings → Sessions → Folder, or ~. A missing folder falls back to ~ rather than failing the session. */
+const defaultDirectory = () => {
+  const dir = store.data.settings.defaultDirectory
+  return dir && existsSync(dir) ? dir : homedir()
+}
+
 /** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
 const harnessFor = (space?: Space): Harness => {
   const wanted = space?.harness ?? store.data.settings.defaultHarness
@@ -636,7 +642,7 @@ const newSession = async (
 ): Promise<{ id: string } | { pending: true; terminal: string }> => {
   const space = spaceID ? store.space(spaceID) : undefined
   harness ??= harnessFor(space)
-  const cwd = directory || space?.directory || homedir()
+  const cwd = directory || space?.directory || defaultDirectory()
   const model = modelOverride ?? modelFor(harness, space)
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
@@ -1099,10 +1105,20 @@ function registerIpc() {
     if (!space || !win) return
     const res = await dialog.showOpenDialog(win, {
       properties: ["openDirectory"],
-      defaultPath: space.directory || homedir(),
+      defaultPath: space.directory || defaultDirectory(),
     })
     if (res.canceled || !res.filePaths[0]) return
     store.patchSpace(id, { directory: res.filePaths[0] })
+    push()
+  })
+  ipcMain.handle("settings:pick-folder", async () => {
+    if (!win) return
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: defaultDirectory(),
+    })
+    if (res.canceled || !res.filePaths[0]) return
+    store.setSettings({ defaultDirectory: res.filePaths[0] })
     push()
   })
   ipcMain.handle("models:list", (_e, harness: Harness, directory?: string) =>
