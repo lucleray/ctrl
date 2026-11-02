@@ -237,6 +237,7 @@ ctrl session move <session> [--space <space>] [--parent <parent>]
 - Unarchives it, like the UI.
 - Pass --space, --parent or both. --parent without --space also moves it into the parent's space; a parent in another space works too (the sidebar shows a link to it instead of nesting).
 - A session can't go under itself or one of its own children (CONFLICT).
+- Its children (any depth) that were in the same space move with it, listed in `followed`; a child filed in another space stays there.
 
 | Argument | Meaning |
 |---|---|
@@ -244,7 +245,7 @@ ctrl session move <session> [--space <space>] [--parent <parent>]
 | `--space <space>` | Target space (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)), or `none` |
 | `--parent <parent>` | Parent session (selectors as for <session>), or `none` to make it top-level |
 
-**Returns:** `Session & {changed}`
+**Returns:** `Session & {changed, followed?}`
 
 ```bash
 ctrl session move ses_x --parent self
