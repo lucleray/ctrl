@@ -42,7 +42,8 @@ where it lives.
 - Fold / unfold spaces (state saved)
 - Move sessions between spaces by drag and drop, onto Recents to unassign, or via right-click → Move to
 - ⋯ menu: new session in space, rename, space settings, archive all sessions, delete space (`src/main/main.ts`)
-- Space settings for new sessions started from ctrl in that space: folder, harness, model (toggle + variant,
+- Space settings for new sessions started from ctrl in that space: folder (unset follows Settings → Sessions →
+  Folder), harness, model (toggle + variant,
   one per harness), instructions attached as an invisible session instruction (opencode only), ctrl
   instructions Default / On / Off
   (`src/renderer/SpaceSettings.tsx`)
@@ -87,7 +88,7 @@ where it lives.
 - ⌘P / ⌘K search palette: session titles (in memory) + full-text over message content via a SQLite FTS5
   index built in a utility process, for both harnesses (fx: tails each `events.jsonl` by byte offset)
   (`src/renderer/Palette.tsx`, `src/indexer/indexer.ts`, `src/main/search-db.ts`)
-- ⌘N new chat in your home folder, ⌘T new session in the current session's folder, space and harness
+- ⌘N new chat in the default folder (Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
 - Search and settings icons at the top of the sidebar
 
 ## Resources panel
@@ -158,7 +159,8 @@ where it lives.
 - Appearance: system / light / dark (`src/renderer/Settings.tsx`)
 - opencode TUI theme (built-in and custom themes)
 - Terminal text size
-- Sessions: harness for new sessions, what's installed, default model per harness (toggle, searchable
+- Sessions: harness for new sessions, what's installed, default folder for new sessions whose space has none
+  (unset = ~; e.g. one shared folder so opencode loads a single location instead of one per worktree), default model per harness (toggle, searchable
   picker grouped by provider, variant / effort picker) (`src/renderer/ModelPicker.tsx`)
 - ctrl instructions (on by default, Show text): an invisible instruction entry (`ctrl.cli`) on opencode sessions
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on

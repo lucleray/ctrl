@@ -454,7 +454,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     return value ?? null
   }
 
-  const parseValue = (raw: unknown, key: string, type: SettingType): unknown => {
+  const parseValue = (raw: unknown, key: string, type: SettingType, caller: CallerContext): unknown => {
     let value: unknown = raw
     if (typeof raw === "string") {
       try {
@@ -486,6 +486,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         }
         return value
       }
+      case "folder":
+        if (value === null || value === "") return null
+        if (typeof value !== "string") throw bad(describeType(type))
+        return folder(value, caller)
       case "model": {
         if (value === null || value === "") return null
         if (typeof value === "string") return parseModelArg(value, type.harness)
@@ -535,6 +539,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     tuiTheme: null,
     fontSize: FONT_SIZE.default,
     defaultHarness: "opencode",
+    defaultDirectory: null,
     defaultModelEnabled: false,
     defaultModel: null,
     defaultFxModel: null,
@@ -963,9 +968,9 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const k = findKey(String(args.key))
       return { key: k.key, value: readSetting(k) }
     },
-    "settings set": (args) => {
+    "settings set": (args, req) => {
       const k = findKey(String(args.key))
-      const value = parseValue(args.value, k.key, k.type)
+      const value = parseValue(args.value, k.key, k.type, req.caller)
       const before = JSON.stringify(readSetting(k))
       writeSetting(k, value)
       const after = readSetting(k)

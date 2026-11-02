@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   soundChoices: DEFAULT_SOUND_CHOICES,
   fontSize: FONT_SIZE.default,
   defaultHarness: "opencode",
+  defaultDirectory: null,
   defaultModel: null,
   defaultFxModel: null,
   defaultModelEnabled: false,

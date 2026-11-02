@@ -106,7 +106,10 @@ export function SpaceSettings({
           <div className="setting">
             <div>
               <div className="setting-title">Folder</div>
-              <div className="setting-desc">New sessions start here. {space.directory ? "" : "Defaults to ~."}</div>
+              <div className="setting-desc">New sessions start here.{" "}
+                {space.directory
+                  ? ""
+                  : `Follows Settings (${settings.defaultDirectory ? shortPath(settings.defaultDirectory) : "~"}).`}</div>
             </div>
             <div className="setting-actions">
               {space.directory && (

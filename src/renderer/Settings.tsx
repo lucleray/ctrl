@@ -25,6 +25,7 @@ import {
   SOUND_EVENTS,
   SYSTEM_SOUNDS,
 } from "../shared/types"
+import { shortPath } from "./format"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
 import { ShortcutSettings } from "./ShortcutSettings"
@@ -606,6 +607,35 @@ export function Settings({
           </div>
           <HarnessRow harness="opencode" check={state.opencode} server={state.opencodeServer} />
           <HarnessRow harness="fx" check={state.fx} />
+
+          <div className="setting">
+            <div>
+              <div className="setting-title">Folder</div>
+              <div className="setting-desc">
+                New sessions start here when their space doesn't set a folder. {settings.defaultDirectory ? "" : "Defaults to ~."}
+              </div>
+            </div>
+            <div className="setting-actions">
+              {settings.defaultDirectory && (
+                <span className="setting-path" title={settings.defaultDirectory}>
+                  {/* LRM marks keep slashes in place inside the rtl (start-ellipsis) box */}
+                  {`\u200e${shortPath(settings.defaultDirectory)}\u200e`}
+                </span>
+              )}
+              <button className="btn" onClick={() => void window.ctrl.pickDefaultFolder()}>
+                {settings.defaultDirectory ? "Change…" : "Choose…"}
+              </button>
+              {settings.defaultDirectory && (
+                <button
+                  className="icon-btn"
+                  title="Clear folder"
+                  onClick={() => void window.ctrl.setSettings({ defaultDirectory: null })}
+                >
+                  <Icon name="close" />
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="setting setting-with-sub">
             <div>
