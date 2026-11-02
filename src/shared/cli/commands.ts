@@ -221,7 +221,7 @@ export const COMMANDS: CommandSpec[] = [
       {
         name: "directory",
         type: "string",
-        description: "Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else ~)",
+        description: "Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~)",
       },
       {
         name: "model",

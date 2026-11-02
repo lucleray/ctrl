@@ -173,7 +173,7 @@ ctrl session new [--space <space>] [--parent <parent>] [--harness opencode|fx] [
 | `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else no space |
 | `--parent <parent>` | Parent session (selectors as for <session>), or `none`. Default: `self` when run from a session, else none |
 | `--harness opencode\|fx` | Harness (default: the parent's when --space is omitted, else the space's) |
-| `--directory <directory>` | Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else ~) |
+| `--directory <directory>` | Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~) |
 | `--model <model>` | Model, `<provider>/<model>[#<variant>]` (opencode) or `<model>[#<effort>]` (fx) |
 | `--title <title>` | Title (opencode: right away; fx: once fx lets go of it) |
 | `--prompt <prompt>` | First message, sent right away. `-` reads stdin (use it for long or multi-line prompts) |
