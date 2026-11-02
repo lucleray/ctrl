@@ -29,7 +29,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 
 | Feature | opencode | fx | Notes |
 |---|---|---|---|
-| Sessions in the sidebar, spaces, Recents | ✅ | ✅ | |
+| Sessions in the sidebar, spaces, Recents | ✅ | ✅ | opencode: sessions idle for 30+ days show once the Archived section opens, the palette searches or a CLI command runs |
 | Mix both kinds in one space | ✅ | ✅ | |
 | Archive / unarchive | ✅ | ✅ | ctrl-side; archiving also marks the session read |
 | Archived sessions open read-only | ✅ | ✅ | scrolling still works; Unarchive in the bar unlocks it |

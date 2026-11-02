@@ -378,6 +378,8 @@ const recheckOpencode = async () => {
   console.log(`[ctrl] opencode: ${JSON.stringify(opencodeCheck)}`)
   if (opencodeCheck.state === "ok" && !opencodeStarted) {
     opencodeStarted = true
+    // An open Archived section shows sessions the recent sync leaves out.
+    if (!store.data.ui.archivedCollapsed) void opencode.loadOlder()
     opencode.start().catch(report)
     const size = store.data.termSize ?? fxTerms.size
     terminal.start(size.cols, size.rows)
@@ -1150,6 +1152,7 @@ function registerIpc() {
   })
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)
+    if (patch.archivedCollapsed === false) void opencode.loadOlder()
     push()
     // The agents offer waits for the welcome screen, so it doesn't land on top of it.
     if (patch.onboarded && !store.data.ui.agentsPrompted) setTimeout(suggestAgents, 1500)
@@ -1270,7 +1273,11 @@ function registerIpc() {
   ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
   ipcMain.handle("session:new-child", (_e, parentID: string) => newChildSession(parentID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
-  ipcMain.handle("search", (_e, query: string) => search.search(query))
+  ipcMain.handle("search", (_e, query: string) => {
+    // Searching can surface any session, so the palette needs the older ones too.
+    void opencode.loadOlder()
+    return search.search(query)
+  })
   ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
     search
       .resources(sessionIDs)
@@ -1469,7 +1476,19 @@ const cliHost: CliHost = {
   },
 }
 
-const cliServer = new CliServer(SOCKET, createHandlers(cliHost))
+/** Agents can name any session, so the CLI sees older ones too: a one-time load, then free. */
+const withOlderSessions = (handlers: ReturnType<typeof createHandlers>) =>
+  Object.fromEntries(
+    Object.entries(handlers).map(([name, handler]) => [
+      name,
+      async (...args: Parameters<typeof handler>) => {
+        if (opencodeStarted) await opencode.loadOlder()
+        return handler(...args)
+      },
+    ]),
+  ) as ReturnType<typeof createHandlers>
+
+const cliServer = new CliServer(SOCKET, withOlderSessions(createHandlers(cliHost)))
 
 const openExternal = (url: string) => {
   let parsed: URL

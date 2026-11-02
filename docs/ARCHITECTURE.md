@@ -46,7 +46,10 @@ supports: [HARNESSES.md](HARNESSES.md).
 - The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs and the TUI's
   own sidebar are turned off there too).
 - The sidebar's session list (`src/main/opencode.ts`) does one full sync on launch and whenever the event stream
-  reconnects. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
+  reconnects, of the sessions updated in the last 30 days (300 per page). Older ones load once something can show
+  or name them: the Archived section opening, a palette search, any CLI command. Pending permissions and questions
+  are only asked for in the folders of running sessions: asking a folder makes opencode load it (config, plugins,
+  MCP connections), and every worktree that ever had a session would add one. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
   re-read only the session they're about (created, run started/ended), so an update costs the same with 50 or
   5,000 sessions.
 - Child sessions are ctrl's own too (`parents` in `state.json`, child → parent), not opencode's `parentID`,
