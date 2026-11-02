@@ -1239,7 +1239,7 @@ function registerIpc() {
     ]).popup({ window: win })
   })
   const move = (sessionID: string, spaceID: string | null) => {
-    store.assign(sessionID, spaceID)
+    store.assignTree(sessionID, spaceID)
     // Moving a session somewhere is a clear signal it's wanted again.
     if (store.data.archived[sessionID]) store.setArchived([sessionID], false)
     push()
@@ -1352,9 +1352,10 @@ const cliHost: CliHost = {
   openSession,
   renameSession,
   move: (id, spaceID) => {
-    store.assign(id, spaceID)
+    const moved = store.assignTree(id, spaceID)
     if (store.data.archived[id]) store.setArchived([id], false)
     push()
+    return moved
   },
   archive: (ids) => archive(ids, { toast: false }),
   unarchive: (ids) => {

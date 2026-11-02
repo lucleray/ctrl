@@ -14,6 +14,7 @@ import { configs } from "../scripts/build.mjs"
 const tmp = mkdtempSync(join(tmpdir(), "ctrl-test-"))
 const launcher = "dist/cli/ctrl"
 let createHandlers
+let Store
 
 before(async () => {
   const cli = configs.find((c) => c.outfile === "dist/cli/cli.cjs")
@@ -28,6 +29,9 @@ before(async () => {
     logLevel: "warning",
   })
   ;({ createHandlers } = createRequire(import.meta.url)(handlers))
+  const store = join(tmp, "store.cjs")
+  await esbuild.build({ entryPoints: ["src/main/store.ts"], outfile: store, bundle: true, platform: "node", format: "cjs", logLevel: "warning" })
+  ;({ Store } = createRequire(import.meta.url)(store))
 })
 
 after(() => rmSync(tmp, { recursive: true, force: true }))
@@ -232,6 +236,7 @@ function fakeHost(overrides = {}) {
       host.calls.push(["move", id, spaceID])
       if (spaceID) data.assignments[id] = spaceID
       else delete data.assignments[id]
+      return []
     },
     renameSession: async (id, title) => void (sessions.find((s) => s.id === id).title = title),
     prompt: async (id) => {
@@ -334,5 +339,26 @@ describe("child sessions", () => {
     const detached = await move({ session: "ses_kid", parent: "none" })
     assert.equal(detached.parentID, null)
     assert.equal(detached.spaceID, "spc_mine")
+  })
+
+  test("moving a session takes the children in its space along, not the ones filed elsewhere", () => {
+    const store = new Store(join(mkdtempSync(join(tmp, "store-")), "state.json"))
+    const a = store.createSpace("A")
+    const b = store.createSpace("B")
+    const c = store.createSpace("C")
+    for (const id of ["ses_root", "ses_kid", "ses_grandkid", "ses_other"]) store.assign(id, a)
+    store.assign("ses_away", c)
+    store.assign("ses_away_kid", c)
+    store.setParent("ses_kid", "ses_root")
+    store.setParent("ses_grandkid", "ses_kid")
+    store.setParent("ses_away", "ses_root")
+    store.setParent("ses_away_kid", "ses_away")
+    assert.deepEqual(store.assignTree("ses_root", b), ["ses_kid", "ses_grandkid"])
+    const where = (id) => store.data.assignments[id] ?? null
+    assert.deepEqual(["ses_root", "ses_kid", "ses_grandkid"].map(where), [b, b, b])
+    assert.equal(where("ses_other"), a)
+    assert.deepEqual(["ses_away", "ses_away_kid"].map(where), [c, c])
+    assert.deepEqual(store.assignTree("ses_kid", null), ["ses_grandkid"])
+    assert.deepEqual(["ses_kid", "ses_grandkid"].map(where), [null, null])
   })
 })

@@ -68,7 +68,8 @@ where it lives.
   space, folder and harness). Inside a space, children nest under their parent, with a chevron to fold them
   (folded parents show their children's most urgent status); siblings are ordered by their subtree's latest
   activity. Drop a session onto another one in a space to nest it (it joins that space); right-click → Open
-  parent / Detach from parent. A child whose parent is in another space, or archived, stays at the top of its
+  parent / Detach from parent. Moving a session to another space (menu, drag, CLI) takes its children along,
+  except those filed in a different space. A child whose parent is in another space, or archived, stays at the top of its
   space with a small link icon: hovering shows a card with the parent and its space, clicking opens the parent and reveals it in the sidebar (unfolds its space and parents, scrolls to it, flashes it). Recents and Archived stay flat. Children of
   a deleted session move up to its parent. Stored in `state.json` (`parents`), returned by the CLI
 - **Archived**: most recently archived first, 10 at a time with Show more, foldable (state saved)

@@ -59,7 +59,8 @@ export type CliHost = {
   }): Promise<{ id: string } | { pending: true; terminal: string }>
   openSession(sessionID: string): void
   renameSession(sessionID: string, title: string): Promise<void>
-  move(sessionID: string, spaceID: string | null): void
+  /** Moves it with the descendants that shared its space; returns those descendants. */
+  move(sessionID: string, spaceID: string | null): string[]
   /** No toast: the CLI returns an undo command instead (principle 8) */
   archive(sessionIDs: string[]): void
   unarchive(sessionIDs: string[]): void
@@ -773,8 +774,12 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
             ? (store.data.assignments[parent.id] ?? null)
             : (store.data.assignments[s.id] ?? null)
       const spaceChanged = (store.data.assignments[s.id] ?? null) !== target || !!store.data.archived[s.id]
-      if (spaceChanged) host.move(s.id, target)
-      return { ...sessionView(byID(s.id) ?? s), changed: spaceChanged || parentChanged }
+      const followed = spaceChanged ? host.move(s.id, target) : []
+      return {
+        ...sessionView(byID(s.id) ?? s),
+        changed: spaceChanged || parentChanged,
+        ...(followed.length ? { followed } : {}),
+      }
     },
     "session archive": (args, req) => {
       const ids = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]

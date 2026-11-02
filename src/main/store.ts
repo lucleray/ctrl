@@ -251,4 +251,30 @@ export class Store {
     else delete this.data.assignments[sessionID]
     this.save()
   }
+
+  /**
+   * Moves a session with its descendants that were in the same space, so the tree stays together.
+   * A child filed elsewhere stays put, with its own subtree. Returns the descendants that moved.
+   */
+  assignTree(sessionID: string, spaceID: string | null): string[] {
+    const from = this.data.assignments[sessionID] ?? null
+    const moved: string[] = []
+    const seen = new Set([sessionID])
+    const queue = [sessionID]
+    while (queue.length) {
+      const id = queue.shift()!
+      for (const [kid, parent] of Object.entries(this.data.parents)) {
+        if (parent !== id || seen.has(kid) || (this.data.assignments[kid] ?? null) !== from) continue
+        seen.add(kid)
+        moved.push(kid)
+        queue.push(kid)
+      }
+    }
+    for (const id of [sessionID, ...moved]) {
+      if (spaceID && this.space(spaceID)) this.data.assignments[id] = spaceID
+      else delete this.data.assignments[id]
+    }
+    this.save()
+    return moved
+  }
 }
