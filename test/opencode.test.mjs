@@ -98,3 +98,14 @@ test("loadOlder before the first sync is remembered, and is a no-op when nothing
   await svc.loadOlder()
   assert.equal(calls.list.length, 1)
 })
+
+test("loadOlder during a re-sync still ends with the older sessions loaded", async () => {
+  const { svc } = service(sessions(400))
+  await svc.sync()
+  await svc.loadOlder()
+  const resync = svc.sync()
+  const during = svc.loadOlder()
+  await Promise.all([resync, during])
+  await svc.loadOlder()
+  assert.equal(svc.sessions.length, 400)
+})

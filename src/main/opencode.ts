@@ -193,6 +193,8 @@ export class OpenCodeService {
   private async sync() {
     const client = this.client!
     const generation = ++this.generation
+    // Older sessions load again once this sync is done (wantOlder); asking before then waits for nothing.
+    this.olderStart = null
     this.olderLoad = null
     const [{ recent, older }, active] = await Promise.all([
       this.listRecent(),
@@ -209,6 +211,7 @@ export class OpenCodeService {
     if (generation !== this.generation) return
     this.infos = byID
     this.olderStart = older
+    this.olderLoad = null
     this.running = new Set(running)
     this.pending = pending
     this.rebuild()
