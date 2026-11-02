@@ -13,8 +13,15 @@ const MCP_DIR = process.env.CTRL_MCP_DIR || homedir()
 type Client = ReturnType<typeof OpenCode.make>
 type Event = { type: string; data?: Record<string, unknown> }
 
-/** Cap for the full sync on launch; sessions created afterwards are added on top. */
+/** Cap for the full sync on launch plus loadOlder(); sessions created afterwards are added on top. */
 const MAX_SESSIONS = 1000
+/** Page size for session.list, on every page (cursor pages fall back to 50 without it). */
+const PAGE_SIZE = 300
+/**
+ * The full sync only loads sessions updated this recently; older ones wait for loadOlder() (Archived
+ * section, palette search, CLI). Keeps launch and reconnects proportional to recent activity, not history.
+ */
+const RECENT_MS = 30 * 24 * 60 * 60_000
 /** Coalesce a burst of events for one session (execution end + idle) into one fetch. */
 const FETCH_DEBOUNCE_MS = 100
 
@@ -56,9 +63,10 @@ type Pending = { sessionID: string; detail: string }
  * Keeps the sidebar's session list in sync with opencode.
  *
  * One full sync on launch and after the event stream reconnects (events may
- * have been missed). After that, events patch the in-memory state directly, or
- * re-read just the session they're about, so the cost of an update doesn't grow
- * with the number of sessions.
+ * have been missed), of the sessions updated in the last RECENT_MS; older ones
+ * load on demand (loadOlder). After that, events patch the in-memory state
+ * directly, or re-read just the session they're about, so the cost of an update
+ * doesn't grow with the number of sessions.
  */
 export class OpenCodeService {
   client?: Client
@@ -84,6 +92,13 @@ export class OpenCodeService {
   private ending = new Set<string>()
   /** Deleted while a fetch was in flight: don't let the fetch bring it back. */
   private deleted = new Set<string>()
+  /** Where the recent sync stopped: the older sessions it already got, and the cursor for the rest. */
+  private olderStart: { head: SessionInfo[]; cursor: string | null } | null = null
+  private olderLoad: Promise<void> | null = null
+  /** loadOlder() was asked for: a re-sync loads the older sessions again. */
+  private wantOlder = false
+  /** Bumped by every full sync, so an older-load started before it doesn't merge stale data. */
+  private generation = 0
 
   constructor(private onChange: () => void) {}
 
@@ -174,21 +189,70 @@ export class OpenCodeService {
     }
   }
 
-  /** Full snapshot: every root session, which ones run, and what's waiting on you. */
+  /** Snapshot of recently updated root sessions, which ones run, and what's waiting on you. */
   private async sync() {
     const client = this.client!
-    const [all, active] = await Promise.all([
-      this.listAll(),
+    const generation = ++this.generation
+    // Older sessions load again once this sync is done (wantOlder); asking before then waits for nothing.
+    this.olderStart = null
+    this.olderLoad = null
+    const [{ recent, older }, active] = await Promise.all([
+      this.listRecent(),
       client.session.active().catch(() => ({}) as Record<string, unknown>),
     ])
-    const roots = all.filter((s) => !s.parentID && !s.time.archived)
-    const pending = await this.pendingInput([...new Set(roots.map((s) => s.location.directory))])
-    this.infos = new Map(roots.map((s) => [s.id, s]))
-    this.running = new Set(Object.keys(active))
+    const roots = recent.filter((s) => !s.parentID && !s.time.archived)
+    const byID = new Map(roots.map((s) => [s.id, s]))
+    // Only a running session can wait on you, so only their folders are asked. Asking a folder makes
+    // opencode load it (config, plugins, MCP), and every folder that ever had a session adds up.
+    const running = Object.keys(active)
+    const pending = await this.pendingInput([
+      ...new Set(running.flatMap((id) => byID.get(id)?.location.directory ?? [])),
+    ])
+    if (generation !== this.generation) return
+    this.infos = byID
+    this.olderStart = older
+    this.olderLoad = null
+    this.running = new Set(running)
     this.pending = pending
     this.rebuild()
     this.refreshMcpSoon()
-    console.log(`[ctrl] full sync: ${roots.length} sessions`)
+    console.log(`[ctrl] full sync: ${roots.length} recent sessions`)
+    if (this.wantOlder) void this.loadOlder()
+  }
+
+  /**
+   * Adds the sessions the full sync left out (not updated in RECENT_MS). Called when they're about to be
+   * shown or looked up; cheap once loaded, and a no-op before the first sync.
+   */
+  loadOlder(): Promise<void> {
+    this.wantOlder = true
+    const start = this.olderStart
+    if (!start || !this.client) return Promise.resolve()
+    this.olderLoad ??= (async () => {
+      const generation = this.generation
+      const found = [...start.head]
+      let cursor = start.cursor
+      try {
+        while (cursor && this.infos.size + found.length < MAX_SESSIONS) {
+          const res = await this.client!.session.list({ cursor, limit: PAGE_SIZE })
+          found.push(...res.data)
+          cursor = (res.data.length ? res.cursor.next : null) ?? null
+        }
+      } catch (err) {
+        console.error("[ctrl] loading older sessions failed", err)
+      }
+      if (generation !== this.generation) return
+      this.olderStart = null
+      let added = 0
+      for (const s of found) {
+        if (s.parentID || s.time.archived || this.infos.has(s.id) || this.deleted.has(s.id)) continue
+        this.infos.set(s.id, s)
+        added++
+      }
+      if (added) this.rebuild()
+      console.log(`[ctrl] loaded ${added} older sessions`)
+    })()
+    return this.olderLoad
   }
 
   /** Status changes arrive one server at a time (and per folder); re-list once per burst. */
@@ -216,15 +280,24 @@ export class OpenCodeService {
     await this.refreshMcp()
   }
 
-  private async listAll() {
-    const all: SessionInfo[] = []
-    let res = await this.client!.session.list({ parentID: "null", limit: 300 })
-    all.push(...res.data)
-    while (res.cursor.next && res.data.length > 0 && all.length < MAX_SESSIONS) {
-      res = await this.client!.session.list({ cursor: res.cursor.next })
-      all.push(...res.data)
+  /**
+   * Root sessions updated in the last RECENT_MS, newest first (opencode lists by update time). Stops at the
+   * first page that reaches older ones, and returns where it stopped so loadOlder() can pick up from there.
+   */
+  private async listRecent() {
+    const cutoff = Date.now() - RECENT_MS
+    const recent: SessionInfo[] = []
+    let res = await this.client!.session.list({ parentID: "null", limit: PAGE_SIZE })
+    while (true) {
+      const fresh = res.data.filter((s) => s.time.updated >= cutoff)
+      recent.push(...fresh)
+      const next = (res.data.length ? res.cursor.next : null) ?? null
+      if (fresh.length < res.data.length || !next || recent.length >= MAX_SESSIONS) {
+        const older = res.data.filter((s) => s.time.updated < cutoff)
+        return { recent, older: older.length || next ? { head: older, cursor: next } : null }
+      }
+      res = await this.client!.session.list({ cursor: next, limit: PAGE_SIZE })
     }
-    return all
   }
 
   private async pendingInput(directories: string[]) {

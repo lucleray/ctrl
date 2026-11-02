@@ -79,7 +79,9 @@ where it lives.
   reports of the processes ctrl runs, else `recovery.json` (turn in progress) or the last line of
   `events.jsonl`; read state kept by ctrl
   (`src/main/fx.ts`)
-- Sidebar list patched from opencode events instead of re-listing (`src/main/opencode.ts`); fx sessions
+- Sidebar list patched from opencode events instead of re-listing (`src/main/opencode.ts`). The sync on launch and
+  reconnect loads opencode sessions updated in the last 30 days and checks pending input only in running sessions'
+  folders; older sessions load when the Archived section opens, the palette searches or a CLI command runs; fx sessions
   from one scan of `~/.fx/sessions`, then an fs watcher re-reads only the folder that changed (`src/main/fx.ts`)
 
 ## Navigation & search
