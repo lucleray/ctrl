@@ -1752,7 +1752,50 @@ body.resizing .terminal-pane.active {
   justify-content: space-between;
   font-size: 14px;
   font-weight: 600;
-  padding: 2px 4px 8px 10px;
+  padding: 2px 4px 8px 4px;
+}
+
+.resources-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 2px;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.resources-toggle:hover {
+  background: var(--hover);
+}
+
+.resources-toggle .icon {
+  color: var(--icon);
+}
+
+.resources-toggle .count {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* Folded to its header: a small pill in the corner, the terminal stays readable underneath. */
+.resources.collapsed {
+  width: auto;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.resources.collapsed .resources-header {
+  gap: 8px;
+  padding: 0;
+}
+
+.resources.collapsed .segmented,
+.resources.collapsed .scroll {
+  display: none;
 }
 
 .icon-btn.on {

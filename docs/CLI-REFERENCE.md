@@ -641,7 +641,7 @@ What's on screen: current session, terminal, panels, window
 ctrl ui get
 ```
 
-**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
+**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
 
 ### ui home
 
@@ -675,18 +675,18 @@ ctrl ui window show|hide|raise
 
 ### ui resources
 
-Opens or closes the resources panel *(changes state)*
+Opens, closes, folds or unfolds the resources panel *(changes state)*
 
 ```text
-ctrl ui resources open|close|toggle [--scope session|space]
+ctrl ui resources open|close|toggle|fold|unfold [--scope session|space]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `open\|close\|toggle` | What to do with the panel · required |
+| `open\|close\|toggle\|fold\|unfold` | What to do with the panel: fold shrinks it to its title, unfold shows the links again (both leave it open or closed) · required |
 | `--scope session\|space` | Links of the current session or of its whole space |
 
-**Returns:** `{open, scope}`
+**Returns:** `{open, collapsed, scope}`
 
 ### ui sidebar
 

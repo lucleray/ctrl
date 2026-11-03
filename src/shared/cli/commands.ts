@@ -517,7 +517,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "What's on screen: current session, terminal, panels, window",
     args: [],
     returns:
-      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
+      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
   },
   {
     name: "ui home",
@@ -546,12 +546,12 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "ui resources",
-    summary: "Opens or closes the resources panel",
+    summary: "Opens, closes, folds or unfolds the resources panel",
     args: [
-      { name: "action", type: "enum", values: ["open", "close", "toggle"], positional: true, required: true, placeholder: "open|close|toggle", description: "What to do with the panel" },
+      { name: "action", type: "enum", values: ["open", "close", "toggle", "fold", "unfold"], positional: true, required: true, placeholder: "open|close|toggle|fold|unfold", description: "What to do with the panel: fold shrinks it to its title, unfold shows the links again (both leave it open or closed)" },
       { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space" },
     ],
-    returns: "{open, scope}",
+    returns: "{open, collapsed, scope}",
     mutates: true,
   },
   {

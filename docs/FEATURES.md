@@ -98,6 +98,9 @@ where it lives.
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable,
   hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
+- Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
+  the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
+  `ctrl ui resources fold|unfold`
 - Resource adapters, one file per service in `src/shared/adapters/`, registered in `adapters/index.ts`: each
   declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are

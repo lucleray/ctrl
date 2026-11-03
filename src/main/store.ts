@@ -9,6 +9,7 @@ const DEFAULT_UI: UiState = {
   resourcesOpen: true,
   resourcesWidth: 300,
   resourcesScope: "session",
+  resourcesCollapsed: false,
 }
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",

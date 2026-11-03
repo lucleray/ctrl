@@ -999,7 +999,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         currentSessionID: host.currentSessionID(),
         activeTerminal: host.activeTermID(),
         sidebarWidth: ui.sidebarWidth,
-        resources: { open: ui.resourcesOpen, scope: ui.resourcesScope, width: ui.resourcesWidth },
+        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, scope: ui.resourcesScope, width: ui.resourcesWidth },
         recentsCollapsed: ui.recentsCollapsed,
         archivedCollapsed: ui.archivedCollapsed,
         window: host.window(),
@@ -1014,9 +1014,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "ui window": (args) => host.window(args.action),
     "ui resources": (args) => {
       const ui = store.data.ui
-      const open = args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
-      host.setUi({ resourcesOpen: open, ...(args.scope ? { resourcesScope: args.scope } : {}) })
-      return { open, scope: store.data.ui.resourcesScope }
+      const fold = args.action === "fold" || args.action === "unfold"
+      const open = fold ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
+      const collapsed = fold ? args.action === "fold" : ui.resourcesCollapsed
+      host.setUi({ resourcesOpen: open, resourcesCollapsed: collapsed, ...(args.scope ? { resourcesScope: args.scope } : {}) })
+      return { open, collapsed, scope: store.data.ui.resourcesScope }
     },
     "ui sidebar": (args) => {
       const width = Math.max(200, Math.min(520, Number(args.width)))
