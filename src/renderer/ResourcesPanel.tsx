@@ -79,6 +79,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
         <button
           className="resources-toggle"
           title={collapsed ? "Expand" : "Collapse"}
+          aria-expanded={!collapsed}
           onClick={() => void window.ctrl.setUi({ resourcesCollapsed: !collapsed })}
         >
           <Icon name={collapsed ? "chevron-right" : "chevron-down"} />
