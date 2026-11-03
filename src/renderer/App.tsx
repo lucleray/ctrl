@@ -30,6 +30,7 @@ const EMPTY: AppState = {
     resourcesWidth: 300,
     resourcesScope: "session",
     resourcesCollapsed: false,
+    resourcesDocked: false,
   },
   settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false },
   themes: { builtin: [], custom: [] },
@@ -182,6 +183,18 @@ export function App() {
     [create, cancelHints],
   )
 
+  const showResources = state.ui.resourcesOpen && !settings && !editingSpace && ready && !onboarding
+  // Floating, it sits over the terminal inside main; docked, it's a column next to main.
+  const resources = (
+    <ResourcesPanel
+      state={state}
+      onClose={() => {
+        void window.ctrl.setUi({ resourcesOpen: false })
+        terminal.current?.focus()
+      }}
+    />
+  )
+
   return (
     <div className="app">
       <Sidebar
@@ -259,16 +272,9 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && !settings && !editingSpace && ready && !onboarding && (
-          <ResourcesPanel
-            state={state}
-            onClose={() => {
-              void window.ctrl.setUi({ resourcesOpen: false })
-              terminal.current?.focus()
-            }}
-          />
-        )}
+        {showResources && !state.ui.resourcesDocked && resources}
       </main>
+      {showResources && state.ui.resourcesDocked && resources}
       {palette && (
         <Palette
           key={paletteQuery}

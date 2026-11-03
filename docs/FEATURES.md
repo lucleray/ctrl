@@ -101,6 +101,9 @@ where it lives.
 - Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
   the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
   `ctrl ui resources fold|unfold`
+- Dock button in the panel's header: turns the card into a column on the right, the terminal narrows instead of
+  being covered. Resizable (`ui.resourcesWidth`), folds to a thin side tab with the link count. Click again to
+  float it back. Remembered across restarts (`ui.resourcesDocked`), agents switch with `ctrl ui resources dock|float`
 - Resource adapters, one file per service in `src/shared/adapters/`, registered in `adapters/index.ts`: each
   declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are

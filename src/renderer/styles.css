@@ -1308,6 +1308,11 @@ button {
   -webkit-app-region: no-drag;
 }
 
+.resize-handle.left {
+  right: auto;
+  left: -4px;
+}
+
 .resize-handle::after {
   content: "";
   position: absolute;
@@ -1795,6 +1800,73 @@ body.resizing .terminal-pane.active {
 
 .resources.collapsed .segmented,
 .resources.collapsed .scroll {
+  display: none;
+}
+
+.resources-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Docked: a column next to the terminal, like the sidebar on the other side. The terminal narrows instead. */
+.resources.docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  flex-shrink: 0;
+  width: 300px;
+  max-height: none;
+  padding: 14px 8px 8px;
+  background: var(--sidebar-bg);
+  backdrop-filter: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.resources.docked .scroll {
+  min-height: 0;
+}
+
+/* Keeps the window draggable from the top of the column, like .main-drag. */
+.resources-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  -webkit-app-region: drag;
+}
+
+/* Docked and folded: a thin side tab with the title running down it. */
+.resources.docked.collapsed {
+  width: 40px;
+  padding: 14px 4px 8px;
+  border-radius: 0;
+}
+
+.resources.docked.collapsed .resources-header {
+  flex-direction: column;
+}
+
+.resources.docked.collapsed .resources-toggle {
+  flex-direction: column;
+  height: auto;
+  padding: 6px 4px;
+  gap: 6px;
+}
+
+.resources.docked.collapsed .resources-toggle > span:first-of-type {
+  writing-mode: vertical-rl;
+}
+
+.resources.docked.collapsed .resources-toggle .count {
+  margin-left: 0;
+}
+
+.resources.docked.collapsed .resources-actions {
   display: none;
 }
 
