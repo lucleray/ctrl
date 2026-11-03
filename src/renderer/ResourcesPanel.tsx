@@ -10,9 +10,9 @@ const PAGE_SIZE = 8
 
 /**
  * Resources of the current session's scope, refetched when the indexer reports
- * changes in it. While shown, main keeps their live details fresh and pushes them.
+ * changes in it. While shown unfolded, main keeps their live details fresh and pushes them.
  */
-function useResources(sessionIDs: string[]) {
+function useResources(sessionIDs: string[], watching: boolean) {
   const [items, setItems] = useState<ResourceItem[]>([])
   const key = sessionIDs.join(",")
   useEffect(() => {
@@ -20,7 +20,6 @@ function useResources(sessionIDs: string[]) {
     const ids = key ? key.split(",") : []
     const load = () => void window.ctrl.listResources(ids).then((r) => live && setItems(r))
     load()
-    window.ctrl.watchResources(ids)
     const inScope = new Set(ids)
     const offChanged = window.ctrl.onResourcesChanged((changed) => {
       if (!changed || changed.some((id) => inScope.has(id))) load()
@@ -32,9 +31,14 @@ function useResources(sessionIDs: string[]) {
       live = false
       offChanged()
       offMeta()
-      window.ctrl.watchResources([])
     }
   }, [key])
+  // Folded, the pill only needs the count: no live fetches for links nobody sees.
+  useEffect(() => {
+    if (!watching) return
+    window.ctrl.watchResources(key ? key.split(",") : [])
+    return () => window.ctrl.watchResources([])
+  }, [key, watching])
   return items
 }
 
@@ -49,7 +53,8 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
     return Object.keys(state.assignments).filter((id) => state.assignments[id] === space.id)
   }, [current, scope, space, state.assignments])
 
-  const fetched = useResources(sessionIDs)
+  const collapsed = state.ui.resourcesCollapsed
+  const fetched = useResources(sessionIDs, !collapsed)
   // Referenced sessions get their title and state from the sidebar's list, so renames, archiving
   // and deletes show up without reindexing. Archiving only hides a session: the reference stays.
   const items = useMemo(() => {
@@ -67,8 +72,6 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
       ),
     [items],
   )
-
-  const collapsed = state.ui.resourcesCollapsed
 
   return (
     <aside className={`resources${collapsed ? " collapsed" : ""}`}>
