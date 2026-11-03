@@ -641,7 +641,7 @@ What's on screen: current session, terminal, panels, window
 ctrl ui get
 ```
 
-**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
+**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,docked,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
 
 ### ui home
 
@@ -675,18 +675,18 @@ ctrl ui window show|hide|raise
 
 ### ui resources
 
-Opens, closes, folds or unfolds the resources panel *(changes state)*
+Opens, closes, folds, unfolds, docks or floats the resources panel *(changes state)*
 
 ```text
-ctrl ui resources open|close|toggle|fold|unfold [--scope session|space]
+ctrl ui resources open|close|toggle|fold|unfold|dock|float [--scope session|space]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `open\|close\|toggle\|fold\|unfold` | What to do with the panel: fold shrinks it to its title, unfold shows the links again (both leave it open or closed) · required |
+| `open\|close\|toggle\|fold\|unfold\|dock\|float` | What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed) · required |
 | `--scope session\|space` | Links of the current session or of its whole space |
 
-**Returns:** `{open, collapsed, scope}`
+**Returns:** `{open, collapsed, docked, scope}`
 
 ### ui sidebar
 

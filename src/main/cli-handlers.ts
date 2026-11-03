@@ -999,7 +999,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         currentSessionID: host.currentSessionID(),
         activeTerminal: host.activeTermID(),
         sidebarWidth: ui.sidebarWidth,
-        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, scope: ui.resourcesScope, width: ui.resourcesWidth },
+        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, docked: ui.resourcesDocked, scope: ui.resourcesScope, width: ui.resourcesWidth },
         recentsCollapsed: ui.recentsCollapsed,
         archivedCollapsed: ui.archivedCollapsed,
         window: host.window(),
@@ -1015,10 +1015,17 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "ui resources": (args) => {
       const ui = store.data.ui
       const fold = args.action === "fold" || args.action === "unfold"
-      const open = fold ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
+      const dock = args.action === "dock" || args.action === "float"
+      const open = fold || dock ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
       const collapsed = fold ? args.action === "fold" : ui.resourcesCollapsed
-      host.setUi({ resourcesOpen: open, resourcesCollapsed: collapsed, ...(args.scope ? { resourcesScope: args.scope } : {}) })
-      return { open, collapsed, scope: store.data.ui.resourcesScope }
+      const docked = dock ? args.action === "dock" : ui.resourcesDocked
+      host.setUi({
+        resourcesOpen: open,
+        resourcesCollapsed: collapsed,
+        resourcesDocked: docked,
+        ...(args.scope ? { resourcesScope: args.scope } : {}),
+      })
+      return { open, collapsed, docked, scope: store.data.ui.resourcesScope }
     },
     "ui sidebar": (args) => {
       const width = Math.max(200, Math.min(520, Number(args.width)))

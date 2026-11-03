@@ -115,6 +115,8 @@ export type UiState = {
   resourcesScope: "session" | "space"
   /** Resources panel folded to its header, so it stops covering the terminal */
   resourcesCollapsed: boolean
+  /** Resources panel docked as a column on the right (resizable, the terminal narrows) instead of floating over it */
+  resourcesDocked: boolean
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
   /** The "set up agents" toast (skills + ctrl command) was shown once already */
