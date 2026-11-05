@@ -609,6 +609,12 @@ const defaultDirectory = () => {
   return dir && existsSync(dir) ? dir : homedir()
 }
 
+/** Settings → Sessions → Space for new chats, or none. A deleted space counts as none. */
+const defaultSpaceID = () => {
+  const id = store.data.settings.defaultSpace
+  return id && store.space(id) ? id : null
+}
+
 /** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
 const harnessFor = (space?: Space): Harness => {
   const wanted = space?.harness ?? store.data.settings.defaultHarness
@@ -668,7 +674,7 @@ const newSession = async (
 /** New session in the current session's folder, space and harness; a plain new chat when none is open. */
 const newSessionHere = () => {
   const current = sessionByID(currentSessionID() ?? "")
-  if (!current) return newSession(null)
+  if (!current) return newSession(defaultSpaceID())
   return newSession(store.data.assignments[current.id] ?? null, current.directory, current.harness)
 }
 
@@ -692,7 +698,7 @@ const newSessionWith = async (text: string) => {
     else terminal.home()
     push()
   } else {
-    const created = await newSession(null)
+    const created = await newSession(defaultSpaceID())
     if (prompt && "pending" in created) {
       await fxTerms.ready(created.terminal)
       await typeIntoFx(created.terminal, prompt, false)
@@ -1270,7 +1276,7 @@ function registerIpc() {
     if (parentID) move(sessionID, store.data.assignments[parentID] ?? null)
     else push()
   })
-  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
+  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID ?? defaultSpaceID()))
   ipcMain.handle("session:new-child", (_e, parentID: string) => newChildSession(parentID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => {

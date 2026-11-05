@@ -149,6 +149,8 @@ export type Settings = {
   defaultHarness: Harness
   /** Folder new sessions start in when their space doesn't set one; null = ~ */
   defaultDirectory: string | null
+  /** Space new chats (⌘N, New chat) land in; null = no space. A deleted space falls back to none. */
+  defaultSpace: string | null
   /** opencode model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
   /** fx model for new sessions, same rules */

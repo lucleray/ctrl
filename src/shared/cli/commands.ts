@@ -210,7 +210,7 @@ export const COMMANDS: CommandSpec[] = [
       {
         name: "space",
         type: "string",
-        description: `Space to start it in (${SPACES}); omitted = the parent's space, else no space`,
+        description: `Space to start it in (${SPACES}); omitted = the parent's space, else the defaultSpace setting, else no space`,
       },
       {
         name: "parent",

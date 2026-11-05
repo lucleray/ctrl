@@ -295,6 +295,12 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
   const resolveTargetSpace = (selector: unknown, caller: CallerContext): string | null =>
     selector === "none" ? null : resolveSpace(selector, caller).id
 
+  /** The defaultSpace setting, or none when unset or the space is gone. */
+  const defaultSpaceID = () => {
+    const id = store.data.settings.defaultSpace
+    return id && store.space(id) ? id : null
+  }
+
   const parseModelArg = (value: string, harness: Harness): ModelRef => {
     const model = parseModel(value, harness)
     if (!model) {
@@ -486,6 +492,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         }
         return value
       }
+      case "space":
+        if (value === null || value === "" || value === "none") return null
+        if (typeof value !== "string") throw bad(describeType(type))
+        return resolveSpace(value, caller).id
       case "folder":
         if (value === null || value === "") return null
         if (typeof value !== "string") throw bad(describeType(type))
@@ -540,6 +550,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     fontSize: FONT_SIZE.default,
     defaultHarness: "opencode",
     defaultDirectory: null,
+    defaultSpace: null,
     defaultModelEnabled: false,
     defaultModel: null,
     defaultFxModel: null,
@@ -698,7 +709,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       // Without --space, a child starts like the sidebar's New child session: the parent's space, folder and harness.
       const fromParent = parent && args.space === undefined ? parent : undefined
       const spaceID =
-        args.space !== undefined ? resolveTargetSpace(args.space, req.caller) : fromParent ? (store.data.assignments[fromParent.id] ?? null) : null
+        args.space !== undefined
+          ? resolveTargetSpace(args.space, req.caller)
+          : fromParent
+            ? (store.data.assignments[fromParent.id] ?? null)
+            : defaultSpaceID()
       const space = spaceID ? store.space(spaceID) : undefined
       const harness: Harness | undefined = args.harness ?? fromParent?.harness
       const directory = args.directory ? folder(args.directory, req.caller) : fromParent?.directory

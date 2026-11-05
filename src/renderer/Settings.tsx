@@ -637,6 +637,24 @@ export function Settings({
             </div>
           </div>
 
+          <div className="setting">
+            <div>
+              <div className="setting-title">Space</div>
+              <div className="setting-desc">New chats (⌘N, New chat) start in this space and use its settings.</div>
+            </div>
+            <select
+              value={state.spaces.some((s) => s.id === settings.defaultSpace) ? settings.defaultSpace! : ""}
+              onChange={(e) => void window.ctrl.setSettings({ defaultSpace: e.target.value || null })}
+            >
+              <option value="">No space</option>
+              {state.spaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="setting setting-with-sub">
             <div>
               <div className="setting-title">Custom model</div>

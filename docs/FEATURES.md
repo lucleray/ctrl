@@ -90,7 +90,7 @@ where it lives.
 - ⌘P / ⌘K search palette: session titles (in memory) + full-text over message content via a SQLite FTS5
   index built in a utility process, for both harnesses (fx: tails each `events.jsonl` by byte offset)
   (`src/renderer/Palette.tsx`, `src/indexer/indexer.ts`, `src/main/search-db.ts`)
-- ⌘N new chat in the default folder (Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
+- ⌘N new chat in the default space (Settings → Sessions → Space, else none) and folder (the space's, else Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
 - Search and settings icons at the top of the sidebar
 
 ## Resources panel
@@ -168,7 +168,9 @@ where it lives.
 - opencode TUI theme (built-in and custom themes)
 - Terminal text size
 - Sessions: harness for new sessions, what's installed, default folder for new sessions whose space has none
-  (unset = ~; e.g. one shared folder so opencode loads a single location instead of one per worktree), default model per harness (toggle, searchable
+  (unset = ~; e.g. one shared folder so opencode loads a single location instead of one per worktree), default space for
+  new chats (⌘N, New chat, the palette, `ctrl session new` with no `--space` and no parent; a deleted space falls back to
+  none; the companion's opencode chats still start with no space, since nothing is created until you send), default model per harness (toggle, searchable
   picker grouped by provider, variant / effort picker) (`src/renderer/ModelPicker.tsx`)
 - ctrl instructions (on by default, Show text): an invisible instruction entry (`ctrl.cli`) on opencode sessions
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on
