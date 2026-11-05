@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type { CompanionApi, CompanionGroup, CompanionSession, CompanionView } from "../../companion/types"
 import { age } from "../format"
 import { Icon } from "../icons"
@@ -10,8 +10,31 @@ declare global {
   }
 }
 
+/** Same delay as the main window's ⌘ hints (jump.ts): a quick ⌃1 doesn't flash them. */
+const HOLD_MS = 300
+const HintsShown = createContext(false)
+
+/** True while ⌃ is held on its own in any app (after HOLD_MS). */
+function useHints() {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const off = window.companion.onHold((held) => {
+      clearTimeout(timer)
+      if (held) timer = setTimeout(() => setShown(true), HOLD_MS)
+      else setShown(false)
+    })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
+  }, [])
+  return shown
+}
+
 export function Companion() {
   const [view, setView] = useState<CompanionView | null>(null)
+  const hints = useHints()
   const root = useRef<HTMLDivElement>(null)
 
   useEffect(() => window.companion.onView(setView), [])
@@ -66,7 +89,9 @@ export function Companion() {
         </button>
       )}
       {view?.groups.length ? (
-        <Sections groups={view.groups} />
+        <HintsShown.Provider value={hints}>
+          <Sections groups={view.groups} />
+        </HintsShown.Provider>
       ) : (
         <div className="empty">
           {!ctx
@@ -141,11 +166,14 @@ function FoldSection(props: { title: string; open: boolean; onToggle(): void; cl
 }
 
 function Row({ session: s }: { session: CompanionSession }) {
+  const hints = useContext(HintsShown)
   return (
     <button
       className="row session companion-session"
       onClick={() => window.companion.open(s.id)}
-      title={[s.title, s.exact ? undefined : `Mentioned ${s.via} in the same channel`].filter(Boolean).join("\n")}
+      title={[s.title, s.exact ? undefined : `Mentioned ${s.via} in the same channel`, s.jump && `⌃${s.jump}`]
+        .filter(Boolean)
+        .join("\n")}
     >
       {s.harness === "fx" && <span className="harness-tag">fx</span>}
       <span className="label">{s.title || "Untitled"}</span>
@@ -154,7 +182,13 @@ function Row({ session: s }: { session: CompanionSession }) {
           <Icon name="hash" />
         </span>
       )}
-      {s.status === "idle" || s.archived ? <span className="meta">{age(s.last)}</span> : <StatusIcon status={s.status} />}
+      {hints && s.jump ? (
+        <kbd className="jump-hint">⌃{s.jump}</kbd>
+      ) : s.status === "idle" || s.archived ? (
+        <span className="meta">{age(s.last)}</span>
+      ) : (
+        <StatusIcon status={s.status} />
+      )}
     </button>
   )
 }

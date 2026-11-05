@@ -205,6 +205,10 @@ ctrl-context (Swift) ──JSON line on change──► Companion (main) ──v
 - **New session from screen:** the New button and the global shortcut (`globalShortcut`, registered only while
   on, and paused while Settings records a shortcut) both call `host.newSession(url)`; main types the URL into
   a new chat without sending it.
+- **⌃1–9:** main numbers the rows it sends and keeps exactly `Ctrl+1…Ctrl+n` registered (`globalShortcut`), so
+  rows coming and going register or free keys. The ⌃ hold comes from the helper: a global `flagsChanged`
+  monitor (needs Accessibility, and `NSApp.run()` rather than a bare run loop) prints `{"type":"hold"}` when
+  ⌃ alone goes down or up; the page shows the hints after 300ms, like the main window's ⌘.
 - The helper is built by `scripts/build.mjs` (universal, `swiftc`, only when its source changed) into
   `dist/companion/` and shipped in `Contents/Resources/companion`. `ctrl-context --once --debug` prints what
   it sees in the frontmost app after 3s (`--app <bundle id>` reads a background app, without hover).

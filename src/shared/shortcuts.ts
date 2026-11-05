@@ -61,9 +61,10 @@ export function commandFor(accel: string, overrides: ShortcutOverrides = {}): Co
   return COMMANDS.find((c) => bindings(c.id, overrides).includes(accel))?.id
 }
 
-/** ⌘1–9 jump to sessions; ⌘Q quits. */
+/** ⌘1–9 jump to sessions, ⌃1–9 to the ctrl Companion's; ⌘Q quits. */
 export function reservedReason(accel: string): string | undefined {
   if (/^Cmd\+[1-9]$/.test(accel)) return "⌘1–9 jump to sessions"
+  if (/^Ctrl\+[1-9]$/.test(accel)) return "⌃1–9 jump to the ctrl Companion's sessions"
   if (accel === "Cmd+Q") return "⌘Q quits ctrl"
 }
 
