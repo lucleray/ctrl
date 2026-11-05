@@ -216,6 +216,7 @@ function fakeHost(overrides = {}) {
         else delete data.parents[id]
         return true
       },
+      withDescendants: (ids) => Store.prototype.withDescendants.call({ data }, ids),
     },
     sessions: () => sessions,
     currentSessionID: () => null,
@@ -360,6 +361,27 @@ describe("child sessions", () => {
     assert.deepEqual(["ses_away", "ses_away_kid"].map(where), [c, c])
     assert.deepEqual(store.assignTree("ses_kid", null), ["ses_grandkid"])
     assert.deepEqual(["ses_kid", "ses_grandkid"].map(where), [null, null])
+  })
+})
+
+describe("archiving", () => {
+  test("archiving a session takes its sub-sessions along, and the undo brings them back", () => {
+    const host = fakeHost({
+      archive: (ids) => {
+        host.calls.push(["archive", ids])
+        for (const id of ids) host.store.data.archived[id] = 1
+      },
+    })
+    const s = { harness: "opencode", title: "", directory: "/", status: "idle", updated: 1 }
+    host.sessions().push(...["ses_root", "ses_kid", "ses_grandkid", "ses_other"].map((id) => ({ ...s, id })))
+    Object.assign(host.store.data.parents, { ses_kid: "ses_root", ses_grandkid: "ses_kid" })
+    host.store.data.archived.ses_grandkid = 1
+    const args = { session: ["ses_root"] }
+    const out = createHandlers(host)["session archive"](args, { v: 1, command: "session archive", args, caller: {} }, {})
+    assert.deepEqual(host.calls, [["archive", ["ses_root", "ses_kid"]]])
+    assert.deepEqual(out.archived, ["ses_root", "ses_kid", "ses_grandkid"])
+    assert.equal(out.undo, "ctrl session unarchive ses_root ses_kid")
+    assert.equal(host.store.data.archived.ses_other, undefined)
   })
 })
 

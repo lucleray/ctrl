@@ -867,9 +867,12 @@ const latestUndo = () => {
   return [...undos].reverse().find(([, u]) => u.expires > now)?.[0]
 }
 
-/** `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8). */
+/**
+ * Children come along (and come back on undo).
+ * `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8).
+ */
 const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
-  const ids = sessionIDs.filter((id) => !store.data.archived[id])
+  const ids = store.withDescendants(sessionIDs).filter((id) => !store.data.archived[id])
   if (!ids.length) return
   const current = currentSessionID()
   const wasCurrent = current && ids.includes(current) ? current : null
@@ -888,12 +891,16 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
   }
   push()
   if (!withToast) return
-  const title = ids.length === 1 ? sessionByID(ids[0])?.title : undefined
+  // One session asked for (its children may have come along): name it.
+  const asked = sessionIDs.length === 1 && ids.includes(sessionIDs[0]) ? sessionIDs[0] : undefined
+  const title = asked ? sessionByID(asked)?.title : undefined
+  const children = ids.length - 1
+  const named = title ? `Archived “${title}”` : "Archived chat"
   toast(
     {
       icon: "archive",
-      message: ids.length === 1 ? (title ? `Archived “${title}”` : "Archived chat") : `Archived ${ids.length} chats`,
-      viewSessionID: ids.length === 1 ? ids[0] : undefined,
+      message: asked ? (children ? `${named} and ${children} sub-session${children > 1 ? "s" : ""}` : named) : `Archived ${ids.length} chats`,
+      viewSessionID: asked,
     },
     {
       undo: () => {
