@@ -6,6 +6,7 @@
 //
 //   {"type":"permission","trusted":false}
 //   {"type":"context","app":"Slack","bundleId":"…","title":"…","label":"#chan","urls":["https://…"]}
+//   {"type":"hold","ctrl":true}   ⌃ alone pressed or released, from any app (the companion's ⌃1–9 hints)
 //
 // Everything runs on the main thread: the process does nothing else, AX calls
 // time out after 150ms, and NSAppleScript wants the main thread.
@@ -533,6 +534,7 @@ final class Watcher {
         if trusted != lastTrusted {
             lastTrusted = trusted
             emit(["type": "permission", "trusted": trusted])
+            if trusted { ControlHold.start() }
         }
         guard !busy, let app = NSWorkspace.shared.frontmostApplication else { return }
         // ctrl itself (the companion or the main window): keep showing what was there before.
@@ -545,6 +547,27 @@ final class Watcher {
         if ctx != last {
             last = ctx
             emit(ctx.json(includeDebug: false))
+        }
+    }
+}
+
+// MARK: - ⌃ held
+
+/// Reports ⌃ held on its own (no ⌥⇧⌘), so the companion can show its ⌃1–9 hints like the main window's ⌘1–9.
+/// A global monitor sees other apps' keys only with Accessibility (it starts once granted) and needs NSApp.run().
+enum ControlHold {
+    static var monitor: Any?
+    static var held = false
+
+    static func start() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
+            let flags = event.modifierFlags.intersection([.control, .option, .shift, .command])
+            let now = flags == .control
+            if now != held {
+                held = now
+                emit(["type": "hold", "ctrl": now])
+            }
         }
     }
 }
@@ -580,4 +603,6 @@ NSWorkspace.shared.notificationCenter.addObserver(
 ) { _ in watcher.tick() }
 Timer.scheduledTimer(withTimeInterval: Double(option("--interval") ?? "1") ?? 1, repeats: true) { _ in watcher.tick() }
 watcher.tick()
-RunLoop.main.run()
+// An app run loop, not RunLoop.main: global event monitors are delivered through NSApp. No Dock icon.
+NSApplication.shared.setActivationPolicy(.prohibited)
+NSApp.run()
