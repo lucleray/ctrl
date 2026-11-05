@@ -1,5 +1,6 @@
 import {
   AdapterError,
+  byRecency,
   eachLimit,
   firstLine,
   host,
@@ -50,6 +51,8 @@ const slackThread: ResourceType = {
     title: `Thread · ${new Date(Number(d.ts.split(".")[0]) * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`,
     subtitle: `${d.workspace} · ${d.channel}`,
   }),
+  // Replies aren't fetched (yet): a thread counts as active while your sessions keep mentioning it.
+  stage: ({ last }, { now }) => byRecency(last, now),
 }
 
 const slackChannel: ResourceType = {

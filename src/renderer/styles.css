@@ -2321,3 +2321,212 @@ body.resizing .terminal-pane.active {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Board (src/renderer/Board.tsx): the resources of a space, or of every space, by whose turn it is. */
+.board {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  padding: 28px 24px 20px;
+  -webkit-app-region: no-drag;
+}
+
+.board-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.board-title h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.board-title select {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.board-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.board-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--hover);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.board-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 6px 10px;
+}
+
+.board-column-header::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.stage-you .board-column-header::before {
+  background: var(--tone-warn);
+}
+.stage-waiting .board-column-header::before {
+  background: var(--accent);
+}
+.stage-moving .board-column-header::before {
+  background: var(--tone-good);
+}
+
+.board-column-header .count {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.board-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px;
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+.board-card:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+}
+
+.stage-done .board-card {
+  opacity: 0.6;
+}
+
+.board-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.board-card-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.board-card-top .meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.board-card-reason {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.stage-you .board-card-reason {
+  color: var(--tone-warn);
+}
+
+.board-card-sessions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.board-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 60%;
+  padding: 1px 6px 1px 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--hover);
+}
+
+.board-session:hover {
+  color: var(--text);
+  background: var(--hover-strong);
+}
+
+.board-session .icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.board-session span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-more {
+  font-size: 11px;
+  color: var(--muted);
+}

@@ -183,6 +183,8 @@ type ResourceRow = {
   first: number
   last: number
   by_user: number
+  /** JSON array, board query only */
+  session_ids?: string
 }
 
 const toItem = (r: ResourceRow): ResourceItem => ({
@@ -195,11 +197,13 @@ const toItem = (r: ResourceRow): ResourceItem => ({
   first: r.first,
   last: r.last,
   sharedByYou: r.by_user === 1,
+  ...(r.session_ids ? { sessionIDs: JSON.parse(r.session_ids) } : {}),
 })
 
 export class ResourceReader {
   private query
   private byIDQuery
+  private withSessionsQuery
 
   constructor(db: DatabaseSync) {
     this.byIDQuery = db.prepare(`
@@ -222,6 +226,23 @@ export class ResourceReader {
       ORDER BY last DESC
       LIMIT ${RESOURCE_LIMIT}
     `)
+    this.withSessionsQuery = db.prepare(`
+      SELECT r.id, r.type, r.url, r.data,
+        count(*) AS mentions, count(DISTINCT m.session_id) AS sessions,
+        min(m.created) AS first, max(m.created) AS last, max(m.role = 'user') AS by_user,
+        json_group_array(DISTINCT m.session_id) AS session_ids
+      FROM resource_mentions m JOIN resources r ON r.id = m.resource_id
+      WHERE m.session_id IN (SELECT value FROM json_each(?))
+      GROUP BY r.id
+      ORDER BY last DESC
+      LIMIT ${RESOURCE_LIMIT}
+    `)
+  }
+
+  /** list() plus which of the sessions mention each resource (the board links cards back to them). */
+  listWithSessions(sessionIDs: string[]): ResourceItem[] {
+    if (!sessionIDs.length) return []
+    return (this.withSessionsQuery.all(JSON.stringify(sessionIDs)) as ResourceRow[]).map(toItem)
   }
 
   /** Resources mentioned in any of these sessions. Cost grows with their mentions, not with the whole index. */

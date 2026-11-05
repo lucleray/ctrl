@@ -1,6 +1,8 @@
-import type { Tone } from "../types"
+import type { ResourceMeta, Tone } from "../types"
 import {
   AdapterError,
+  byRecency,
+  type Placement,
   chip,
   chips,
   DAY,
@@ -52,6 +54,36 @@ const githubPr: ResourceType = {
   describe: (d) => ({ title: `${d.repo}#${d.number}` }),
   // Open and draft PRs (or not fetched yet) first, then merged, then closed.
   rank: (meta) => ({ merged: 1, closed: 2 })[meta?.fields?.state as string] ?? 0,
+  stage: ({ meta, last }, { me, now }) => prStage(meta?.missing ? undefined : meta?.fields, last, me, now),
+}
+
+type Fields = NonNullable<ResourceMeta["fields"]>
+
+/** Whose turn it is on a PR: yours (author or requested reviewer), a reviewer's, CI's, or nobody's. */
+function prStage(f: Fields | undefined, last: number, me: string | undefined, now: number): Placement {
+  if (!f?.state) return byRecency(last, now)
+  if (f.state === "merged") return { stage: "done", reason: "Merged" }
+  if (f.state === "closed") return { stage: "done", reason: "Closed" }
+  const same = (a: unknown) => !!me && typeof a === "string" && a.toLowerCase() === me.toLowerCase()
+  const reviewers = String(f.reviewers ?? "").split(",").filter(Boolean)
+  const waitingOn = reviewers.length ? `Waiting on ${reviewers.map((r) => `@${r}`).join(", ")}` : "Waiting on review"
+  // Without a login to compare, every PR counts as yours: the board is about your work.
+  const mine = !me || !f.author || same(f.author)
+  if (!mine) {
+    if (reviewers.some(same)) return { stage: "you", reason: "Your review is requested" }
+    if (f.review === "approved") return { stage: "waiting", reason: `Approved, @${f.author} to merge` }
+    return { stage: "waiting", reason: `@${f.author}'s PR` }
+  }
+  if (f.ci === "failure") return { stage: "you", reason: "CI failed" }
+  if (f.mergeable === "conflicting") return { stage: "you", reason: "Merge conflicts" }
+  if (f.review === "changes_requested") return { stage: "you", reason: "Changes requested" }
+  if (f.draft) return { stage: "moving", reason: f.ci === "pending" ? "Draft, CI running" : "Draft" }
+  if (f.review === "approved")
+    return f.ci === "pending" ? { stage: "moving", reason: "Approved, CI running" } : { stage: "you", reason: "Approved, ready to merge" }
+  if (reviewers.length) return { stage: "waiting", reason: waitingOn }
+  if (f.ci === "pending") return { stage: "moving", reason: "CI running" }
+  if (f.review === "review_required") return { stage: "you", reason: "No reviewer requested" }
+  return { stage: "you", reason: "Ready to merge" }
 }
 
 const githubIssue: ResourceType = {
@@ -68,6 +100,11 @@ const githubIssue: ResourceType = {
     }
   },
   describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+  stage: ({ meta, last }, { now }) => {
+    const state = meta?.fields?.state
+    if (!state) return byRecency(last, now)
+    return state === "open" ? { stage: "moving", reason: "Open" } : { stage: "done", reason: "Closed" }
+  },
 }
 
 const githubCommit: ResourceType = {
@@ -85,6 +122,13 @@ const githubCommit: ResourceType = {
     }
   },
   describe: (d) => ({ title: `${d.repo}@${d.sha.slice(0, 7)}` }),
+  // Commits only make the board while their CI needs watching.
+  stage: ({ meta }) =>
+    meta?.fields?.ci === "failure"
+      ? { stage: "you", reason: "CI failed" }
+      : meta?.fields?.ci === "pending"
+        ? { stage: "moving", reason: "CI running" }
+        : null,
 }
 
 const githubRepoType: ResourceType = {
@@ -103,7 +147,8 @@ const githubRepoType: ResourceType = {
 // ---------- live details (gh api graphql) ----------
 
 const PR_FIELDS = `title state isDraft reviewDecision mergeable additions deletions author { login }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } }`
 const ISSUE_FIELDS = `title state stateReason author { login }`
 const COMMIT_FIELDS = `messageHeadline statusCheckRollup { state } author { name user { login } }`
 
@@ -145,6 +190,12 @@ function pullRequest(n: Node, ref: string): Fetched {
     author: n.author?.login ?? null,
     additions: n.additions ?? null,
     deletions: n.deletions ?? null,
+    // Still pending review requests, comma-separated logins (teams by slug); null when none.
+    reviewers:
+      (n.reviewRequests?.nodes ?? [])
+        .map((r: Node) => r.requestedReviewer?.login ?? r.requestedReviewer?.slug)
+        .filter(Boolean)
+        .join(",") || null,
   }
   const meta = { title: n.title, subtitle: ref, details: [line(by(n.author?.login), `+${n.additions} −${n.deletions}`)], fields }
   // Merged is final; closed PRs can be reopened.

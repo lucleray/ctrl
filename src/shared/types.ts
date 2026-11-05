@@ -319,6 +319,8 @@ export type ResourceItem = {
   last: number
   /** You pasted it in a prompt (vs only the assistant mentioning it) */
   sharedByYou: boolean
+  /** Which of the queried sessions mention it (board only) */
+  sessionIDs?: string[]
   /** Live details from its adapter, when that adapter has a live part (src/shared/adapters) */
   meta?: ResourceMeta
 }
@@ -492,6 +494,10 @@ export type CtrlApi = {
   search(query: string): Promise<SearchResult>
   /** Resources mentioned in these sessions, most recently mentioned first */
   listResources(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** listResources() plus the sessions mentioning each one, for the board */
+  listBoard(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** Open the board on this space (space ⋯ menu) */
+  onBoardOpen(cb: (spaceID: string) => void): () => void
   /** Resources changed in these sessions; null = possibly all */
   onResourcesChanged(cb: (sessionIDs: string[] | null) => void): () => void
   /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */

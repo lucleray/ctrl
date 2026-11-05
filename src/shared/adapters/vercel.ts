@@ -1,6 +1,7 @@
 import type { Tone } from "../types"
 import {
   AdapterError,
+  byRecency,
   chip,
   chips,
   eachLimit,
@@ -63,6 +64,13 @@ const vercelDeployment: ResourceType = {
   },
   describe: (d) =>
     d.host ? { title: d.host } : { title: `${d.project} · ${d.deployment.slice(0, 9)}`, subtitle: d.team },
+  stage: ({ meta, last }, { now }) => {
+    const state = meta?.fields?.state
+    if (!state) return byRecency(last, now)
+    if (state === "error") return { stage: "you", reason: "Build failed" }
+    if (state === "building" || state === "initializing" || state === "queued") return { stage: "moving", reason: "Building" }
+    return { stage: "done", reason: state === "canceled" ? "Canceled" : "Ready" }
+  },
 }
 
 const vercelProject: ResourceType = {

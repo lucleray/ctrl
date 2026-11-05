@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
 import { ArchivedBanner } from "./ArchivedBanner"
+import { Board, type BoardScope } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
@@ -55,6 +56,7 @@ export function App() {
   const [paletteQuery, setPaletteQuery] = useState("")
   const [settings, setSettings] = useState(false)
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
+  const [board, setBoard] = useState<BoardScope | null>(null)
   const editingSpace = state.spaces.find((s) => s.id === spaceSettingsID)
   // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
   const { hints, cancel: cancelHints } = useJumpHints((n) => {
@@ -81,6 +83,7 @@ export function App() {
   const open = useCallback((id: string) => {
     setSettings(false)
     setSpaceSettingsID(null)
+    setBoard(null)
     void window.ctrl.openSession(id)
     terminal.current?.focus()
   }, [])
@@ -88,6 +91,7 @@ export function App() {
   const create = useCallback(async (spaceID: string | null) => {
     setSettings(false)
     setSpaceSettingsID(null)
+    setBoard(null)
     await window.ctrl.newSession(spaceID)
     terminal.current?.focus()
   }, [])
@@ -126,10 +130,36 @@ export function App() {
     () =>
       window.ctrl.onSpaceSettings((id) => {
         setSettings(false)
+        setBoard(null)
         setSpaceSettingsID(id)
       }),
     [],
   )
+
+  useEffect(
+    () =>
+      window.ctrl.onBoardOpen((id) => {
+        setSettings(false)
+        setSpaceSettingsID(null)
+        setBoard(id)
+      }),
+    [],
+  )
+
+  const toggleBoard = useCallback(() => {
+    setSettings(false)
+    setSpaceSettingsID(null)
+    setBoard((b) => {
+      if (b) return null
+      const { currentSessionID, assignments } = stateRef.current
+      return (currentSessionID && assignments[currentSessionID]) || "all"
+    })
+  }, [])
+
+  const closeBoard = useCallback(() => {
+    setBoard(null)
+    terminal.current?.focus()
+  }, [])
 
   // The CLI (`ctrl ui settings`, `ctrl ui palette`) drives these too.
   useEffect(
@@ -137,6 +167,7 @@ export function App() {
       window.ctrl.onUiSettings((open) => {
         setPalette(false)
         setSpaceSettingsID(null)
+        setBoard(null)
         setSettings(open)
       }),
     [],
@@ -166,6 +197,7 @@ export function App() {
         if (name === "settings") {
           setPalette(false)
           setSpaceSettingsID(null)
+          setBoard(null)
           setSettings((v) => !v)
         }
         if (name === "new-chat") {
@@ -183,7 +215,7 @@ export function App() {
     [create, cancelHints],
   )
 
-  const showResources = state.ui.resourcesOpen && !settings && !editingSpace && ready && !onboarding
+  const showResources = state.ui.resourcesOpen && !settings && !editingSpace && !board && ready && !onboarding
   // Floating, it sits over the terminal inside main; docked, it's a column next to main.
   const resources = (
     <ResourcesPanel
@@ -205,8 +237,11 @@ export function App() {
         onSearch={() => setPalette(true)}
         onSettings={() => {
           setSpaceSettingsID(null)
+          setBoard(null)
           setSettings((v) => !v)
         }}
+        boardOpen={!!board}
+        onToggleBoard={toggleBoard}
         onToggleResources={() => void window.ctrl.setUi({ resourcesOpen: !state.ui.resourcesOpen })}
         footer={
           <Toasts
@@ -261,6 +296,9 @@ export function App() {
               terminal.current?.focus()
             }}
           />
+        )}
+        {board && !settings && !editingSpace && ready && !onboarding && (
+          <Board state={state} scope={board} onScope={setBoard} onClose={closeBoard} onOpenSession={open} />
         )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (

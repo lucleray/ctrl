@@ -1213,6 +1213,7 @@ function registerIpc() {
       { type: "separator" },
       { label: "Rename", click: () => send("space:rename", id) },
       { label: "Space settings…", click: () => send("space:settings", id) },
+      { label: "Board", click: () => send("board:open", id) },
       { type: "separator" },
       {
         label: "Archive all sessions",
@@ -1294,6 +1295,12 @@ function registerIpc() {
   ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
     search
       .resources(sessionIDs)
+      .filter((r) => adapters.shows(r.type))
+      .map((r) => ({ ...r, meta: adapters.get(r) })),
+  )
+  ipcMain.handle("resources:board", (_e, sessionIDs: string[]) =>
+    search
+      .resourcesWithSessions(sessionIDs)
       .filter((r) => adapters.shows(r.type))
       .map((r) => ({ ...r, meta: adapters.get(r) })),
   )

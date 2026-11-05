@@ -62,6 +62,10 @@ export class Search {
     return this.resourceReader?.list(sessionIDs) ?? []
   }
 
+  resourcesWithSessions(sessionIDs: string[]): ResourceItem[] {
+    return this.resourceReader?.listWithSessions(sessionIDs) ?? []
+  }
+
   resourcesByID(ids: string[]): ResourceItem[] {
     return this.resourceReader?.byIDs(ids) ?? []
   }
