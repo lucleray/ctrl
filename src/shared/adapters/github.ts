@@ -50,6 +50,8 @@ const githubPr: ResourceType = {
     }
   },
   describe: (d) => ({ title: `${d.repo}#${d.number}` }),
+  // Open and draft PRs (or not fetched yet) first, then merged, then closed.
+  rank: (meta) => ({ merged: 1, closed: 2 })[meta?.fields?.state as string] ?? 0,
 }
 
 const githubIssue: ResourceType = {

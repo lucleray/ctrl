@@ -30,7 +30,7 @@ import {
   type UiState,
   type UpdateStatus,
 } from "../shared/types"
-import { parseResourceUrl, resourceType } from "../shared/adapters"
+import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
 import type { Handler } from "./cli-server"
 import type { Store } from "./store"
@@ -602,7 +602,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
   const limitArg = (value: unknown) => Math.max(1, Math.min(500, Number(value ?? 100)))
   const waitArg = (value: unknown, fallback: number) => Math.max(0, Math.min(60_000, Number(value ?? fallback)))
 
-  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first. */
+  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first, open PRs before merged/closed ones. */
   const scopedResources = (args: Record<string, any>, caller: CallerContext) => {
     let ids: string[]
     if (args.space !== undefined) {
@@ -613,7 +613,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     // A session never lists itself as a reference, like the panel.
     if (ids.length === 1) items = items.filter((r) => r.type !== "session" || r.data.id !== ids[0])
     if (args.type?.length) items = items.filter((r) => args.type.includes(r.type))
-    return items.slice(0, limitArg(args.limit))
+    return byRank(items).slice(0, limitArg(args.limit))
   }
 
   const resourceView = (r: ResourceItem & { meta?: ResourceMeta }, sessions: Map<string, SessionItem>, pending = false) => {
@@ -645,7 +645,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     const pending = new Set(result.pending)
     const sessions = sessionMap()
     return {
-      items: items.map((r) => resourceView({ ...r, meta: host.resourceMeta(r) }, sessions, pending.has(r.id))),
+      // Re-ranked: a PR fetched for the first time may turn out merged.
+      items: byRank(items.map((r) => ({ ...r, meta: host.resourceMeta(r) }))).map((r) =>
+        resourceView(r, sessions, pending.has(r.id)),
+      ),
       errors: result.errors,
     }
   }

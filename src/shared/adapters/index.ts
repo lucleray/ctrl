@@ -1,3 +1,4 @@
+import type { ResourceMeta } from "../types"
 import type { AdapterMode, ParsedResource, ResourceAdapter, ResourceType } from "./adapter"
 import { github } from "./github"
 import { linear } from "./linear"
@@ -35,6 +36,12 @@ export function adapterMode(adapter: ResourceAdapter, modes: Record<string, Adap
 
 const TYPES = new Map(RESOURCE_TYPES.map((t) => [t.id, t]))
 export const resourceType = (id: string) => TYPES.get(id)
+
+/** Sorted by their type's rank (open PRs before merged ones), keeping the given order otherwise. */
+export function byRank<T extends { type: string; meta?: ResourceMeta }>(items: T[]): T[] {
+  const rank = (i: T) => TYPES.get(i.type)?.rank?.(i.meta) ?? 0
+  return [...items].sort((a, b) => rank(a) - rank(b))
+}
 
 /** The first type that recognizes the URL, or null. */
 export function parseResourceUrl(raw: string): ParsedResource | null {
