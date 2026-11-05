@@ -780,7 +780,7 @@ ctrl search <query>... [--limit <n>] [--archived]
 
 ### resources list
 
-Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first
+Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)
 
 ```text
 ctrl resources list [--session <session>...] [--space <space>] [--type <type>...] [--limit <n>] [--cached] [--wait <n>]

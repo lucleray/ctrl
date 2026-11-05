@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { RESOURCE_TYPES, resourceType } from "../shared/adapters"
+import { byRank, RESOURCE_TYPES, resourceType } from "../shared/adapters"
 import type { AdapterInfo, AppState, Harness, ResourceItem, ResourceMeta } from "../shared/types"
 import { harnessOf } from "../shared/types"
 import { age, shortPath } from "./format"
@@ -79,7 +79,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
   const target = current ? harnessOf(current) : "opencode"
   const groups = useMemo(
     () =>
-      RESOURCE_TYPES.map((type) => ({ type, items: items.filter((i) => i.type === type.id) })).filter(
+      RESOURCE_TYPES.map((type) => ({ type, items: byRank(items.filter((i) => i.type === type.id)) })).filter(
         (g) => g.items.length,
       ),
     [items],

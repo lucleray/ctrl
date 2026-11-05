@@ -98,6 +98,8 @@ where it lives.
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable,
   hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
+- Most recently mentioned first, except pull requests: open and draft ones come first, then merged, then closed
+  (each type's `rank`, `src/shared/adapters`). `ctrl resources list` orders them the same way
 - Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
   the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
   `ctrl ui resources fold|unfold`
