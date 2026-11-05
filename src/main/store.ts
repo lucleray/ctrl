@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: FONT_SIZE.default,
   defaultHarness: "opencode",
   defaultDirectory: null,
+  defaultSpace: null,
   defaultModel: null,
   defaultFxModel: null,
   defaultModelEnabled: false,

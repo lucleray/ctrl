@@ -170,7 +170,7 @@ ctrl session new [--space <space>] [--parent <parent>] [--harness opencode|fx] [
 
 | Argument | Meaning |
 |---|---|
-| `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else no space |
+| `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else the defaultSpace setting, else no space |
 | `--parent <parent>` | Parent session (selectors as for <session>), or `none`. Default: `self` when run from a session, else none |
 | `--harness opencode\|fx` | Harness (default: the parent's when --space is omitted, else the space's) |
 | `--directory <directory>` | Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~) |
@@ -1015,6 +1015,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `fontSize` | integer 9-24 | Terminal text size in px |
 | `defaultHarness` | "opencode" \| "fx" | Harness new sessions start with; spaces can override |
 | `defaultDirectory` | folder path \| null | Folder new sessions start in when their space doesn't set one; null = ~ |
+| `defaultSpace` | space id \| name:<name> \| null | Space new chats land in (⌘N, New chat, `session new` with no --space and no parent); null = no space |
 | `defaultModelEnabled` | boolean | Off: ctrl passes no model and the harness picks its own |
 | `defaultModel` | "<provider>/<model>[#<variant>]" \| {providerID,id,variant?} \| null | opencode model for new sessions, used when defaultModelEnabled |
 | `defaultFxModel` | "<model>[#<effort>]" \| {providerID:"fx",id,variant?} \| null | fx model for new sessions, used when defaultModelEnabled |

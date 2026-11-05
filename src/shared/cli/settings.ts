@@ -10,6 +10,7 @@ export type SettingType =
   | { kind: "int"; min: number; max: number }
   | { kind: "string"; nullable: true }
   | { kind: "folder" }
+  | { kind: "space" }
   | { kind: "model"; harness: "opencode" | "fx" }
   | { kind: "sound" }
   | { kind: "accelerators" }
@@ -33,6 +34,11 @@ export const SETTING_KEYS: SettingKey[] = [
     key: "defaultDirectory",
     type: { kind: "folder" },
     description: "Folder new sessions start in when their space doesn't set one; null = ~",
+  },
+  {
+    key: "defaultSpace",
+    type: { kind: "space" },
+    description: "Space new chats land in (⌘N, New chat, `session new` with no --space and no parent); null = no space",
   },
   {
     key: "defaultModelEnabled",
@@ -96,6 +102,8 @@ export function describeType(t: SettingType): string {
       return "string | null"
     case "folder":
       return "folder path | null"
+    case "space":
+      return "space id | name:<name> | null"
     case "model":
       return t.harness === "fx"
         ? '"<model>[#<effort>]" | {providerID:"fx",id,variant?} | null'
