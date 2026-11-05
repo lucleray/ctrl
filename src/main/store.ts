@@ -9,6 +9,8 @@ const DEFAULT_UI: UiState = {
   resourcesOpen: true,
   resourcesWidth: 300,
   resourcesScope: "session",
+  resourcesCollapsed: false,
+  resourcesDocked: false,
 }
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
@@ -21,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontSize: FONT_SIZE.default,
   defaultHarness: "opencode",
   defaultDirectory: null,
+  defaultSpace: null,
   defaultModel: null,
   defaultFxModel: null,
   defaultModelEnabled: false,
@@ -123,6 +126,22 @@ export class Store {
       seen.add(id)
     }
     return false
+  }
+
+  /** The given sessions plus all their children, grandchildren, etc. */
+  withDescendants(sessionIDs: string[]) {
+    const out = new Set(sessionIDs)
+    const children = new Map<string, string[]>()
+    for (const [id, p] of Object.entries(this.data.parents)) children.set(p, [...(children.get(p) ?? []), id])
+    const queue = [...out]
+    while (queue.length) {
+      for (const child of children.get(queue.pop()!) ?? []) {
+        if (out.has(child)) continue
+        out.add(child)
+        queue.push(child)
+      }
+    }
+    return [...out]
   }
 
   /** null detaches. Refuses cycles (a session under itself or one of its children). */

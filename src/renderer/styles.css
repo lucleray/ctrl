@@ -1308,6 +1308,11 @@ button {
   -webkit-app-region: no-drag;
 }
 
+.resize-handle.left {
+  right: auto;
+  left: -4px;
+}
+
 .resize-handle::after {
   content: "";
   position: absolute;
@@ -1752,7 +1757,117 @@ body.resizing .terminal-pane.active {
   justify-content: space-between;
   font-size: 14px;
   font-weight: 600;
-  padding: 2px 4px 8px 10px;
+  padding: 2px 4px 8px 4px;
+}
+
+.resources-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 2px;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.resources-toggle:hover {
+  background: var(--hover);
+}
+
+.resources-toggle .icon {
+  color: var(--icon);
+}
+
+.resources-toggle .count {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* Folded to its header: a small pill in the corner, the terminal stays readable underneath. */
+.resources.collapsed {
+  width: auto;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.resources.collapsed .resources-header {
+  gap: 8px;
+  padding: 0;
+}
+
+.resources.collapsed .segmented,
+.resources.collapsed .scroll {
+  display: none;
+}
+
+.resources-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Docked: a column next to the terminal, like the sidebar on the other side. The terminal narrows instead. */
+.resources.docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  flex-shrink: 0;
+  width: 300px;
+  max-height: none;
+  padding: 14px 8px 8px;
+  background: var(--sidebar-bg);
+  backdrop-filter: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.resources.docked .scroll {
+  min-height: 0;
+}
+
+/* Keeps the window draggable from the top of the column, like .main-drag. */
+.resources-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  -webkit-app-region: drag;
+}
+
+/* Docked and folded: a thin side tab with the title running down it. */
+.resources.docked.collapsed {
+  width: 40px;
+  padding: 14px 4px 8px;
+  border-radius: 0;
+}
+
+.resources.docked.collapsed .resources-header {
+  flex-direction: column;
+}
+
+.resources.docked.collapsed .resources-toggle {
+  flex-direction: column;
+  height: auto;
+  padding: 6px 4px;
+  gap: 6px;
+}
+
+.resources.docked.collapsed .resources-toggle > span:first-of-type {
+  writing-mode: vertical-rl;
+}
+
+.resources.docked.collapsed .resources-toggle .count {
+  margin-left: 0;
+}
+
+.resources.docked.collapsed .resources-actions {
+  display: none;
 }
 
 .icon-btn.on {

@@ -30,7 +30,7 @@ import {
   type UiState,
   type UpdateStatus,
 } from "../shared/types"
-import { parseResourceUrl, resourceType } from "../shared/adapters"
+import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
 import type { Handler } from "./cli-server"
 import type { Store } from "./store"
@@ -295,6 +295,12 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
   const resolveTargetSpace = (selector: unknown, caller: CallerContext): string | null =>
     selector === "none" ? null : resolveSpace(selector, caller).id
 
+  /** The defaultSpace setting, or none when unset or the space is gone. */
+  const defaultSpaceID = () => {
+    const id = store.data.settings.defaultSpace
+    return id && store.space(id) ? id : null
+  }
+
   const parseModelArg = (value: string, harness: Harness): ModelRef => {
     const model = parseModel(value, harness)
     if (!model) {
@@ -486,6 +492,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         }
         return value
       }
+      case "space":
+        if (value === null || value === "" || value === "none") return null
+        if (typeof value !== "string") throw bad(describeType(type))
+        return resolveSpace(value, caller).id
       case "folder":
         if (value === null || value === "") return null
         if (typeof value !== "string") throw bad(describeType(type))
@@ -540,6 +550,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     fontSize: FONT_SIZE.default,
     defaultHarness: "opencode",
     defaultDirectory: null,
+    defaultSpace: null,
     defaultModelEnabled: false,
     defaultModel: null,
     defaultFxModel: null,
@@ -591,7 +602,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
   const limitArg = (value: unknown) => Math.max(1, Math.min(500, Number(value ?? 100)))
   const waitArg = (value: unknown, fallback: number) => Math.max(0, Math.min(60_000, Number(value ?? fallback)))
 
-  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first. */
+  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first, open PRs before merged/closed ones. */
   const scopedResources = (args: Record<string, any>, caller: CallerContext) => {
     let ids: string[]
     if (args.space !== undefined) {
@@ -602,7 +613,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     // A session never lists itself as a reference, like the panel.
     if (ids.length === 1) items = items.filter((r) => r.type !== "session" || r.data.id !== ids[0])
     if (args.type?.length) items = items.filter((r) => args.type.includes(r.type))
-    return items.slice(0, limitArg(args.limit))
+    return byRank(items).slice(0, limitArg(args.limit))
   }
 
   const resourceView = (r: ResourceItem & { meta?: ResourceMeta }, sessions: Map<string, SessionItem>, pending = false) => {
@@ -634,7 +645,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     const pending = new Set(result.pending)
     const sessions = sessionMap()
     return {
-      items: items.map((r) => resourceView({ ...r, meta: host.resourceMeta(r) }, sessions, pending.has(r.id))),
+      // Re-ranked: a PR fetched for the first time may turn out merged.
+      items: byRank(items.map((r) => ({ ...r, meta: host.resourceMeta(r) }))).map((r) =>
+        resourceView(r, sessions, pending.has(r.id)),
+      ),
       errors: result.errors,
     }
   }
@@ -698,7 +712,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       // Without --space, a child starts like the sidebar's New child session: the parent's space, folder and harness.
       const fromParent = parent && args.space === undefined ? parent : undefined
       const spaceID =
-        args.space !== undefined ? resolveTargetSpace(args.space, req.caller) : fromParent ? (store.data.assignments[fromParent.id] ?? null) : null
+        args.space !== undefined
+          ? resolveTargetSpace(args.space, req.caller)
+          : fromParent
+            ? (store.data.assignments[fromParent.id] ?? null)
+            : defaultSpaceID()
       const space = spaceID ? store.space(spaceID) : undefined
       const harness: Harness | undefined = args.harness ?? fromParent?.harness
       const directory = args.directory ? folder(args.directory, req.caller) : fromParent?.directory
@@ -787,7 +805,8 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       }
     },
     "session archive": (args, req) => {
-      const ids = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const asked = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const ids = store.withDescendants(asked)
       const todo = ids.filter((id) => !store.data.archived[id])
       if (todo.length) host.archive(todo)
       return { archived: ids, changed: todo.length > 0, ...(todo.length ? { undo: `ctrl session unarchive ${todo.join(" ")}` } : {}) }
@@ -932,10 +951,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     },
     "space archive-all": (args, req) => {
       const space = resolveSpace(args.space, req.caller)
-      const ids = host
+      const inSpace = host
         .sessions()
-        .filter((s) => store.data.assignments[s.id] === space.id && !store.data.archived[s.id])
+        .filter((s) => store.data.assignments[s.id] === space.id)
         .map((s) => s.id)
+      const ids = store.withDescendants(inSpace).filter((id) => !store.data.archived[id])
       if (ids.length) host.archive(ids)
       return { archived: ids, ...(ids.length ? { undo: `ctrl session unarchive ${ids.join(" ")}` } : {}) }
     },
@@ -999,7 +1019,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         currentSessionID: host.currentSessionID(),
         activeTerminal: host.activeTermID(),
         sidebarWidth: ui.sidebarWidth,
-        resources: { open: ui.resourcesOpen, scope: ui.resourcesScope, width: ui.resourcesWidth },
+        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, docked: ui.resourcesDocked, scope: ui.resourcesScope, width: ui.resourcesWidth },
         recentsCollapsed: ui.recentsCollapsed,
         archivedCollapsed: ui.archivedCollapsed,
         window: host.window(),
@@ -1014,9 +1034,18 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "ui window": (args) => host.window(args.action),
     "ui resources": (args) => {
       const ui = store.data.ui
-      const open = args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
-      host.setUi({ resourcesOpen: open, ...(args.scope ? { resourcesScope: args.scope } : {}) })
-      return { open, scope: store.data.ui.resourcesScope }
+      const fold = args.action === "fold" || args.action === "unfold"
+      const dock = args.action === "dock" || args.action === "float"
+      const open = fold || dock ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
+      const collapsed = fold ? args.action === "fold" : ui.resourcesCollapsed
+      const docked = dock ? args.action === "dock" : ui.resourcesDocked
+      host.setUi({
+        resourcesOpen: open,
+        resourcesCollapsed: collapsed,
+        resourcesDocked: docked,
+        ...(args.scope ? { resourcesScope: args.scope } : {}),
+      })
+      return { open, collapsed, docked, scope: store.data.ui.resourcesScope }
     },
     "ui sidebar": (args) => {
       const width = Math.max(200, Math.min(520, Number(args.width)))

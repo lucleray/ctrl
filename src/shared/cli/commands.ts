@@ -210,7 +210,7 @@ export const COMMANDS: CommandSpec[] = [
       {
         name: "space",
         type: "string",
-        description: `Space to start it in (${SPACES}); omitted = the parent's space, else no space`,
+        description: `Space to start it in (${SPACES}); omitted = the parent's space, else the defaultSpace setting, else no space`,
       },
       {
         name: "parent",
@@ -290,7 +290,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "session archive",
-    summary: "Archives sessions (reply has the `undo` command)",
+    summary: "Archives sessions and their sub-sessions (reply has the `undo` command)",
+    details: ["Child sessions (and theirs) are archived too, and listed in `archived`."],
     args: [{ ...session("Sessions (selectors as for <session>)"), list: true, placeholder: "<session>..." }],
     returns: "{archived:[id], changed, undo?}",
     mutates: true,
@@ -517,7 +518,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "What's on screen: current session, terminal, panels, window",
     args: [],
     returns:
-      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
+      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,docked,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
   },
   {
     name: "ui home",
@@ -546,12 +547,12 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "ui resources",
-    summary: "Opens or closes the resources panel",
+    summary: "Opens, closes, folds, unfolds, docks or floats the resources panel",
     args: [
-      { name: "action", type: "enum", values: ["open", "close", "toggle"], positional: true, required: true, placeholder: "open|close|toggle", description: "What to do with the panel" },
+      { name: "action", type: "enum", values: ["open", "close", "toggle", "fold", "unfold", "dock", "float"], positional: true, required: true, placeholder: "open|close|toggle|fold|unfold|dock|float", description: "What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed)" },
       { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space" },
     ],
-    returns: "{open, scope}",
+    returns: "{open, collapsed, docked, scope}",
     mutates: true,
   },
   {
@@ -610,7 +611,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "resources list",
-    summary: "Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first",
+    summary: "Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)",
     details: [
       "Live details (`live`, with plain values in `live.fields`) are fetched like the resources panel does: only what's due by each adapter's cache policy (never fetched, mentioned again since, or past its max age; merged PRs never again), only for the returned items, through the service's own CLI (gh, vercel, slack-cli).",
       "Waits up to --wait ms for those fetches. Items still fetching come back with `pending: true` and their cached details; the next call has them.",

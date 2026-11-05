@@ -170,7 +170,7 @@ ctrl session new [--space <space>] [--parent <parent>] [--harness opencode|fx] [
 
 | Argument | Meaning |
 |---|---|
-| `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else no space |
+| `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else the defaultSpace setting, else no space |
 | `--parent <parent>` | Parent session (selectors as for <session>), or `none`. Default: `self` when run from a session, else none |
 | `--harness opencode\|fx` | Harness (default: the parent's when --space is omitted, else the space's) |
 | `--directory <directory>` | Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~) |
@@ -255,11 +255,13 @@ ctrl session move ses_x --space name:reviews
 
 ### session archive
 
-Archives sessions (reply has the `undo` command) *(changes state)*
+Archives sessions and their sub-sessions (reply has the `undo` command) *(changes state)*
 
 ```text
 ctrl session archive <session>...
 ```
+
+- Child sessions (and theirs) are archived too, and listed in `archived`.
 
 | Argument | Meaning |
 |---|---|
@@ -641,7 +643,7 @@ What's on screen: current session, terminal, panels, window
 ctrl ui get
 ```
 
-**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
+**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,docked,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
 
 ### ui home
 
@@ -675,18 +677,18 @@ ctrl ui window show|hide|raise
 
 ### ui resources
 
-Opens or closes the resources panel *(changes state)*
+Opens, closes, folds, unfolds, docks or floats the resources panel *(changes state)*
 
 ```text
-ctrl ui resources open|close|toggle [--scope session|space]
+ctrl ui resources open|close|toggle|fold|unfold|dock|float [--scope session|space]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `open\|close\|toggle` | What to do with the panel · required |
+| `open\|close\|toggle\|fold\|unfold\|dock\|float` | What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed) · required |
 | `--scope session\|space` | Links of the current session or of its whole space |
 
-**Returns:** `{open, scope}`
+**Returns:** `{open, collapsed, docked, scope}`
 
 ### ui sidebar
 
@@ -780,7 +782,7 @@ ctrl search <query>... [--limit <n>] [--archived]
 
 ### resources list
 
-Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first
+Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)
 
 ```text
 ctrl resources list [--session <session>...] [--space <space>] [--type <type>...] [--limit <n>] [--cached] [--wait <n>]
@@ -1015,6 +1017,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `fontSize` | integer 9-24 | Terminal text size in px |
 | `defaultHarness` | "opencode" \| "fx" | Harness new sessions start with; spaces can override |
 | `defaultDirectory` | folder path \| null | Folder new sessions start in when their space doesn't set one; null = ~ |
+| `defaultSpace` | space id \| name:<name> \| null | Space new chats land in (⌘N, New chat, `session new` with no --space and no parent); null = no space |
 | `defaultModelEnabled` | boolean | Off: ctrl passes no model and the harness picks its own |
 | `defaultModel` | "<provider>/<model>[#<variant>]" \| {providerID,id,variant?} \| null | opencode model for new sessions, used when defaultModelEnabled |
 | `defaultFxModel` | "<model>[#<effort>]" \| {providerID:"fx",id,variant?} \| null | fx model for new sessions, used when defaultModelEnabled |

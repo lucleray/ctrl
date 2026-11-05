@@ -56,7 +56,8 @@ where it lives.
 - Delete (right-click → Delete session), held back until the undo toast expires. fx: the session folder goes
   to the Trash
 - fx: right-click → Reveal session folder, Quit fx process
-- Archive / unarchive: hover button, right-click, ⌘W, or "Archive all sessions" on a space. Stored in
+- Archive / unarchive: hover button, right-click, ⌘W, or "Archive all sessions" on a space. Archiving a session
+  archives its sub-sessions too (undo brings them all back). Stored in
   ctrl's `state.json`, opencode is untouched (`src/main/store.ts`) apart from archiving marking the session
   read. Archived rows never show the unread / failed dot
 - Opening an archived session shows it read-only: a bar over the prompt says it's archived with an **Unarchive**
@@ -90,7 +91,7 @@ where it lives.
 - ⌘P / ⌘K search palette: session titles (in memory) + full-text over message content via a SQLite FTS5
   index built in a utility process, for both harnesses (fx: tails each `events.jsonl` by byte offset)
   (`src/renderer/Palette.tsx`, `src/indexer/indexer.ts`, `src/main/search-db.ts`)
-- ⌘N new chat in the default folder (Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
+- ⌘N new chat in the default space (Settings → Sessions → Space, else none) and folder (the space's, else Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
 - Search and settings icons at the top of the sidebar
 
 ## Resources panel
@@ -98,6 +99,14 @@ where it lives.
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable,
   hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
+- Most recently mentioned first, except pull requests: open and draft ones come first, then merged, then closed
+  (each type's `rank`, `src/shared/adapters`). `ctrl resources list` orders them the same way
+- Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
+  the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
+  `ctrl ui resources fold|unfold`
+- Dock button in the panel's header: turns the card into a column on the right, the terminal narrows instead of
+  being covered. Resizable (`ui.resourcesWidth`), folds to a thin side tab with the link count. Click again to
+  float it back. Remembered across restarts (`ui.resourcesDocked`), agents switch with `ctrl ui resources dock|float`
 - Resource adapters, one file per service in `src/shared/adapters/`, registered in `adapters/index.ts`: each
   declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are
@@ -166,7 +175,9 @@ where it lives.
 - opencode TUI theme (built-in and custom themes)
 - Terminal text size
 - Sessions: harness for new sessions, what's installed, default folder for new sessions whose space has none
-  (unset = ~; e.g. one shared folder so opencode loads a single location instead of one per worktree), default model per harness (toggle, searchable
+  (unset = ~; e.g. one shared folder so opencode loads a single location instead of one per worktree), default space for
+  new chats (⌘N, New chat, the palette, `ctrl session new` with no `--space` and no parent; a deleted space falls back to
+  none; the companion's opencode chats still start with no space, since nothing is created until you send), default model per harness (toggle, searchable
   picker grouped by provider, variant / effort picker) (`src/renderer/ModelPicker.tsx`)
 - ctrl instructions (on by default, Show text): an invisible instruction entry (`ctrl.cli`) on opencode sessions
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on

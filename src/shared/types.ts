@@ -113,6 +113,10 @@ export type UiState = {
   resourcesWidth: number
   /** Resources of the current session, or of every session in its space */
   resourcesScope: "session" | "space"
+  /** Resources panel folded to its header, so it stops covering the terminal */
+  resourcesCollapsed: boolean
+  /** Resources panel docked as a column on the right (resizable, the terminal narrows) instead of floating over it */
+  resourcesDocked: boolean
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
   /** The "set up agents" toast (skills + ctrl command) was shown once already */
@@ -145,6 +149,8 @@ export type Settings = {
   defaultHarness: Harness
   /** Folder new sessions start in when their space doesn't set one; null = ~ */
   defaultDirectory: string | null
+  /** Space new chats (⌘N, New chat) land in; null = no space. A deleted space falls back to none. */
+  defaultSpace: string | null
   /** opencode model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
   /** fx model for new sessions, same rules */

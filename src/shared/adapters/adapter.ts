@@ -39,6 +39,8 @@ export type ResourceType = {
   parse(url: URL): { identity: string; url: string; data: ResourceData } | null
   /** Display without fetching anything */
   describe(data: ResourceData): { title: string; subtitle?: string }
+  /** Order within the type, lowest first (ties keep newest mention first), from live details when known */
+  rank?(meta: ResourceMeta | undefined): number
 }
 
 /** A resource to fetch: its key, type and the fields its URL gave. */

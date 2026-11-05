@@ -609,6 +609,12 @@ const defaultDirectory = () => {
   return dir && existsSync(dir) ? dir : homedir()
 }
 
+/** Settings → Sessions → Space for new chats, or none. A deleted space counts as none. */
+const defaultSpaceID = () => {
+  const id = store.data.settings.defaultSpace
+  return id && store.space(id) ? id : null
+}
+
 /** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
 const harnessFor = (space?: Space): Harness => {
   const wanted = space?.harness ?? store.data.settings.defaultHarness
@@ -668,7 +674,7 @@ const newSession = async (
 /** New session in the current session's folder, space and harness; a plain new chat when none is open. */
 const newSessionHere = () => {
   const current = sessionByID(currentSessionID() ?? "")
-  if (!current) return newSession(null)
+  if (!current) return newSession(defaultSpaceID())
   return newSession(store.data.assignments[current.id] ?? null, current.directory, current.harness)
 }
 
@@ -692,7 +698,7 @@ const newSessionWith = async (text: string) => {
     else terminal.home()
     push()
   } else {
-    const created = await newSession(null)
+    const created = await newSession(defaultSpaceID())
     if (prompt && "pending" in created) {
       await fxTerms.ready(created.terminal)
       await typeIntoFx(created.terminal, prompt, false)
@@ -861,9 +867,12 @@ const latestUndo = () => {
   return [...undos].reverse().find(([, u]) => u.expires > now)?.[0]
 }
 
-/** `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8). */
+/**
+ * Children come along (and come back on undo).
+ * `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8).
+ */
 const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
-  const ids = sessionIDs.filter((id) => !store.data.archived[id])
+  const ids = store.withDescendants(sessionIDs).filter((id) => !store.data.archived[id])
   if (!ids.length) return
   const current = currentSessionID()
   const wasCurrent = current && ids.includes(current) ? current : null
@@ -882,12 +891,16 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
   }
   push()
   if (!withToast) return
-  const title = ids.length === 1 ? sessionByID(ids[0])?.title : undefined
+  // One session asked for (its children may have come along): name it.
+  const asked = sessionIDs.length === 1 && ids.includes(sessionIDs[0]) ? sessionIDs[0] : undefined
+  const title = asked ? sessionByID(asked)?.title : undefined
+  const children = ids.length - 1
+  const named = title ? `Archived “${title}”` : "Archived chat"
   toast(
     {
       icon: "archive",
-      message: ids.length === 1 ? (title ? `Archived “${title}”` : "Archived chat") : `Archived ${ids.length} chats`,
-      viewSessionID: ids.length === 1 ? ids[0] : undefined,
+      message: asked ? (children ? `${named} and ${children} sub-session${children > 1 ? "s" : ""}` : named) : `Archived ${ids.length} chats`,
+      viewSessionID: asked,
     },
     {
       undo: () => {
@@ -1270,7 +1283,7 @@ function registerIpc() {
     if (parentID) move(sessionID, store.data.assignments[parentID] ?? null)
     else push()
   })
-  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
+  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID ?? defaultSpaceID()))
   ipcMain.handle("session:new-child", (_e, parentID: string) => newChildSession(parentID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
   ipcMain.handle("search", (_e, query: string) => {
