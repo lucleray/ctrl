@@ -290,7 +290,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "session archive",
-    summary: "Archives sessions (reply has the `undo` command)",
+    summary: "Archives sessions and their sub-sessions (reply has the `undo` command)",
+    details: ["Child sessions (and theirs) are archived too, and listed in `archived`."],
     args: [{ ...session("Sessions (selectors as for <session>)"), list: true, placeholder: "<session>..." }],
     returns: "{archived:[id], changed, undo?}",
     mutates: true,

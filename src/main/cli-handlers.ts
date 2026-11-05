@@ -805,7 +805,8 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       }
     },
     "session archive": (args, req) => {
-      const ids = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const asked = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const ids = store.withDescendants(asked)
       const todo = ids.filter((id) => !store.data.archived[id])
       if (todo.length) host.archive(todo)
       return { archived: ids, changed: todo.length > 0, ...(todo.length ? { undo: `ctrl session unarchive ${todo.join(" ")}` } : {}) }
@@ -950,10 +951,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     },
     "space archive-all": (args, req) => {
       const space = resolveSpace(args.space, req.caller)
-      const ids = host
+      const inSpace = host
         .sessions()
-        .filter((s) => store.data.assignments[s.id] === space.id && !store.data.archived[s.id])
+        .filter((s) => store.data.assignments[s.id] === space.id)
         .map((s) => s.id)
+      const ids = store.withDescendants(inSpace).filter((id) => !store.data.archived[id])
       if (ids.length) host.archive(ids)
       return { archived: ids, ...(ids.length ? { undo: `ctrl session unarchive ${ids.join(" ")}` } : {}) }
     },

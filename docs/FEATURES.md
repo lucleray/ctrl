@@ -56,7 +56,8 @@ where it lives.
 - Delete (right-click → Delete session), held back until the undo toast expires. fx: the session folder goes
   to the Trash
 - fx: right-click → Reveal session folder, Quit fx process
-- Archive / unarchive: hover button, right-click, ⌘W, or "Archive all sessions" on a space. Stored in
+- Archive / unarchive: hover button, right-click, ⌘W, or "Archive all sessions" on a space. Archiving a session
+  archives its sub-sessions too (undo brings them all back). Stored in
   ctrl's `state.json`, opencode is untouched (`src/main/store.ts`) apart from archiving marking the session
   read. Archived rows never show the unread / failed dot
 - Opening an archived session shows it read-only: a bar over the prompt says it's archived with an **Unarchive**

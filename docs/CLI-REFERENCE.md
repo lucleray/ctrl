@@ -255,11 +255,13 @@ ctrl session move ses_x --space name:reviews
 
 ### session archive
 
-Archives sessions (reply has the `undo` command) *(changes state)*
+Archives sessions and their sub-sessions (reply has the `undo` command) *(changes state)*
 
 ```text
 ctrl session archive <session>...
 ```
+
+- Child sessions (and theirs) are archived too, and listed in `archived`.
 
 | Argument | Meaning |
 |---|---|
