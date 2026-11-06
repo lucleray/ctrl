@@ -2715,6 +2715,9 @@ body.resizing .terminal-pane.active {
 .board-filter .count {
   color: var(--muted);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: left;
 }
 
 .board-card-reason {
@@ -2762,6 +2765,7 @@ body.resizing .terminal-pane.active {
   text-decoration: line-through;
 }
 
-.board-filter.hidden .count {
-  display: none;
+.board-filter.hidden .count,
+.board-filter .count.zero {
+  visibility: hidden;
 }

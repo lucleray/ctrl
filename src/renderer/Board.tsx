@@ -220,7 +220,8 @@ function FilterRow(props: {
           >
             <span className="board-filter-dot" />
             {c.name}
-            {c.count > 0 && <span className="count">{c.count}</span>}
+            {/* Always there, so chips keep their width when counts change or the chip is hidden. */}
+            <span className={`count${c.count ? "" : " zero"}`}>{c.count}</span>
           </button>
         )
       })}
