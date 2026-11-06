@@ -17,6 +17,7 @@ type Outbound =
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
+  | { t: "new"; spaceID: string | null }
 type Inbound =
   | ({ t: "state" } & RemoteSnapshot)
   | { t: "open"; id: string; harness: Session["harness"] }
@@ -24,6 +25,7 @@ type Inbound =
   | { t: "reset" }
   | { t: "error"; message: string }
   | { t: "board"; cards: RemoteBoardCard[] }
+  | { t: "created"; id: string }
 
 const PALETTES = {
   opencode: {
@@ -42,6 +44,8 @@ const NEWLINE = "\x1b[13;2u"
 
 let snapshot: RemoteSnapshot = { dark: true, spaces: [], sessions: [] }
 let board: RemoteBoardCard[] | null = null
+/** Section whose new session is being created ("" = Recents), to show it's working */
+let creating: string | null = null
 let connected = false
 let ws: WebSocket | undefined
 let retry = 0
@@ -110,7 +114,11 @@ function receive(msg: Inbound) {
   } else if (msg.t === "board") {
     board = msg.cards
     if (onBoard()) render()
+  } else if (msg.t === "created") {
+    creating = null
+    location.hash = `#/s/${encodeURIComponent(msg.id)}`
   } else if (msg.t === "error") {
+    creating = null
     notice = msg.message
     render()
   }
@@ -189,12 +197,36 @@ function homeHeader() {
   )
 }
 
+function newButton(spaceID: string | null) {
+  const key = spaceID ?? ""
+  return h(
+    "button",
+    {
+      className: "new",
+      title: "New session",
+      disabled: creating !== null,
+      onclick: () => {
+        creating = key
+        notice = ""
+        send({ t: "new", spaceID })
+        render()
+      },
+    },
+    creating === key ? h("span", { className: "spinner" }) : "+",
+  )
+}
+
 function renderList() {
-  const groups: [string, Session[]][] = snapshot.spaces.map((sp) => [sp.name, snapshot.sessions.filter((s) => s.spaceID === sp.id)])
-  groups.push(["Recents", snapshot.sessions.filter((s) => !s.spaceID)])
-  const sections = groups
-    .filter(([, list]) => list.length)
-    .map(([name, list]) => h("section", {}, h("h2", {}, name), ...list.map(row)))
+  const groups: [string, string | null, Session[]][] = snapshot.spaces.map((sp) => [
+    sp.name,
+    sp.id,
+    snapshot.sessions.filter((s) => s.spaceID === sp.id),
+  ])
+  groups.push(["Recents", null, snapshot.sessions.filter((s) => !s.spaceID)])
+  // Empty spaces stay listed: their + is how you start one there.
+  const sections = groups.map(([name, spaceID, list]) =>
+    h("section", {}, h("h2", {}, h("span", {}, name), newButton(spaceID)), ...list.map(row)),
+  )
   return h(
     "div",
     { className: "list" },

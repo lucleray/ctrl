@@ -478,6 +478,19 @@ const remote: RemoteServer = new RemoteServer({
     write: (termID, data) => fxTerms.write(termID, data),
     resize: (termID, size) => fxTerms.resizeTerm(termID, size),
   },
+  // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
+  create: async (spaceID) => {
+    const space = spaceID && store.space(spaceID) ? spaceID : null
+    const created = await newSession(space, undefined, undefined, { focus: false })
+    let id = "id" in created ? created.id : null
+    for (let i = 0; i < 150 && !(id && sessionByID(id)); i++) {
+      // fx reports its session id once its process is up.
+      if (!id && "terminal" in created) id = fxTerms.sessionOf(created.terminal) ?? null
+      await sleep(100)
+    }
+    if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
+    return id
+  },
   cantOpen: (sessionID) => {
     const session = sessionByID(sessionID)
     if (!session) return "This session doesn't exist anymore"

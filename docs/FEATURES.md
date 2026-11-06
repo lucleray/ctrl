@@ -178,7 +178,8 @@ where it lives.
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
 - opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
   quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
-- Phone screens: Sessions (spaces, then Recents, with status dots) and Board (the four columns stacked, one
+- Phone screens: Sessions (spaces, then Recents, with status dots; + on a section starts a session there,
+  with the space's folder, harness and model, and opens it on the phone without changing the desktop) and Board (the four columns stacked, one
   space at a time or all, saved on the phone; tap a card for its link, a session chip to open it). A session is
   a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
   button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size

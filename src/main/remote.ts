@@ -63,6 +63,8 @@ type Deps = {
     write(termID: string, data: string): void
     resize(termID: string, size: { cols: number; rows: number } | null): void
   }
+  /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
+  create(spaceID: string | null): Promise<string>
   /** Why a session can't be opened from the phone, if it can't */
   cantOpen(sessionID: string): string | null
   onStatus(): void
@@ -77,6 +79,7 @@ type Inbound =
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
+  | { t: "new"; spaceID: string | null }
 
 const COOKIE = "ctrl_remote"
 /** The phone's TUI quits after this long with nobody looking at it, and comes back on the next open. */
@@ -318,6 +321,11 @@ export class RemoteServer {
   private async message(viewer: Viewer, msg: Inbound) {
     if (msg.t === "open") return this.open(viewer, msg.id, size(msg))
     if (msg.t === "leave") return this.leave(viewer)
+    if (msg.t === "new") {
+      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
+      this.send(viewer, { t: "created", id })
+      return
+    }
     if (msg.t === "board") {
       viewer.board = !!msg.on
       if (!viewer.board) return

@@ -462,3 +462,37 @@ button {
 .send:active {
   opacity: 0.7;
 }
+
+/* ---------- new session ---------- */
+
+.list:not(.board) section > h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.new {
+  min-width: 32px;
+  height: 26px;
+  margin: -4px -4px -4px 0;
+  border-radius: 7px;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.new:active {
+  background: var(--row-active);
+}
+
+.new:disabled {
+  opacity: 0.6;
+}
+
+.new .spinner {
+  margin: 0;
+}
