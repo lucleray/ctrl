@@ -75,4 +75,5 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | `ctrl session send` | ✅ background | ⚠️ | fx: typed into its fx process (started in the background), CONFLICT when open in another terminal |
 | `ctrl` typing without sending (`--no-submit`, `reference`) | ⚠️ | ✅ | opencode: one TUI, so the session must be on screen (`--focus`) |
 | `ctrl session stop` | ✅ | ⚠️ | fx: Escape to its fx process, only for sessions open in ctrl |
+| Remote control (phone) | ✅ | ⚠️ | opencode: its own TUI sized to the phone · fx: mirrors the desktop's process, which is resized to the phone while you look at it |
 | Welcome screen | ✅ | ✅ | First launch: shows what's installed, lets you pick when both are, install commands when neither is |

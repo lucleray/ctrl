@@ -213,6 +213,31 @@ ctrl-context (Swift) ──JSON line on change──► Companion (main) ──v
   `dist/companion/` and shipped in `Contents/Resources/companion`. `ctrl-context --once --debug` prints what
   it sees in the frontmost app after 3s (`--app <bundle id>` reads a background app, without hover).
 
+## Remote control
+
+Settings → Remote control serves `dist/remote` (built from `src/remote/`) to your phone over Tailscale.
+
+```text
+phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: snapshot of spaces + sessions
+      ◄──ws /ws─┤                                     ├─► board: cards built like Board.tsx
+                │                                     ├─► opencode: its own TUI (Terminal #2)
+                └ token → HttpOnly cookie, Origin check└─► fx: the desktop's pty (fx-terminals.ts)
+```
+
+- **Listens only on the Tailscale interface** (100.64.0.0/10), or localhost without one, rechecked every 15s.
+  The MagicDNS name comes from `tailscale status --json` when the CLI is around.
+- **Separate opencode TUI:** sharing the desktop one would navigate and resize it under you. A second
+  `Terminal` with its own bridge runs at the phone's size, started on first open and stopped after 10 idle
+  minutes. Both TUIs use the same service, so a turn started on one shows up on the other.
+- **fx** can only have one process per session, so the phone mirrors ctrl's: backlog on open, then live output.
+  That pty is resized to the phone while it's viewed and back to the shared size after.
+- **Board:** main places cards with the same `boardPlacement()` as the desktop and sends them flattened
+  (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
+  (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
+  phones on the board and only when it changed.
+- **Cheap for main:** the list is sent only when it changed, and bounded (sessions in spaces + the newest 30
+  others). Viewers that fall 8 MB behind are dropped and reconnect.
+
 ## CLI
 
 `ctrl` drives the app from agents' shells over a unix socket in the state folder. Details, principles and how

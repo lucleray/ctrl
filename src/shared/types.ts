@@ -165,7 +165,18 @@ export type Settings = {
   adapterModes: Record<string, AdapterMode>
   /** ctrl Companion: always-on-top window with the sessions that mentioned what's on screen (src/companion), macOS only */
   companion: boolean
+  /** Remote control: a web page on your Tailscale network to use ctrl from your phone (src/main/remote.ts) */
+  remoteControl: boolean
 }
+
+/**
+ * The remote control server. on: listening on a Tailscale address, `urls` open it on the phone (they carry
+ * the access token) · local: no Tailscale address, so only this Mac can reach it · error: couldn't listen
+ */
+export type RemoteStatus =
+  | { state: "off" }
+  | { state: "on" | "local"; urls: string[]; port: number }
+  | { state: "error"; detail: string }
 
 export const FONT_SIZE = { min: 9, max: 24, default: 13 }
 
@@ -290,6 +301,7 @@ export type AppState = {
   problem?: string
   /** Last failed action; dismissable */
   error?: string
+  remote: RemoteStatus
 }
 
 /** A session whose messages match a search, with its best-matching message. */
