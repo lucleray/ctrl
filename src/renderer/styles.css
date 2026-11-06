@@ -2675,8 +2675,19 @@ body.resizing .terminal-pane.active {
 .board-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin: -6px 0 16px;
+  margin: -6px 0 14px;
+}
+
+.board-filters + .board-filters {
+  margin-top: -6px;
+}
+
+.board-filters-label {
+  width: 52px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .board-filter {

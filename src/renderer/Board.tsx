@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from "react"
-import { boardPlacement, resourceType, type Placement, type Stage } from "../shared/adapters"
+import { adapterOf, ADAPTERS, boardPlacement, resourceType, type Placement, type Stage } from "../shared/adapters"
 import type { AppState, ResourceItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 
-/** Space ids to show (NO_SPACE for sessions outside spaces); empty = everything */
-export type BoardFilter = string[]
+/**
+ * What the board shows. Within a list, any match counts; across lists, all must match.
+ * Empty lists = no filter.
+ */
+export type BoardFilter = {
+  /** Space ids (NO_SPACE for sessions outside spaces) */
+  spaces: string[]
+  /** Adapter ids: github, slack, vercel, linear… */
+  sources: string[]
+}
+export const NO_FILTER: BoardFilter = { spaces: [], sources: [] }
 const NO_SPACE = "none"
 
 const COLUMNS: { id: Stage; label: string; hint: string }[] = [
@@ -69,20 +78,31 @@ export function Board(props: {
         item,
         placement: boardPlacement(item, { me, now }),
         spaces: [...new Set((item.sessionIDs ?? []).map(spaceOf))],
+        source: adapterOf(item.type)?.id ?? "",
       }))
       .filter((c): c is Card => !!c.placement)
   }, [items, me, state.assignments])
 
-  const shown = filter.length ? placed.filter((c) => c.spaces.some((s) => filter.includes(s))) : placed
+  const inSpaces = (c: Card) => !filter.spaces.length || c.spaces.some((s) => filter.spaces.includes(s))
+  const inSources = (c: Card) => !filter.sources.length || filter.sources.includes(c.source)
+  const shown = placed.filter((c) => inSpaces(c) && inSources(c))
   const columns = COLUMNS.map((col) => ({ ...col, cards: shown.filter((c) => c.placement.stage === col.id) }))
 
-  // Open cards per space, for the filter chips.
-  const openIn = (space: string) => placed.filter((c) => c.placement.stage !== "done" && c.spaces.includes(space)).length
-  const chipsList = [
-    ...state.spaces.map((s) => ({ id: s.id, name: s.name })),
-    { id: NO_SPACE, name: "No space" },
-  ].filter((c) => c.id !== NO_SPACE || openIn(NO_SPACE) > 0)
-  const toggle = (id: string) => props.onFilter(filter.includes(id) ? filter.filter((f) => f !== id) : [...filter, id])
+  // Open cards per chip, given the other filter row (so counts match what clicking would show).
+  const open = placed.filter((c) => c.placement.stage !== "done")
+  const openInSpace = (space: string) => open.filter((c) => inSources(c) && c.spaces.includes(space)).length
+  const openFromSource = (source: string) => open.filter((c) => inSpaces(c) && c.source === source).length
+  const spaceChips = [...state.spaces.map((s) => ({ id: s.id, name: s.name })), { id: NO_SPACE, name: "No space" }]
+    .filter((c) => c.id !== NO_SPACE || placed.some((p) => p.spaces.includes(NO_SPACE)))
+    .map((c) => ({ ...c, count: openInSpace(c.id) }))
+  // Only sources with cards on the board (repos, Notion… never make it there).
+  const sourceChips = ADAPTERS.filter((a) => placed.some((c) => c.source === a.id)).map((a) => ({
+    id: a.id,
+    name: a.name,
+    count: openFromSource(a.id),
+  }))
+  const toggle = (key: keyof BoardFilter, id: string) =>
+    props.onFilter({ ...filter, [key]: filter[key].includes(id) ? filter[key].filter((f) => f !== id) : [...filter[key], id] })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -109,29 +129,15 @@ export function Board(props: {
           <Icon name="close" />
         </button>
       </div>
-      <div className="board-filters">
-        <button className={`board-filter${filter.length ? "" : " on"}`} onClick={() => props.onFilter([])}>
-          All spaces
-        </button>
-        {chipsList.map((c) => (
-          <button
-            key={c.id}
-            className={`board-filter${filter.includes(c.id) ? " on" : ""}`}
-            title={filter.includes(c.id) ? "Click to remove from the filter" : "Click to add to the filter"}
-            onClick={() => toggle(c.id)}
-          >
-            {c.name}
-            {openIn(c.id) > 0 && <span className="count">{openIn(c.id)}</span>}
-          </button>
-        ))}
-      </div>
+      <FilterRow label="Spaces" all="All spaces" chips={spaceChips} on={filter.spaces} onAll={() => props.onFilter({ ...filter, spaces: [] })} onToggle={(id) => toggle("spaces", id)} />
+      <FilterRow label="Types" all="All types" chips={sourceChips} on={filter.sources} onAll={() => props.onFilter({ ...filter, sources: [] })} onToggle={(id) => toggle("sources", id)} />
       <div className="board-columns">
         {columns.map((col) => (
           <Column
             key={col.id}
             {...col}
             sessionsByID={sessionsByID}
-            spaceNames={filter.length === 1 ? undefined : spaceNames}
+            spaceNames={filter.spaces.length === 1 ? undefined : spaceNames}
             onOpenSession={props.onOpenSession}
           />
         ))}
@@ -140,7 +146,36 @@ export function Board(props: {
   )
 }
 
-type Card = { item: ResourceItem; placement: Placement; spaces: string[] }
+type Card = { item: ResourceItem; placement: Placement; spaces: string[]; source: string }
+
+function FilterRow(props: {
+  label: string
+  all: string
+  chips: { id: string; name: string; count: number }[]
+  on: string[]
+  onAll(): void
+  onToggle(id: string): void
+}) {
+  return (
+    <div className="board-filters">
+      <span className="board-filters-label">{props.label}</span>
+      <button className={`board-filter${props.on.length ? "" : " on"}`} onClick={props.onAll}>
+        {props.all}
+      </button>
+      {props.chips.map((c) => (
+        <button
+          key={c.id}
+          className={`board-filter${props.on.includes(c.id) ? " on" : ""}`}
+          title={props.on.includes(c.id) ? "Click to remove from the filter" : "Click to add to the filter"}
+          onClick={() => props.onToggle(c.id)}
+        >
+          {c.name}
+          {c.count > 0 && <span className="count">{c.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function Column(props: {
   id: Stage
