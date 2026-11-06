@@ -2716,8 +2716,6 @@ body.resizing .terminal-pane.active {
   color: var(--muted);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
-  min-width: 2ch;
-  text-align: left;
 }
 
 .board-card-reason {
@@ -2762,10 +2760,17 @@ body.resizing .terminal-pane.active {
 .board-filter.hidden {
   color: var(--muted);
   opacity: 0.55;
+}
+
+.board-filter.hidden .board-filter-name {
   text-decoration: line-through;
 }
 
-.board-filter.hidden .count,
+/* Counts always show, hidden chips included (what showing them would add): no empty gaps, no reflow. */
 .board-filter .count.zero {
-  visibility: hidden;
+  opacity: 0.5;
+}
+
+.board-filter:focus:not(:focus-visible) {
+  outline: none;
 }

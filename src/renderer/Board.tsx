@@ -219,7 +219,7 @@ function FilterRow(props: {
             onClick={(e) => props.onClick(c.id, e)}
           >
             <span className="board-filter-dot" />
-            {c.name}
+            <span className="board-filter-name">{c.name}</span>
             {/* Always there, so chips keep their width when counts change or the chip is hidden. */}
             <span className={`count${c.count ? "" : " zero"}`}>{c.count}</span>
           </button>
