@@ -180,7 +180,8 @@ where it lives.
   quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
 - Phone screens: Sessions (spaces, then Recents, with status dots) and Board (the four columns stacked, one
   space at a time or all, saved on the phone; tap a card for its link, a session chip to open it). A session is
-  a full-width terminal: tap it to type with the phone's keyboard, swipe to scroll the TUI, A−/A+ for the font size
+  a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
+  button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size
 
 ## Terminal
 

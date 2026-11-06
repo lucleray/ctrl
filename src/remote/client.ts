@@ -37,6 +37,8 @@ const PALETTES = {
 }
 
 const FONT = { min: 8, max: 20, default: 12 }
+/** CSI-u shift+enter, the same sequence the desktop sends for ⇧⏎ */
+const NEWLINE = "\x1b[13;2u"
 
 let snapshot: RemoteSnapshot = { dark: true, spaces: [], sessions: [] }
 let board: RemoteBoardCard[] | null = null
@@ -356,7 +358,12 @@ function showSession(id: string) {
   term.loadAddon(new UnicodeGraphemesAddon())
   term.open(host)
   fit.fit()
-  term.onData((data) => send({ t: "input", data }))
+  // Return types a new line (shift+enter, what both TUIs read as "newline"); the send button submits.
+  term.onData((data) => send({ t: "input", data: data === "\r" ? NEWLINE : data }))
+  // The send button only shows while the keyboard is up (the terminal has focus).
+  const screen = sessionEl!
+  term.textarea?.addEventListener("focus", () => screen.classList.add("typing"))
+  term.textarea?.addEventListener("blur", () => screen.classList.remove("typing"))
   term.onResize(({ cols, rows }) => send({ t: "resize", cols, rows }))
   resizeObs = new ResizeObserver(() => fit?.fit())
   resizeObs.observe(host)
@@ -444,6 +451,17 @@ function renderSession(id: string) {
     h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     h("div", { className: "term" }),
+    h(
+      "button",
+      {
+        className: "send",
+        title: "Send",
+        // Keep focus in the terminal, so the keyboard stays up.
+        onpointerdown: (e: PointerEvent) => e.preventDefault(),
+        onclick: () => send({ t: "input", data: "\r" }),
+      },
+      "↑",
+    ),
   )
 }
 
