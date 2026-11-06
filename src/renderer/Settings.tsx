@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import {
   FONT_SIZE,
@@ -454,6 +454,109 @@ function HarnessRow({
   )
 }
 
+type SectionID =
+  | "appearance"
+  | "sessions"
+  | "notifications"
+  | "shortcuts"
+  | "agents"
+  | "mcp"
+  | "adapters"
+  | "companion"
+  | "about"
+
+/** The sidebar, in order. `keywords` find a section by words none of its rows say. */
+const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; keywords?: string }[] = [
+  { id: "appearance", label: "Appearance", icon: "sun", group: "General", keywords: "dark light font zoom" },
+  { id: "sessions", label: "Sessions", icon: "terminal", group: "General" },
+  { id: "notifications", label: "Notifications", icon: "bell", group: "General", keywords: "alerts" },
+  { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
+  { id: "agents", label: "Agents", icon: "bot", group: "Integrations", keywords: "skills" },
+  { id: "mcp", label: "MCP servers", icon: "plug", group: "Integrations" },
+  { id: "adapters", label: "Resource adapters", icon: "link", group: "Integrations", keywords: "links" },
+  { id: "companion", label: "Companion", icon: "panel-float", group: "Integrations" },
+  { id: "about", label: "About", icon: "info", keywords: "version" },
+]
+
+/** Reopening settings comes back to the section you left. */
+let lastSection: SectionID = "appearance"
+
+const HIGHLIGHT = "settings-search"
+
+/** Text nodes a search looks at: what's written on screen, not the options inside selects. */
+function textNodes(el: Element): Text[] {
+  const out: Text[] = []
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) =>
+      n.parentElement?.closest("select, textarea") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n as Text)
+  return out
+}
+
+function termRanges(nodes: Text[], terms: string[]): Range[] {
+  const ranges: Range[] = []
+  for (const node of nodes) {
+    const text = node.data.toLowerCase()
+    for (const term of terms) {
+      for (let at = text.indexOf(term); at !== -1; at = text.indexOf(term, at + term.length)) {
+        const range = new Range()
+        range.setStart(node, at)
+        range.setEnd(node, at + term.length)
+        ranges.push(range)
+      }
+    }
+  }
+  return ranges
+}
+
+/**
+ * Hides the rows of `root` that don't match every term and highlights the matches. A row's indented
+ * rows (sounds per event, model pickers) go with it. A section shows whole when its name matches, or its
+ * keywords do and none of its rows. Returns the sections with at least one match.
+ */
+function filterRows(root: HTMLElement, terms: string[]): SectionID[] {
+  const matches = (text: string) => {
+    const lower = text.toLowerCase()
+    return terms.every((t) => lower.includes(t))
+  }
+  const ranges: Range[] = []
+  const found: SectionID[] = []
+  for (const section of root.querySelectorAll<HTMLElement>("[data-section]")) {
+    const meta = SECTIONS.find((s) => s.id === section.dataset.section)!
+    const groups: HTMLElement[][][] = []
+    for (const card of section.querySelectorAll<HTMLElement>(".settings-card")) {
+      const cardGroups: HTMLElement[][] = []
+      for (const row of card.children as HTMLCollectionOf<HTMLElement>) {
+        const attached = row.classList.contains("setting-indent") || row.classList.contains("setting-sub")
+        if (attached && cardGroups.length) cardGroups[cardGroups.length - 1].push(row)
+        else cardGroups.push([row])
+      }
+      groups.push(cardGroups)
+    }
+    const hits = new Set(groups.flat().filter((g) => matches(g.flatMap(textNodes).map((n) => n.data).join(" "))))
+    const whole = matches(meta.label) || (hits.size === 0 && matches(`${meta.label} ${meta.keywords ?? ""}`))
+    if (whole) ranges.push(...termRanges(textNodes(section.querySelector("h2")!), terms))
+    const any = whole || hits.size > 0
+    for (const cardGroups of groups) {
+      for (const group of cardGroups) {
+        const show = whole || hits.has(group)
+        for (const row of group) row.hidden = !show
+        if (show) ranges.push(...termRanges(group.flatMap(textNodes), terms))
+      }
+      let first = true
+      for (const row of cardGroups.flat()) {
+        row.toggleAttribute("data-first", first && !row.hidden)
+        if (!row.hidden) first = false
+      }
+    }
+    section.hidden = !any
+    if (any) found.push(meta.id)
+  }
+  CSS.highlights?.set(HIGHLIGHT, new Highlight(...ranges))
+  return found
+}
+
 export function Settings({
   state,
   onClose,
@@ -467,374 +570,466 @@ export function Settings({
   const key = (id: Parameters<typeof shortcutLabel>[0]) => shortcutLabel(id, settings.shortcuts)
   const zoomKeys = [key("zoom-in"), key("zoom-out"), key("zoom-reset")]
 
-  const root = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const results = useRef<HTMLDivElement>(null)
   const [showCtrlText, setShowCtrlText] = useState(false)
+  const [active, setActive] = useState<SectionID>(lastSection)
+  const [query, setQuery] = useState("")
+  const [found, setFound] = useState<SectionID[]>([])
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const searching = terms.length > 0
 
-  // Take focus away from the terminal so keystrokes don't leak into the TUI.
-  useEffect(() => root.current?.focus(), [])
+  // Focus the search box: typing searches right away, and keystrokes don't leak into the TUI.
+  useEffect(() => search.current?.focus(), [])
   useEffect(() => void window.ctrl.checkAdapters(), [])
+  useEffect(() => () => void CSS.highlights?.delete(HIGHLIGHT), [])
+
+  // Runs after every render while searching, so rows that appear (sounds turned on) get filtered too.
+  useLayoutEffect(() => {
+    if (!searching || !results.current) return void CSS.highlights?.delete(HIGHLIGHT)
+    const next = filterRows(results.current, terms)
+    setFound((prev) => (prev.join() === next.join() ? prev : next))
+  })
+
+  const open = (id: SectionID) => {
+    lastSection = id
+    setActive(id)
+    setQuery("")
+  }
 
   const opencodeModels = useModels("opencode", state.opencode.state === "ok")
   const fxModels = useModels("fx", state.fx.state === "ok")
 
-  return (
-    <div
-      className="settings"
-      ref={root}
-      tabIndex={-1}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose()
-      }}
-    >
-      <div className="settings-inner">
-        <div className="settings-header">
-          <h1>Settings</h1>
-          <button className="icon-btn" title="Close (Esc)" onClick={onClose}>
-            <Icon name="close" />
-          </button>
+  const alerts: Partial<Record<SectionID, boolean>> = {
+    sessions: state.opencodeServer?.state === "broken",
+    mcp: state.mcp.some((s) => s.status === "failed" || s.status === "needs_auth"),
+    adapters: state.adapters.some((a) => a.mode !== "off" && a.status?.state === "error"),
+    about: state.update.state === "available",
+  }
+
+  const bodies: Record<SectionID, ReactNode> = {
+    appearance: (
+      <div className="settings-card">
+        <div className="setting">
+          <div>
+            <div className="setting-title">Theme</div>
+            <div className="setting-desc">Applies to the app and the embedded opencode TUI.</div>
+          </div>
+          <div className="segmented">
+            {APPEARANCES.map((a) => (
+              <button
+                key={a.value}
+                className={settings.appearance === a.value ? "on" : ""}
+                onClick={() => void window.ctrl.setSettings({ appearance: a.value })}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <h2>Appearance</h2>
-        <div className="settings-card">
-          <div className="setting">
-            <div>
-              <div className="setting-title">Theme</div>
-              <div className="setting-desc">Applies to the app and the embedded opencode TUI.</div>
-            </div>
-            <div className="segmented">
-              {APPEARANCES.map((a) => (
-                <button
-                  key={a.value}
-                  className={settings.appearance === a.value ? "on" : ""}
-                  onClick={() => void window.ctrl.setSettings({ appearance: a.value })}
-                >
-                  {a.label}
-                </button>
-              ))}
+        <div className="setting">
+          <div>
+            <div className="setting-title">opencode theme</div>
+            <div className="setting-desc">
+              Only for the TUI inside ctrl. Your global cli.json is left untouched. Changing it restarts the TUI.
             </div>
           </div>
-
-          <div className="setting">
-            <div>
-              <div className="setting-title">opencode theme</div>
-              <div className="setting-desc">
-                Only for the TUI inside ctrl. Your global cli.json is left untouched. Changing it restarts the TUI.
-              </div>
-            </div>
-            <select
-              value={settings.tuiTheme ?? DEFAULT}
-              onChange={(e) =>
-                void window.ctrl.setSettings({ tuiTheme: e.target.value === DEFAULT ? null : e.target.value })
-              }
-            >
-              <option value={DEFAULT}>Default{themes.cliDefault ? ` (${themes.cliDefault})` : ""}</option>
-              {themes.custom.length > 0 && (
-                <optgroup label="Custom">
-                  {themes.custom.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="Built-in">
-                {themes.builtin.map((t) => (
+          <select
+            value={settings.tuiTheme ?? DEFAULT}
+            onChange={(e) =>
+              void window.ctrl.setSettings({ tuiTheme: e.target.value === DEFAULT ? null : e.target.value })
+            }
+          >
+            <option value={DEFAULT}>Default{themes.cliDefault ? ` (${themes.cliDefault})` : ""}</option>
+            {themes.custom.length > 0 && (
+              <optgroup label="Custom">
+                {themes.custom.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
                 ))}
               </optgroup>
-            </select>
-          </div>
-
-          <div className="setting">
-            <div>
-              <div className="setting-title">Text size</div>
-              <div className="setting-desc">
-                Font size of the terminal.
-                {zoomKeys.every(Boolean) && ` Also ${zoomKeys[0]}, ${zoomKeys[1]} and ${zoomKeys[2]} to reset.`}
-              </div>
-            </div>
-            <div className="stepper">
-              <button
-                title={`Smaller${zoomKeys[1] ? ` (${zoomKeys[1]})` : ""}`}
-                disabled={settings.fontSize <= FONT_SIZE.min}
-                onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize - 1 })}
-              >
-                −
-              </button>
-              <button
-                className="stepper-value"
-                title={`Reset to default${zoomKeys[2] ? ` (${zoomKeys[2]})` : ""}`}
-                onClick={() => void window.ctrl.setSettings({ fontSize: FONT_SIZE.default })}
-              >
-                {settings.fontSize}px
-              </button>
-              <button
-                title={`Larger${zoomKeys[0] ? ` (${zoomKeys[0]})` : ""}`}
-                disabled={settings.fontSize >= FONT_SIZE.max}
-                onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize + 1 })}
-              >
-                +
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <h2>Sessions</h2>
-        <div className="settings-card">
-          <div className="setting">
-            <div>
-              <div className="setting-title">Harness</div>
-              <div className="setting-desc">
-                Agent new sessions start with. A space can pick its own, and sessions of both kinds live side by side.{" "}
-                <a href="https://github.com/lucleray/ctrl/blob/main/docs/HARNESSES.md" onClick={(e) => (e.preventDefault(), void window.ctrl.openExternal(e.currentTarget.href))}>
-                  What each supports
-                </a>
-              </div>
-            </div>
-            <div className="segmented">
-              {HARNESSES.map((h) => (
-                <button
-                  key={h.id}
-                  className={settings.defaultHarness === h.id ? "on" : ""}
-                  onClick={() => void window.ctrl.setSettings({ defaultHarness: h.id })}
-                >
-                  {h.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          <HarnessRow harness="opencode" check={state.opencode} server={state.opencodeServer} />
-          <HarnessRow harness="fx" check={state.fx} />
-
-          <div className="setting">
-            <div>
-              <div className="setting-title">Folder</div>
-              <div className="setting-desc">
-                New sessions start here when their space doesn't set a folder. {settings.defaultDirectory ? "" : "Defaults to ~."}
-              </div>
-            </div>
-            <div className="setting-actions">
-              {settings.defaultDirectory && (
-                <span className="setting-path" title={settings.defaultDirectory}>
-                  {/* LRM marks keep slashes in place inside the rtl (start-ellipsis) box */}
-                  {`\u200e${shortPath(settings.defaultDirectory)}\u200e`}
-                </span>
-              )}
-              <button className="btn" onClick={() => void window.ctrl.pickDefaultFolder()}>
-                {settings.defaultDirectory ? "Change…" : "Choose…"}
-              </button>
-              {settings.defaultDirectory && (
-                <button
-                  className="icon-btn"
-                  title="Clear folder"
-                  onClick={() => void window.ctrl.setSettings({ defaultDirectory: null })}
-                >
-                  <Icon name="close" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="setting">
-            <div>
-              <div className="setting-title">Space</div>
-              <div className="setting-desc">New chats (⌘N, New chat) start in this space and use its settings.</div>
-            </div>
-            <select
-              value={state.spaces.some((s) => s.id === settings.defaultSpace) ? settings.defaultSpace! : ""}
-              onChange={(e) => void window.ctrl.setSettings({ defaultSpace: e.target.value || null })}
-            >
-              <option value="">No space</option>
-              {state.spaces.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
+            )}
+            <optgroup label="Built-in">
+              {themes.builtin.map((t) => (
+                <option key={t} value={t}>
+                  {t}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <div className="setting setting-with-sub">
-            <div>
-              <div className="setting-title">Custom model</div>
-              <div className="setting-desc">
-                Model for new sessions started from ctrl, per harness. A space can pick its own in space settings.
-              </div>
-            </div>
-            <Toggle
-              on={settings.defaultModelEnabled}
-              onChange={(defaultModelEnabled) => void window.ctrl.setSettings({ defaultModelEnabled })}
-            />
-          </div>
-          <div className="setting-sub">
-            <div className="setting-desc model-harness-label">opencode</div>
-            <ModelPicker
-              choices={opencodeModels.choices}
-              error={opencodeModels.error}
-              value={settings.defaultModel}
-              enabled={settings.defaultModelEnabled}
-              onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
-              fallback={{ label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }}
-            />
-          </div>
-          <div className="setting-sub">
-            <div className="setting-desc model-harness-label">fx</div>
-            <ModelPicker
-              choices={fxModels.choices}
-              error={fxModels.error}
-              value={settings.defaultFxModel}
-              enabled={settings.defaultModelEnabled}
-              onChange={(defaultFxModel) => void window.ctrl.setSettings({ defaultFxModel })}
-              fallback={{ label: "Default fx model", detail: "ctrl doesn't set a model, so fx uses its own default" }}
-            />
-          </div>
-
-          <div className="setting setting-with-sub">
-            <div>
-              <div className="setting-title">ctrl instructions</div>
-              <div className="setting-desc">
-                Tells agents they run inside ctrl and how to look around with the <code>ctrl</code> command: their session,
-                space, the other sessions and links in it. Invisible in the chat. opencode only. A space can turn it on
-                or off for its sessions.{" "}
-                <a href="#" onClick={(e) => (e.preventDefault(), setShowCtrlText((v) => !v))}>
-                  {showCtrlText ? "Hide text" : "Show text"}
-                </a>
-              </div>
-            </div>
-            <Toggle
-              on={settings.ctrlInstructions}
-              onChange={(ctrlInstructions) => void window.ctrl.setSettings({ ctrlInstructions })}
-            />
-          </div>
-          {showCtrlText && (
-            <div className="setting-sub">
-              <textarea className="setting-textarea" readOnly value={CTRL_INSTRUCTIONS} rows={10} />
-            </div>
-          )}
+            </optgroup>
+          </select>
         </div>
 
-        <h2>MCP servers</h2>
-        <div className="settings-card">
-          {state.mcp.length === 0 ? (
-            <div className="setting">
-              <div className="setting-desc">No MCP servers configured.</div>
+        <div className="setting">
+          <div>
+            <div className="setting-title">Text size</div>
+            <div className="setting-desc">
+              Font size of the terminal.
+              {zoomKeys.every(Boolean) && ` Also ${zoomKeys[0]}, ${zoomKeys[1]} and ${zoomKeys[2]} to reset.`}
             </div>
-          ) : (
-            state.mcp.map((server) => (
-              <McpRow key={server.name} server={server} onFix={() => onFixMcp(server.name)} />
-            ))
-          )}
-        </div>
-
-        <h2>Resource adapters</h2>
-        <div className="settings-card">
-          {state.adapters.map((adapter) => (
-            <AdapterRow key={adapter.id} adapter={adapter} modes={settings.adapterModes} />
-          ))}
-        </div>
-
-        <h2>Agents</h2>
-        <div className="settings-card">
-          <SkillRow skill={state.skill} />
-          <CliRow cli={state.cli} skill={state.cliSkill} />
-        </div>
-
-        <h2>Shortcuts</h2>
-        <ShortcutSettings overrides={settings.shortcuts} />
-
-        <h2>Notifications</h2>
-        <div className="settings-card">
-          <div className="setting">
-            <div>
-              <div className="setting-title">Dock badge</div>
-              <div className="setting-desc">Show how many sessions are waiting for your input.</div>
-            </div>
-            <Toggle
-              on={settings.dockBadge}
-              onChange={(dockBadge) => void window.ctrl.setSettings({ dockBadge })}
-            />
           </div>
-          <div className="setting">
-            <div>
-              <div className="setting-title">System notifications</div>
-              <div className="setting-desc">
-                When a session needs your input, finishes or fails while ctrl isn't focused.
-              </div>
-            </div>
-            <Toggle
-              on={settings.notifications}
-              onChange={(notifications) => void window.ctrl.setSettings({ notifications })}
-            />
-          </div>
-          <div className="setting">
-            <div>
-              <div className="setting-title">Sounds</div>
-              <div className="setting-desc">
-                Play a sound when a session needs your input, finishes or fails. Replaces the system notification
-                sound.
-              </div>
-            </div>
-            <Toggle on={settings.sounds} onChange={(sounds) => void window.ctrl.setSettings({ sounds })} />
-          </div>
-          {settings.sounds && (
-            <>
-              {SOUND_EVENTS.map((e) => (
-                <SoundRow key={e.id} event={e.id} label={e.label} choices={settings.soundChoices} />
-              ))}
-              <div className="setting setting-indent">
-                <div>
-                  <div className="setting-title">Also when ctrl is focused</div>
-                  <div className="setting-desc">Otherwise sounds only play while you're in another app.</div>
-                </div>
-                <Toggle
-                  on={settings.soundsWhenFocused}
-                  onChange={(soundsWhenFocused) => void window.ctrl.setSettings({ soundsWhenFocused })}
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        <h2>About</h2>
-        <div className="settings-card">
-          <AboutRow version={state.version} update={state.update} />
-          <div className="setting">
-            <div>
-              <div className="setting-title">Welcome screen</div>
-              <div className="setting-desc">The first-launch screen that picks a harness for new sessions.</div>
-            </div>
+          <div className="stepper">
             <button
-              className="btn"
-              onClick={() => {
-                void window.ctrl.setUi({ onboarded: false })
-                onClose()
-              }}
+              title={`Smaller${zoomKeys[1] ? ` (${zoomKeys[1]})` : ""}`}
+              disabled={settings.fontSize <= FONT_SIZE.min}
+              onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize - 1 })}
             >
-              Show again
+              −
+            </button>
+            <button
+              className="stepper-value"
+              title={`Reset to default${zoomKeys[2] ? ` (${zoomKeys[2]})` : ""}`}
+              onClick={() => void window.ctrl.setSettings({ fontSize: FONT_SIZE.default })}
+            >
+              {settings.fontSize}px
+            </button>
+            <button
+              title={`Larger${zoomKeys[0] ? ` (${zoomKeys[0]})` : ""}`}
+              disabled={settings.fontSize >= FONT_SIZE.max}
+              onClick={() => void window.ctrl.setSettings({ fontSize: settings.fontSize + 1 })}
+            >
+              +
             </button>
           </div>
         </div>
+      </div>
+    ),
 
-        <h2>ctrl Companion</h2>
-        <div className="settings-card">
-          <div className="setting">
-            <div>
-              <div className="setting-title">
-                ctrl Companion <span className="pill">Experimental</span>
-              </div>
-              <div className="setting-desc">
-                A small window that stays on top and lists the sessions that mentioned what you're looking at: the PR
-                or issue in your browser, the Slack thread or channel, the Notion page. Press{" "}
-                {shortcutLabel("companion-new-session", settings.shortcuts) || "its shortcut"} from any app (or click New in
-                the window) to start a new session with that link typed in. Reading Slack, Notion and Linear needs Accessibility access,
-                browsers ask for permission to read their tab.
-              </div>
+    sessions: (
+      <div className="settings-card">
+        <div className="setting">
+          <div>
+            <div className="setting-title">Harness</div>
+            <div className="setting-desc">
+              Agent new sessions start with. A space can pick its own, and sessions of both kinds live side by side.{" "}
+              <a href="https://github.com/lucleray/ctrl/blob/main/docs/HARNESSES.md" onClick={(e) => (e.preventDefault(), void window.ctrl.openExternal(e.currentTarget.href))}>
+                What each supports
+              </a>
             </div>
-            <Toggle on={settings.companion} onChange={(companion) => void window.ctrl.setSettings({ companion })} />
+          </div>
+          <div className="segmented">
+            {HARNESSES.map((h) => (
+              <button
+                key={h.id}
+                className={settings.defaultHarness === h.id ? "on" : ""}
+                onClick={() => void window.ctrl.setSettings({ defaultHarness: h.id })}
+              >
+                {h.name}
+              </button>
+            ))}
           </div>
         </div>
+        <HarnessRow harness="opencode" check={state.opencode} server={state.opencodeServer} />
+        <HarnessRow harness="fx" check={state.fx} />
+
+        <div className="setting">
+          <div>
+            <div className="setting-title">Folder</div>
+            <div className="setting-desc">
+              New sessions start here when their space doesn't set a folder. {settings.defaultDirectory ? "" : "Defaults to ~."}
+            </div>
+          </div>
+          <div className="setting-actions">
+            {settings.defaultDirectory && (
+              <span className="setting-path" title={settings.defaultDirectory}>
+                {/* LRM marks keep slashes in place inside the rtl (start-ellipsis) box */}
+                {`\u200e${shortPath(settings.defaultDirectory)}\u200e`}
+              </span>
+            )}
+            <button className="btn" onClick={() => void window.ctrl.pickDefaultFolder()}>
+              {settings.defaultDirectory ? "Change…" : "Choose…"}
+            </button>
+            {settings.defaultDirectory && (
+              <button
+                className="icon-btn"
+                title="Clear folder"
+                onClick={() => void window.ctrl.setSettings({ defaultDirectory: null })}
+              >
+                <Icon name="close" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="setting">
+          <div>
+            <div className="setting-title">Space</div>
+            <div className="setting-desc">New chats (⌘N, New chat) start in this space and use its settings.</div>
+          </div>
+          <select
+            value={state.spaces.some((s) => s.id === settings.defaultSpace) ? settings.defaultSpace! : ""}
+            onChange={(e) => void window.ctrl.setSettings({ defaultSpace: e.target.value || null })}
+          >
+            <option value="">No space</option>
+            {state.spaces.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="setting setting-with-sub">
+          <div>
+            <div className="setting-title">Custom model</div>
+            <div className="setting-desc">
+              Model for new sessions started from ctrl, per harness. A space can pick its own in space settings.
+            </div>
+          </div>
+          <Toggle
+            on={settings.defaultModelEnabled}
+            onChange={(defaultModelEnabled) => void window.ctrl.setSettings({ defaultModelEnabled })}
+          />
+        </div>
+        <div className="setting-sub">
+          <div className="setting-desc model-harness-label">opencode</div>
+          <ModelPicker
+            choices={opencodeModels.choices}
+            error={opencodeModels.error}
+            value={settings.defaultModel}
+            enabled={settings.defaultModelEnabled}
+            onChange={(defaultModel) => void window.ctrl.setSettings({ defaultModel })}
+            fallback={{ label: "Default opencode model", detail: "ctrl doesn't set a model, so opencode uses its own default" }}
+          />
+        </div>
+        <div className="setting-sub">
+          <div className="setting-desc model-harness-label">fx</div>
+          <ModelPicker
+            choices={fxModels.choices}
+            error={fxModels.error}
+            value={settings.defaultFxModel}
+            enabled={settings.defaultModelEnabled}
+            onChange={(defaultFxModel) => void window.ctrl.setSettings({ defaultFxModel })}
+            fallback={{ label: "Default fx model", detail: "ctrl doesn't set a model, so fx uses its own default" }}
+          />
+        </div>
+
+        <div className="setting setting-with-sub">
+          <div>
+            <div className="setting-title">ctrl instructions</div>
+            <div className="setting-desc">
+              Tells agents they run inside ctrl and how to look around with the <code>ctrl</code> command: their session,
+              space, the other sessions and links in it. Invisible in the chat. opencode only. A space can turn it on
+              or off for its sessions.{" "}
+              <a href="#" onClick={(e) => (e.preventDefault(), setShowCtrlText((v) => !v))}>
+                {showCtrlText ? "Hide text" : "Show text"}
+              </a>
+            </div>
+          </div>
+          <Toggle
+            on={settings.ctrlInstructions}
+            onChange={(ctrlInstructions) => void window.ctrl.setSettings({ ctrlInstructions })}
+          />
+        </div>
+        {showCtrlText && (
+          <div className="setting-sub">
+            <textarea className="setting-textarea" readOnly value={CTRL_INSTRUCTIONS} rows={10} />
+          </div>
+        )}
       </div>
+    ),
+
+    notifications: (
+      <div className="settings-card">
+        <div className="setting">
+          <div>
+            <div className="setting-title">Dock badge</div>
+            <div className="setting-desc">Show how many sessions are waiting for your input.</div>
+          </div>
+          <Toggle on={settings.dockBadge} onChange={(dockBadge) => void window.ctrl.setSettings({ dockBadge })} />
+        </div>
+        <div className="setting">
+          <div>
+            <div className="setting-title">System notifications</div>
+            <div className="setting-desc">When a session needs your input, finishes or fails while ctrl isn't focused.</div>
+          </div>
+          <Toggle
+            on={settings.notifications}
+            onChange={(notifications) => void window.ctrl.setSettings({ notifications })}
+          />
+        </div>
+        <div className="setting">
+          <div>
+            <div className="setting-title">Sounds</div>
+            <div className="setting-desc">
+              Play a sound when a session needs your input, finishes or fails. Replaces the system notification sound.
+            </div>
+          </div>
+          <Toggle on={settings.sounds} onChange={(sounds) => void window.ctrl.setSettings({ sounds })} />
+        </div>
+        {settings.sounds && (
+          <>
+            {SOUND_EVENTS.map((e) => (
+              <SoundRow key={e.id} event={e.id} label={e.label} choices={settings.soundChoices} />
+            ))}
+            <div className="setting setting-indent">
+              <div>
+                <div className="setting-title">Also when ctrl is focused</div>
+                <div className="setting-desc">Otherwise sounds only play while you're in another app.</div>
+              </div>
+              <Toggle
+                on={settings.soundsWhenFocused}
+                onChange={(soundsWhenFocused) => void window.ctrl.setSettings({ soundsWhenFocused })}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    ),
+
+    shortcuts: <ShortcutSettings overrides={settings.shortcuts} />,
+
+    agents: (
+      <div className="settings-card">
+        <SkillRow skill={state.skill} />
+        <CliRow cli={state.cli} skill={state.cliSkill} />
+      </div>
+    ),
+
+    mcp: (
+      <div className="settings-card">
+        {state.mcp.length === 0 ? (
+          <div className="setting">
+            <div className="setting-desc">No MCP servers configured.</div>
+          </div>
+        ) : (
+          state.mcp.map((server) => <McpRow key={server.name} server={server} onFix={() => onFixMcp(server.name)} />)
+        )}
+      </div>
+    ),
+
+    adapters: (
+      <div className="settings-card">
+        {state.adapters.map((adapter) => (
+          <AdapterRow key={adapter.id} adapter={adapter} modes={settings.adapterModes} />
+        ))}
+      </div>
+    ),
+
+    companion: (
+      <div className="settings-card">
+        <div className="setting">
+          <div>
+            <div className="setting-title">
+              ctrl Companion <span className="pill">Experimental</span>
+            </div>
+            <div className="setting-desc">
+              A small window that stays on top and lists the sessions that mentioned what you're looking at: the PR
+              or issue in your browser, the Slack thread or channel, the Notion page. Press{" "}
+              {shortcutLabel("companion-new-session", settings.shortcuts) || "its shortcut"} from any app (or click New in
+              the window) to start a new session with that link typed in. Reading Slack, Notion and Linear needs Accessibility access,
+              browsers ask for permission to read their tab.
+            </div>
+          </div>
+          <Toggle on={settings.companion} onChange={(companion) => void window.ctrl.setSettings({ companion })} />
+        </div>
+      </div>
+    ),
+
+    about: (
+      <div className="settings-card">
+        <AboutRow version={state.version} update={state.update} />
+        <div className="setting">
+          <div>
+            <div className="setting-title">Welcome screen</div>
+            <div className="setting-desc">The first-launch screen that picks a harness for new sessions.</div>
+          </div>
+          <button
+            className="btn"
+            onClick={() => {
+              void window.ctrl.setUi({ onboarded: false })
+              onClose()
+            }}
+          >
+            Show again
+          </button>
+        </div>
+      </div>
+    ),
+  }
+
+  const current = SECTIONS.find((s) => s.id === active)!
+
+  return (
+    <div
+      className="settings settings-split"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          if (query) setQuery("")
+          else onClose()
+        } else if (e.key === "f" && e.metaKey) {
+          e.preventDefault()
+          search.current?.select()
+        }
+      }}
+    >
+      <nav className="settings-nav">
+        <h1>Settings</h1>
+        <label className="settings-search">
+          <Icon name="search" />
+          <input
+            ref={search}
+            value={query}
+            placeholder="Search"
+            spellCheck={false}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && searching && found[0]) open(found[0])
+            }}
+          />
+          {query && (
+            <button className="icon-btn" title="Clear (Esc)" onClick={() => (setQuery(""), search.current?.focus())}>
+              <Icon name="close" />
+            </button>
+          )}
+        </label>
+        {SECTIONS.map((s, i) => (
+          <Fragment key={s.id}>
+            {s.group !== SECTIONS[i - 1]?.group && (
+              <div className="settings-nav-group">{s.group ?? ""}</div>
+            )}
+            <button
+              className={`row${!searching && s.id === active ? " active" : ""}${searching && !found.includes(s.id) ? " dim" : ""}`}
+              onClick={() => open(s.id)}
+            >
+              <Icon name={s.icon} />
+              <span className="label">{s.label}</span>
+              {alerts[s.id] && <span className="mcp-dot failed" />}
+            </button>
+          </Fragment>
+        ))}
+      </nav>
+
+      <div className="settings-content">
+        {searching ? (
+          <div className="settings-inner" key="search" ref={results}>
+            <h1>Search</h1>
+            {SECTIONS.map((s) => (
+              <section key={s.id} data-section={s.id}>
+                <h2>
+                  <button className="settings-result-title" title={`Open ${s.label}`} onClick={() => open(s.id)}>
+                    {s.label}
+                    <Icon name="chevron-right" />
+                  </button>
+                </h2>
+                {bodies[s.id]}
+              </section>
+            ))}
+            {found.length === 0 && <div className="settings-empty">No settings match “{query.trim()}”</div>}
+          </div>
+        ) : (
+          <div className="settings-inner" key={active}>
+            <h1>{current.label}</h1>
+            {bodies[active]}
+          </div>
+        )}
+      </div>
+
+      <button className="icon-btn settings-close" title="Close (Esc)" onClick={onClose}>
+        <Icon name="close" />
+      </button>
     </div>
   )
 }
