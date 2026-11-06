@@ -4,6 +4,7 @@ import type { Harness, SessionStatus } from "../shared/types"
 export type ProbeMessage =
   | { type: "permission"; trusted: boolean }
   | { type: "context"; app: string; bundleId: string; title: string; label?: string; urls: string[] }
+  | { type: "hold"; ctrl: boolean }
 
 export type CompanionSession = {
   id: string
@@ -17,6 +18,8 @@ export type CompanionSession = {
   via: string
   /** Mentioned the exact thing on screen (vs. its channel) */
   exact: boolean
+  /** ⌃N opens it from any app (1–9, top to bottom, archived ones left out) */
+  jump?: number
 }
 
 export type CompanionView = {
@@ -46,6 +49,8 @@ export type CompanionGroup = {
 
 export type CompanionApi = {
   onView(cb: (view: CompanionView) => void): () => void
+  /** ⌃ held on its own, in any app: show the ⌃1–9 hints */
+  onHold(cb: (held: boolean) => void): () => void
   open(sessionID: string): void
   /** New session with what's on screen typed in */
   newSession(): void

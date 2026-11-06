@@ -44,6 +44,8 @@ export type CompanionHost = {
 const WIDTH = 300
 const MAX_ROWS = 10
 const MARGIN = 18
+/** ⌃1–9 open the companion's rows, from any app */
+const JUMPS = 9
 // Same as the sidebar (--sidebar-bg in styles.css): the window paints before the page does.
 const LIGHT_BG = "#f4f4f3"
 const DARK_BG = "#1f1f1e"
@@ -60,6 +62,9 @@ export class Companion {
   private timer?: ReturnType<typeof setTimeout>
   private restarts = 0
   private registered: string[] = []
+  /** Sessions ⌃1… open, in order; only that many ⌃N are registered, so the rest stay free for other apps */
+  private jumps: string[] = []
+  private jumpsRegistered = 0
   private shortcutsPaused = false
   private readonly savedPath = join(app.getPath("userData"), "companion.json")
 
@@ -142,11 +147,41 @@ export class Companion {
   pauseShortcuts(paused: boolean) {
     this.shortcutsPaused = paused
     this.updateShortcuts()
+    // ⌃1–9 follow the rows: rendering re-registers them (or not, while paused).
+    this.lastSent = ""
+    this.render()
   }
 
   private unregisterShortcuts() {
     for (const accel of this.registered) globalShortcut.unregister(accel)
     this.registered = []
+    this.updateJumps(0)
+  }
+
+  /** Keeps ⌃1…⌃count registered (count = rows with a number), dropping the ones past it. */
+  private updateJumps(count: number) {
+    if (!this.enabled || this.shortcutsPaused) count = 0
+    for (let n = this.jumpsRegistered; n > count; n--) globalShortcut.unregister(`Ctrl+${n}`)
+    for (let n = this.jumpsRegistered + 1; n <= count; n++) {
+      const accel = `Ctrl+${n}`
+      try {
+        if (!globalShortcut.register(accel, () => this.jump(n)))
+          console.error(`[ctrl] companion: ${accel} is taken by another app`)
+      } catch (e) {
+        console.error(`[ctrl] companion: can't register ${accel}: ${e}`)
+      }
+    }
+    this.jumpsRegistered = count
+  }
+
+  private jump(n: number) {
+    const id = this.jumps[n - 1]
+    if (id) this.host.open(id)
+  }
+
+  private hold(held: boolean) {
+    const win = this.win
+    if (win && !win.isDestroyed()) win.webContents.send("companion:hold", held)
   }
 
   /** Sessions or resources changed somewhere: refresh the list soon (coalesced). */
@@ -184,6 +219,7 @@ export class Companion {
       } catch {
         return
       }
+      if (msg.type === "hold") return this.hold(msg.ctrl)
       if (msg.type === "permission") this.trusted = msg.trusted
       else this.context = msg
       this.render()
@@ -250,12 +286,17 @@ export class Companion {
       groups.get(group.id)!.sessions.push(s)
     }
     const rank = { space: 0, recents: 1, archived: 2 }
+    const sortedGroups = [...groups.values()].sort((a, b) => rank[a.kind] - rank[b.kind])
+    // Numbered top to bottom as shown; archived ones are folded by default, so they get none.
+    let n = 0
+    for (const g of sortedGroups)
+      for (const s of g.sessions) if (!s.archived && n < JUMPS) s.jump = ++n
     const resource = top && lookup.names.get(top)
     return {
       trusted: this.trusted,
       context: { app: ctx.app, label: ctx.label || resource || ctx.title || undefined, resource },
       shortcut,
-      groups: [...groups.values()].sort((a, b) => rank[a.kind] - rank[b.kind]),
+      groups: sortedGroups,
     }
   }
 
@@ -263,6 +304,10 @@ export class Companion {
     const win = this.win
     if (!win || win.isDestroyed()) return
     const view = this.compute()
+    const jumps: string[] = []
+    for (const g of view.groups) for (const s of g.sessions) if (s.jump) jumps[s.jump - 1] = s.id
+    this.jumps = jumps
+    this.updateJumps(jumps.length)
     const json = JSON.stringify(view)
     if (json === this.lastSent) return
     this.lastSent = json

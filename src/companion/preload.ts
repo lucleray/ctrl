@@ -7,6 +7,11 @@ const api: CompanionApi = {
     ipcRenderer.on("companion:view", listener)
     return () => void ipcRenderer.removeListener("companion:view", listener)
   },
+  onHold(cb) {
+    const listener = (_e: IpcRendererEvent, held: boolean) => cb(held)
+    ipcRenderer.on("companion:hold", listener)
+    return () => void ipcRenderer.removeListener("companion:hold", listener)
+  },
   open: (id) => ipcRenderer.send("companion:open", id),
   newSession: () => ipcRenderer.send("companion:new"),
   resize: (height) => ipcRenderer.send("companion:resize", height),

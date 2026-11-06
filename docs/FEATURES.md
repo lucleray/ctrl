@@ -157,6 +157,10 @@ where it lives.
   while the companion is on, rebindable in Settings → Shortcuts), brings ctrl forward on a new chat with the link
   on screen typed in, not sent (the first link ctrl recognizes, else the first one). opencode: its new-session
   screen; fx: a new session, typed in once fx is ready (`newSessionWith()` in `src/main/main.ts`)
+- Jump with ⌃1–9 from any app: the companion's rows are numbered top to bottom (archived ones left out), and
+  ⌃N brings ctrl forward on that session. Holding ⌃ on its own shows the numbers on the rows, like ⌘ in the
+  main window (the hints need Accessibility). Only as many ⌃N as there are numbered rows are registered, and
+  only while the companion is on, so the rest stay free for other apps (`updateJumps()` in `src/companion/companion.ts`)
 - Reading the screen goes through a small native helper, `ctrl-context`, ported from Orchid: AppleScript for
   browser tabs, the Accessibility tree for Slack, Notion and Linear. Without Accessibility access the window
   offers a button to grant it (`src/companion/native/context.swift`)
@@ -179,6 +183,12 @@ where it lives.
 
 ## Settings (⌘,)
 
+- One section at a time, picked from a list on the left (General: Appearance, Sessions, Notifications, Shortcuts;
+  Integrations: Agents, MCP servers, Resource adapters, Companion; About). A red dot marks a section that needs you
+  (broken opencode service, failing MCP server or adapter, update available). Reopening comes back to the last section
+- Search box above the list (focused on open, ⌘F): shows the matching rows of every section, matches highlighted,
+  sections without matches dimmed in the list. Enter or a section title opens that section, Esc clears
+  (`filterRows()` in `src/renderer/Settings.tsx`)
 - Appearance: system / light / dark (`src/renderer/Settings.tsx`)
 - opencode TUI theme (built-in and custom themes)
 - Terminal text size
