@@ -4,8 +4,9 @@ import type { AppState, ResourceItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 
-/** "all", or a space id */
-export type BoardScope = string
+/** Space ids to show (NO_SPACE for sessions outside spaces); empty = everything */
+export type BoardFilter = string[]
+const NO_SPACE = "none"
 
 const COLUMNS: { id: Stage; label: string; hint: string }[] = [
   { id: "you", label: "Needs you", hint: "Your turn: fix, answer, review or merge" },
@@ -45,29 +46,43 @@ function useBoard(sessionIDs: string[]) {
 
 export function Board(props: {
   state: AppState
-  scope: BoardScope
-  onScope(scope: BoardScope): void
+  filter: BoardFilter
+  onFilter(filter: BoardFilter): void
   onClose(): void
   onOpenSession(id: string): void
 }) {
-  const { state, scope } = props
-  const space = state.spaces.find((s) => s.id === scope)
+  const { state, filter } = props
 
-  const sessionIDs = useMemo(() => {
-    if (space) return Object.keys(state.assignments).filter((id) => state.assignments[id] === space.id)
-    return [...new Set([...state.sessions.map((s) => s.id), ...Object.keys(state.assignments)])]
-  }, [space, state.assignments, state.sessions])
-
+  // One board for everything: every session ctrl knows, filtered by space on screen only.
+  const sessionIDs = useMemo(
+    () => [...new Set([...state.sessions.map((s) => s.id), ...Object.keys(state.assignments)])].sort(),
+    [state.assignments, state.sessions],
+  )
   const items = useBoard(sessionIDs)
   const me = state.adapters.find((a) => a.id === "github")?.status?.account
+  const spaceOf = (sessionID: string) => state.assignments[sessionID] ?? NO_SPACE
 
-  const columns = useMemo(() => {
+  const placed = useMemo(() => {
     const now = Date.now()
-    const placed = items
-      .map((item) => ({ item, placement: boardPlacement(item, { me, now }) }))
+    return items
+      .map((item) => ({
+        item,
+        placement: boardPlacement(item, { me, now }),
+        spaces: [...new Set((item.sessionIDs ?? []).map(spaceOf))],
+      }))
       .filter((c): c is Card => !!c.placement)
-    return COLUMNS.map((col) => ({ ...col, cards: placed.filter((c) => c.placement.stage === col.id) }))
-  }, [items, me])
+  }, [items, me, state.assignments])
+
+  const shown = filter.length ? placed.filter((c) => c.spaces.some((s) => filter.includes(s))) : placed
+  const columns = COLUMNS.map((col) => ({ ...col, cards: shown.filter((c) => c.placement.stage === col.id) }))
+
+  // Open cards per space, for the filter chips.
+  const openIn = (space: string) => placed.filter((c) => c.placement.stage !== "done" && c.spaces.includes(space)).length
+  const chipsList = [
+    ...state.spaces.map((s) => ({ id: s.id, name: s.name })),
+    { id: NO_SPACE, name: "No space" },
+  ].filter((c) => c.id !== NO_SPACE || openIn(NO_SPACE) > 0)
+  const toggle = (id: string) => props.onFilter(filter.includes(id) ? filter.filter((f) => f !== id) : [...filter, id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -78,6 +93,7 @@ export function Board(props: {
   }, [props.onClose])
 
   const sessionsByID = useMemo(() => new Map(state.sessions.map((s) => [s.id, s])), [state.sessions])
+  const spaceNames = useMemo(() => new Map(state.spaces.map((s) => [s.id, s.name])), [state.spaces])
   const total = columns.reduce((n, c) => n + (c.id === "done" ? 0 : c.cards.length), 0)
 
   return (
@@ -85,14 +101,6 @@ export function Board(props: {
       <div className="board-header">
         <div className="board-title">
           <h1>Board</h1>
-          <select value={scope} onChange={(e) => props.onScope(e.target.value)}>
-            <option value="all">All spaces</option>
-            {state.spaces.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
           <span className="board-sub">
             {total} open · {me ? `as @${me}` : "GitHub login unknown, every PR counts as yours"}
           </span>
@@ -101,16 +109,38 @@ export function Board(props: {
           <Icon name="close" />
         </button>
       </div>
+      <div className="board-filters">
+        <button className={`board-filter${filter.length ? "" : " on"}`} onClick={() => props.onFilter([])}>
+          All spaces
+        </button>
+        {chipsList.map((c) => (
+          <button
+            key={c.id}
+            className={`board-filter${filter.includes(c.id) ? " on" : ""}`}
+            title={filter.includes(c.id) ? "Click to remove from the filter" : "Click to add to the filter"}
+            onClick={() => toggle(c.id)}
+          >
+            {c.name}
+            {openIn(c.id) > 0 && <span className="count">{openIn(c.id)}</span>}
+          </button>
+        ))}
+      </div>
       <div className="board-columns">
         {columns.map((col) => (
-          <Column key={col.id} {...col} sessionsByID={sessionsByID} onOpenSession={props.onOpenSession} />
+          <Column
+            key={col.id}
+            {...col}
+            sessionsByID={sessionsByID}
+            spaceNames={filter.length === 1 ? undefined : spaceNames}
+            onOpenSession={props.onOpenSession}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-type Card = { item: ResourceItem; placement: Placement }
+type Card = { item: ResourceItem; placement: Placement; spaces: string[] }
 
 function Column(props: {
   id: Stage
@@ -118,6 +148,8 @@ function Column(props: {
   hint: string
   cards: Card[]
   sessionsByID: Map<string, AppState["sessions"][number]>
+  /** Set when cards from several spaces mix: each card names its spaces */
+  spaceNames?: Map<string, string>
   onOpenSession(id: string): void
 }) {
   const [shown, setShown] = useState(DONE_PAGE)
@@ -131,7 +163,13 @@ function Column(props: {
       <div className="board-cards">
         {props.cards.length === 0 && <div className="board-empty">Nothing here</div>}
         {cards.map((c) => (
-          <BoardCard key={c.item.id} card={c} sessionsByID={props.sessionsByID} onOpenSession={props.onOpenSession} />
+          <BoardCard
+            key={c.item.id}
+            card={c}
+            sessionsByID={props.sessionsByID}
+            spaceNames={props.spaceNames}
+            onOpenSession={props.onOpenSession}
+          />
         ))}
         {props.id === "done" && props.cards.length > shown && (
           <button className="row show-more" onClick={() => setShown((n) => n + DONE_PAGE)}>
@@ -146,9 +184,13 @@ function Column(props: {
 function BoardCard(props: {
   card: Card
   sessionsByID: Map<string, AppState["sessions"][number]>
+  spaceNames?: Map<string, string>
   onOpenSession(id: string): void
 }) {
   const { item, placement } = props.card
+  const spaces = props.spaceNames
+    ? props.card.spaces.map((id) => props.spaceNames!.get(id)).filter((n): n is string => !!n)
+    : []
   const type = resourceType(item.type)
   const meta = item.meta?.missing ? undefined : item.meta
   const parsed = type?.describe(item.data) ?? { title: item.url }
@@ -169,7 +211,15 @@ function BoardCard(props: {
         <span className="board-card-title">{title}</span>
         <span className="meta">{age(item.last)}</span>
       </div>
-      <div className="board-card-reason">{placement.reason}</div>
+      <div className="board-card-reason">
+        <span>{placement.reason}</span>
+        {spaces.length > 0 && (
+          <span className="board-card-spaces" title={spaces.join(", ")}>
+            {spaces[0]}
+            {spaces.length > 1 ? ` +${spaces.length - 1}` : ""}
+          </span>
+        )}
+      </div>
       {(subtitle || !!meta?.chips?.length) && (
         <div className="resource-subtitle">
           {subtitle && <span className="resource-subtitle-text">{subtitle}</span>}

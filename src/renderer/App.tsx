@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
 import { ArchivedBanner } from "./ArchivedBanner"
-import { Board, type BoardScope } from "./Board"
+import { Board, type BoardFilter } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
@@ -56,7 +56,9 @@ export function App() {
   const [paletteQuery, setPaletteQuery] = useState("")
   const [settings, setSettings] = useState(false)
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
-  const [board, setBoard] = useState<BoardScope | null>(null)
+  const [board, setBoard] = useState(false)
+  // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
+  const [boardFilter, setBoardFilter] = useState<BoardFilter>([])
   const editingSpace = state.spaces.find((s) => s.id === spaceSettingsID)
   // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
   const { hints, cancel: cancelHints } = useJumpHints((n) => {
@@ -83,7 +85,7 @@ export function App() {
   const open = useCallback((id: string) => {
     setSettings(false)
     setSpaceSettingsID(null)
-    setBoard(null)
+    setBoard(false)
     void window.ctrl.openSession(id)
     terminal.current?.focus()
   }, [])
@@ -91,7 +93,7 @@ export function App() {
   const create = useCallback(async (spaceID: string | null) => {
     setSettings(false)
     setSpaceSettingsID(null)
-    setBoard(null)
+    setBoard(false)
     await window.ctrl.newSession(spaceID)
     terminal.current?.focus()
   }, [])
@@ -130,7 +132,7 @@ export function App() {
     () =>
       window.ctrl.onSpaceSettings((id) => {
         setSettings(false)
-        setBoard(null)
+        setBoard(false)
         setSpaceSettingsID(id)
       }),
     [],
@@ -141,7 +143,8 @@ export function App() {
       window.ctrl.onBoardOpen((id) => {
         setSettings(false)
         setSpaceSettingsID(null)
-        setBoard(id)
+        setBoardFilter([id])
+        setBoard(true)
       }),
     [],
   )
@@ -149,15 +152,11 @@ export function App() {
   const toggleBoard = useCallback(() => {
     setSettings(false)
     setSpaceSettingsID(null)
-    setBoard((b) => {
-      if (b) return null
-      const { currentSessionID, assignments } = stateRef.current
-      return (currentSessionID && assignments[currentSessionID]) || "all"
-    })
+    setBoard((b) => !b)
   }, [])
 
   const closeBoard = useCallback(() => {
-    setBoard(null)
+    setBoard(false)
     terminal.current?.focus()
   }, [])
 
@@ -167,7 +166,7 @@ export function App() {
       window.ctrl.onUiSettings((open) => {
         setPalette(false)
         setSpaceSettingsID(null)
-        setBoard(null)
+        setBoard(false)
         setSettings(open)
       }),
     [],
@@ -197,7 +196,7 @@ export function App() {
         if (name === "settings") {
           setPalette(false)
           setSpaceSettingsID(null)
-          setBoard(null)
+          setBoard(false)
           setSettings((v) => !v)
         }
         if (name === "new-chat") {
@@ -237,7 +236,7 @@ export function App() {
         onSearch={() => setPalette(true)}
         onSettings={() => {
           setSpaceSettingsID(null)
-          setBoard(null)
+          setBoard(false)
           setSettings((v) => !v)
         }}
         boardOpen={!!board}
@@ -298,7 +297,7 @@ export function App() {
           />
         )}
         {board && !settings && !editingSpace && ready && !onboarding && (
-          <Board state={state} scope={board} onScope={setBoard} onClose={closeBoard} onOpenSession={open} />
+          <Board state={state} filter={boardFilter} onFilter={setBoardFilter} onClose={closeBoard} onOpenSession={open} />
         )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (

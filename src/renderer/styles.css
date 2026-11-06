@@ -2671,3 +2671,62 @@ body.resizing .terminal-pane.active {
   font-size: 11px;
   color: var(--muted);
 }
+
+.board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 16px;
+}
+
+.board-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--dim);
+  background: transparent;
+}
+
+.board-filter:hover {
+  background: var(--hover);
+}
+
+.board-filter.on {
+  color: var(--text);
+  background: var(--active);
+  border-color: transparent;
+}
+
+.board-filter .count {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.board-card-reason {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-card-reason > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-card-spaces {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}

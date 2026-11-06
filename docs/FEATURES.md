@@ -131,8 +131,9 @@ where it lives.
 
 ## Board (experimental)
 
-- Board (sidebar button, or space ⋯ menu → Board): the resources of a space, or of every space, as four
-  columns by whose turn it is: **Needs you**, **Waiting on others**, **In progress**, **Done** (faded, 10 at
+- Board (sidebar button, or space ⋯ menu → Board to open it filtered on that space): one board for the
+  resources of every session, filtered by space with chips (several at once, open counts on each; cards name
+  their spaces when the filter mixes them), as four columns by whose turn it is: **Needs you**, **Waiting on others**, **In progress**, **Done** (faded, 10 at
   a time). Each card says why it's there (CI failed, Changes requested, Waiting on @vvo, Approved, ready to
   merge…) and links back to up to two sessions that mention it. Click opens the link, a session chip opens the
   session, Esc closes (`src/renderer/Board.tsx`)
