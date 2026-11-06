@@ -1,4 +1,4 @@
-import { host, segments, slugTitle, type ResourceAdapter, type ResourceData, type ResourceType } from "./adapter"
+import { byRecency, host, segments, slugTitle, type ResourceAdapter, type ResourceData, type ResourceType } from "./adapter"
 
 const linearIssue: ResourceType = {
   id: "linear-issue",
@@ -14,6 +14,8 @@ const linearIssue: ResourceType = {
     return { identity: `${workspace.toLowerCase()}/${key}`, url: `https://linear.app/${workspace}/issue/${key}`, data }
   },
   describe: (d) => ({ title: d.key, subtitle: d.title }),
+  // No live details: an issue counts as active while your sessions keep mentioning it.
+  stage: ({ last }, { now }) => byRecency(last, now, 7),
 }
 
 /** Links only: no live details. */

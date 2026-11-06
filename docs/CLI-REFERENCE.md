@@ -997,7 +997,8 @@ ctrl events [--type <type>...] [--session <session>...]
   live?: {title?, subtitle?, tone?, chips?, details?, fields?, missing?, fetched}   // live details, when its adapter has them
   // live.fields: the same details as plain values (null = unknown):
   //   github-pr      {state: open|closed|merged, draft, ci: success|failure|pending, review: approved|changes_requested|review_required,
-  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions}
+  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions,
+  //                   reviewers: pending review requests, comma-separated logins / team slugs}
   //   github-issue   {state: open|closed, stateReason, author}
   //   github-commit  {ci, author}
   //   github-repo    {archived, description}

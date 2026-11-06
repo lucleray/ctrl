@@ -129,6 +129,22 @@ where it lives.
     the reference. A session never lists itself.
     `ctrl resources list` returns them as type `session` with the referenced session (or `null` once deleted)
 
+## Board (experimental)
+
+- Board (sidebar button, or space ⋯ menu → Board to open it filtered on that space): one board for the
+  resources of every session, filtered by space and by type (GitHub, Slack, Vercel,
+  Linear) with legend-style chips: click shows only that one (again: all), ⌘/⇧-click shows or hides it,
+  ⌥-click shows all except it. Hidden ones are struck through, new spaces show up unless you picked "only",
+  the filter is saved across restarts (localStorage). Rows combine, each chip counts the open cards it would show; cards name
+  their spaces when the filter mixes them, as four columns by whose turn it is: **Needs you**, **Waiting on others**, **In progress**, **Done** (faded, 10 at
+  a time). Each card says why it's there (CI failed, Changes requested, Waiting on @vvo, Approved, ready to
+  merge…) and links back to up to two sessions that mention it. Click opens the link, a session chip opens the
+  session, Esc closes (`src/renderer/Board.tsx`)
+- Each link type decides its column with `stage()` (`src/shared/adapters/`). PRs compare their author and
+  requested reviewers with the `gh` login (`reviewers` field); deployments go by build state; commits only
+  show while CI fails or runs; Slack threads and Linear issues have no live state, so they count as in progress
+  while mentioned recently. Repos, Notion pages, channels, projects and sessions stay off the board
+
 ## ctrl Companion (experimental)
 
 - Always-on-top window, off by default and marked Experimental (last section of Settings, or `ctrl settings set companion true`), that

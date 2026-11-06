@@ -1,5 +1,5 @@
 import type { ResourceMeta } from "../types"
-import type { AdapterMode, ParsedResource, ResourceAdapter, ResourceType } from "./adapter"
+import type { AdapterMode, ParsedResource, Placement, ResourceAdapter, ResourceType, StageContext } from "./adapter"
 import { github } from "./github"
 import { linear } from "./linear"
 import { notion } from "./notion"
@@ -7,7 +7,7 @@ import { sessionRefUrl, sessions } from "./sessions"
 import { slack } from "./slack"
 import { vercel } from "./vercel"
 
-export type { ParsedResource, ResourceAdapter, ResourceType } from "./adapter"
+export type { ParsedResource, Placement, ResourceAdapter, ResourceType, Stage, StageContext } from "./adapter"
 
 /**
  * Resource adapters, in panel and Settings order. To add one, implement
@@ -41,6 +41,11 @@ export const resourceType = (id: string) => TYPES.get(id)
 export function byRank<T extends { type: string; meta?: ResourceMeta }>(items: T[]): T[] {
   const rank = (i: T) => TYPES.get(i.type)?.rank?.(i.meta) ?? 0
   return [...items].sort((a, b) => rank(a) - rank(b))
+}
+
+/** Board column for a resource, or null when its type stays off the board (repos, docs, channels…). */
+export function boardPlacement(item: { type: string; meta?: ResourceMeta; last: number }, ctx: StageContext): Placement | null {
+  return TYPES.get(item.type)?.stage?.(item, ctx) ?? null
 }
 
 /** The first type that recognizes the URL, or null. */

@@ -59,6 +59,8 @@ const api: CtrlApi = {
   search: (query) => ipcRenderer.invoke("search", query),
   listResources: (sessionIDs) => ipcRenderer.invoke("resources:list", sessionIDs),
   onResourcesChanged: on("resources:changed"),
+  listBoard: (sessionIDs) => ipcRenderer.invoke("resources:board", sessionIDs),
+  onBoardOpen: on("board:open"),
   watchResources: (sessionIDs) => ipcRenderer.send("resources:watch", sessionIDs),
   onResourceMeta: on("resources:meta"),
   retryAdapter: (id) => ipcRenderer.invoke("adapter:retry", id),

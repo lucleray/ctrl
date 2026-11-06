@@ -41,7 +41,24 @@ export type ResourceType = {
   describe(data: ResourceData): { title: string; subtitle?: string }
   /** Order within the type, lowest first (ties keep newest mention first), from live details when known */
   rank?(meta: ResourceMeta | undefined): number
+  /** Board column and why (src/renderer/Board.tsx). Leave it out, or return null, to keep the type off the board. */
+  stage?(item: { meta?: ResourceMeta; last: number }, ctx: StageContext): Placement | null
 }
+
+/** Board columns: it's your turn, someone else's, it's moving on its own, or it's over. */
+export type Stage = "you" | "waiting" | "moving" | "done"
+export type Placement = { stage: Stage; reason: string }
+export type StageContext = {
+  /** Who the service's CLI is logged in as, e.g. the GitHub login, when known */
+  me?: string
+  now: number
+}
+
+/** For links without live details: recently mentioned means it's still going. */
+export const byRecency = (last: number, now: number, days = 3): Placement =>
+  now - last < days * DAY
+    ? { stage: "moving", reason: "Mentioned recently" }
+    : { stage: "done", reason: `No mention in ${days}+ days` }
 
 /** A resource to fetch: its key, type and the fields its URL gave. */
 export type MetaRequest = { id: string; type: string; data: ResourceData }

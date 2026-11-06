@@ -18,6 +18,8 @@ type Props = {
   onSearch(): void
   onSettings(): void
   onToggleResources(): void
+  boardOpen: boolean
+  onToggleBoard(): void
   /** Pinned under the list, above the connection banner (the toast) */
   footer?: ReactNode
   /** sessionID → ⌘ number while ⌘ is held */
@@ -79,7 +81,7 @@ function sessionTree(list: SessionItem[], parents: Record<string, string>, folde
   return rows
 }
 
-export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onToggleResources, footer }: Props) {
+export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onToggleResources, boardOpen, onToggleBoard, footer }: Props) {
   const [creating, setCreating] = useState(false)
   const [renamingSpace, setRenamingSpace] = useState<string | null>(null)
   const [renamingSession, setRenamingSession] = useState<string | null>(null)
@@ -395,6 +397,9 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
             onClick={onToggleResources}
           >
             <Icon name="panel-right" />
+          </button>
+          <button className={`icon-btn ${boardOpen ? "on" : ""}`} title="Board" onClick={onToggleBoard}>
+            <Icon name="board" />
           </button>
         </span>
       </div>
