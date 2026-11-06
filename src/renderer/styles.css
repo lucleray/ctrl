@@ -2741,3 +2741,27 @@ body.resizing .terminal-pane.active {
   font-weight: 400;
   color: var(--muted);
 }
+
+/* Legend-style chips: a dot that's filled when the row is filtered and the chip shows. */
+.board-filter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  margin-left: -2px;
+}
+
+.board-filter.on .board-filter-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.board-filter.hidden {
+  color: var(--muted);
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.board-filter.hidden .count {
+  display: none;
+}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
 import { ArchivedBanner } from "./ArchivedBanner"
-import { Board, NO_FILTER, type BoardFilter } from "./Board"
+import { Board, loadFilter, onlySpace, saveFilter, type BoardFilter } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
@@ -58,7 +58,11 @@ export function App() {
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
   const [board, setBoard] = useState(false)
   // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
-  const [boardFilter, setBoardFilter] = useState<BoardFilter>(NO_FILTER)
+  const [boardFilter, setBoardFilterState] = useState<BoardFilter>(loadFilter)
+  const setBoardFilter = useCallback((f: BoardFilter) => {
+    setBoardFilterState(f)
+    saveFilter(f)
+  }, [])
   const editingSpace = state.spaces.find((s) => s.id === spaceSettingsID)
   // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
   const { hints, cancel: cancelHints } = useJumpHints((n) => {
@@ -143,10 +147,10 @@ export function App() {
       window.ctrl.onBoardOpen((id) => {
         setSettings(false)
         setSpaceSettingsID(null)
-        setBoardFilter({ ...NO_FILTER, spaces: [id] })
+        setBoardFilter(onlySpace(id))
         setBoard(true)
       }),
-    [],
+    [setBoardFilter],
   )
 
   const toggleBoard = useCallback(() => {

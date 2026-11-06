@@ -5,16 +5,48 @@ import { age } from "./format"
 import { Icon } from "./icons"
 
 /**
- * What the board shows. Within a list, any match counts; across lists, all must match.
- * Empty lists = no filter.
+ * One filter row, like a chart legend: only some ids, or everything except some. "except" with no ids
+ * shows everything, and keeps showing spaces created later (hiding a space doesn't freeze the list).
  */
+export type Selection = { mode: "only" | "except"; ids: string[] }
+const ALL: Selection = { mode: "except", ids: [] }
+
+/** What the board shows: a card must pass every row. */
 export type BoardFilter = {
   /** Space ids (NO_SPACE for sessions outside spaces) */
-  spaces: string[]
+  spaces: Selection
   /** Adapter ids: github, slack, vercel, linear… */
-  sources: string[]
+  sources: Selection
 }
-export const NO_FILTER: BoardFilter = { spaces: [], sources: [] }
+export const NO_FILTER: BoardFilter = { spaces: ALL, sources: ALL }
+export const onlySpace = (id: string): BoardFilter => ({ ...NO_FILTER, spaces: { mode: "only", ids: [id] } })
+
+const shows = (sel: Selection, id: string) => (sel.mode === "only" ? sel.ids.includes(id) : !sel.ids.includes(id))
+const isAll = (sel: Selection) => sel.mode === "except" && !sel.ids.length
+
+/**
+ * Legend clicks. Click: only this one (again: back to all). ⌘ or ⇧-click: show / hide this one, keeping
+ * the rest. ⌥-click: everything except this one.
+ */
+function click(sel: Selection, id: string, e: { metaKey: boolean; shiftKey: boolean; altKey: boolean }): Selection {
+  if (e.altKey) return { mode: "except", ids: [id] }
+  if (e.metaKey || e.shiftKey) {
+    const ids = sel.ids.includes(id) ? sel.ids.filter((i) => i !== id) : [...sel.ids, id]
+    return sel.mode === "only" && !ids.length ? ALL : { mode: sel.mode, ids }
+  }
+  return sel.mode === "only" && sel.ids.length === 1 && sel.ids[0] === id ? ALL : { mode: "only", ids: [id] }
+}
+
+/** Saved across restarts: the spaces you hide usually stay hidden. */
+const FILTER_KEY = "ctrl.board.filter"
+export function loadFilter(): BoardFilter {
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER_KEY) ?? "")
+    if (f?.spaces?.mode && f?.sources?.mode) return f
+  } catch {}
+  return NO_FILTER
+}
+export const saveFilter = (f: BoardFilter) => localStorage.setItem(FILTER_KEY, JSON.stringify(f))
 const NO_SPACE = "none"
 
 const COLUMNS: { id: Stage; label: string; hint: string }[] = [
@@ -83,8 +115,8 @@ export function Board(props: {
       .filter((c): c is Card => !!c.placement)
   }, [items, me, state.assignments])
 
-  const inSpaces = (c: Card) => !filter.spaces.length || c.spaces.some((s) => filter.spaces.includes(s))
-  const inSources = (c: Card) => !filter.sources.length || filter.sources.includes(c.source)
+  const inSpaces = (c: Card) => c.spaces.some((s) => shows(filter.spaces, s))
+  const inSources = (c: Card) => shows(filter.sources, c.source)
   const shown = placed.filter((c) => inSpaces(c) && inSources(c))
   const columns = COLUMNS.map((col) => ({ ...col, cards: shown.filter((c) => c.placement.stage === col.id) }))
 
@@ -101,8 +133,8 @@ export function Board(props: {
     name: a.name,
     count: openFromSource(a.id),
   }))
-  const toggle = (key: keyof BoardFilter, id: string) =>
-    props.onFilter({ ...filter, [key]: filter[key].includes(id) ? filter[key].filter((f) => f !== id) : [...filter[key], id] })
+  const onClick = (key: keyof BoardFilter) => (id: string, e: React.MouseEvent) =>
+    props.onFilter({ ...filter, [key]: click(filter[key], id, e) })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -129,15 +161,29 @@ export function Board(props: {
           <Icon name="close" />
         </button>
       </div>
-      <FilterRow label="Spaces" all="All spaces" chips={spaceChips} on={filter.spaces} onAll={() => props.onFilter({ ...filter, spaces: [] })} onToggle={(id) => toggle("spaces", id)} />
-      <FilterRow label="Types" all="All types" chips={sourceChips} on={filter.sources} onAll={() => props.onFilter({ ...filter, sources: [] })} onToggle={(id) => toggle("sources", id)} />
+      <FilterRow
+        label="Spaces"
+        all="All spaces"
+        chips={spaceChips}
+        selection={filter.spaces}
+        onAll={() => props.onFilter({ ...filter, spaces: ALL })}
+        onClick={onClick("spaces")}
+      />
+      <FilterRow
+        label="Types"
+        all="All types"
+        chips={sourceChips}
+        selection={filter.sources}
+        onAll={() => props.onFilter({ ...filter, sources: ALL })}
+        onClick={onClick("sources")}
+      />
       <div className="board-columns">
         {columns.map((col) => (
           <Column
             key={col.id}
             {...col}
             sessionsByID={sessionsByID}
-            spaceNames={filter.spaces.length === 1 ? undefined : spaceNames}
+            spaceNames={filter.spaces.mode === "only" && filter.spaces.ids.length === 1 ? undefined : spaceNames}
             onOpenSession={props.onOpenSession}
           />
         ))}
@@ -152,27 +198,32 @@ function FilterRow(props: {
   label: string
   all: string
   chips: { id: string; name: string; count: number }[]
-  on: string[]
+  selection: Selection
   onAll(): void
-  onToggle(id: string): void
+  onClick(id: string, e: React.MouseEvent): void
 }) {
+  const all = isAll(props.selection)
   return (
     <div className="board-filters">
       <span className="board-filters-label">{props.label}</span>
-      <button className={`board-filter${props.on.length ? "" : " on"}`} onClick={props.onAll}>
+      <button className={`board-filter${all ? " on" : ""}`} onClick={props.onAll}>
         {props.all}
       </button>
-      {props.chips.map((c) => (
-        <button
-          key={c.id}
-          className={`board-filter${props.on.includes(c.id) ? " on" : ""}`}
-          title={props.on.includes(c.id) ? "Click to remove from the filter" : "Click to add to the filter"}
-          onClick={() => props.onToggle(c.id)}
-        >
-          {c.name}
-          {c.count > 0 && <span className="count">{c.count}</span>}
-        </button>
-      ))}
+      {props.chips.map((c) => {
+        const visible = shows(props.selection, c.id)
+        return (
+          <button
+            key={c.id}
+            className={`board-filter${all ? "" : visible ? " on" : " hidden"}`}
+            title={"Click: only this · ⌘-click: show / hide · ⌥-click: all except this"}
+            onClick={(e) => props.onClick(c.id, e)}
+          >
+            <span className="board-filter-dot" />
+            {c.name}
+            {c.count > 0 && <span className="count">{c.count}</span>}
+          </button>
+        )
+      })}
     </div>
   )
 }
