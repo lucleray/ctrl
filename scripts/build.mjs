@@ -45,6 +45,31 @@ export const configs = [
   },
 ]
 
+// Remote control's web app (src/main/remote.ts serves dist/remote to the phone).
+configs.push({
+  ...common,
+  platform: "browser",
+  target: "safari16",
+  entryPoints: ["src/remote/client.ts"],
+  outdir: "dist/remote",
+  entryNames: "client",
+  format: "esm",
+  sourcemap: false,
+  minify: true,
+  plugins: [
+    {
+      name: "remote-html",
+      setup(build) {
+        build.onEnd(() => {
+          mkdirSync("dist/remote", { recursive: true })
+          copyFileSync("src/remote/index.html", "dist/remote/index.html")
+          copyFileSync("build/icon.png", "dist/remote/icon.png")
+        })
+      },
+    },
+  ],
+})
+
 // The packaged app can't point opencode at bridge/tui.ts (no node_modules next to
 // it, and opencode can't read inside app.asar), so ship a self-contained copy.
 // Only Plugin.define is used at runtime, so skip the solid-js half of the module.

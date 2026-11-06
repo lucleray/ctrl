@@ -349,6 +349,19 @@ export class FxTerminals {
     }
   }
 
+  /**
+   * One terminal at another size (a phone viewing it through remote control); null puts it back to the
+   * shared size. The desktop pane reflows when fx repaints after that.
+   */
+  resizeTerm(id: string, size: { cols: number; rows: number } | null) {
+    const term = this.terms.get(id)
+    if (!term || term.exited !== undefined) return
+    const { cols, rows } = size ?? this.size
+    try {
+      term.proc.resize(cols, rows)
+    } catch {}
+  }
+
   dispose() {
     for (const t of this.terms.values()) if (t.exited === undefined) t.proc.kill()
     this.terms.clear()

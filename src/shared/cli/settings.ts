@@ -57,6 +57,11 @@ export const SETTING_KEYS: SettingKey[] = [
   { key: "sounds", type: { kind: "bool" }, description: "Sounds when a session needs you, fails or finishes" },
   { key: "soundsWhenFocused", type: { kind: "bool" }, description: "Also play sounds while ctrl is focused" },
   {
+    key: "remoteControl",
+    type: { kind: "bool" },
+    description: "Remote control: serve a web page on your Tailscale network to use ctrl from your phone",
+  },
+  {
     key: "soundChoices.<event>",
     type: { kind: "sound" },
     description: "Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null",

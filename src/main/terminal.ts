@@ -244,6 +244,28 @@ export class Terminal {
     } catch {}
   }
 
+  get running() {
+    return !!this.proc
+  }
+
+  /** Quits the TUI without restarting it; start() or open() brings it back. */
+  stop() {
+    this.pendingSession = null
+    const proc = this.proc
+    this.proc = undefined
+    this.bridge?.close()
+    proc?.kill()
+  }
+
+  /** Makes the TUI redraw everything, for a viewer that just attached (it only sends changes otherwise). */
+  repaint() {
+    const { cols, rows } = this.size
+    try {
+      this.proc?.resize(cols, Math.max(1, rows - 1))
+      setTimeout(() => this.resize(cols, rows), 50)
+    } catch {}
+  }
+
   dispose() {
     this.disposed = true
     clearTimeout(this.restartTimer)

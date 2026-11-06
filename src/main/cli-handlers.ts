@@ -497,6 +497,7 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     notifications: true,
     sounds: true,
     soundsWhenFocused: false,
+    remoteControl: false,
     "soundChoices.needs-input": "Glass",
     "soundChoices.failed": "Basso",
     "soundChoices.finished": "Hero",

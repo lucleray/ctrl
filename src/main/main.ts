@@ -43,6 +43,7 @@ import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
+import { RemoteServer, type RemoteSnapshot } from "./remote"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -167,6 +168,7 @@ const state = (): AppState => ({
       ? (opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined))
       : undefined) ?? fx.problem ?? undefined,
   error,
+  remote: remote.status,
 })
 
 let pushQueued = false
@@ -191,6 +193,7 @@ const push = () => {
     syncCtrlInstructions()
     attention.refreshBadge(sessions)
     send("state", state())
+    remote.changed()
     for (const cb of [...changeListeners]) {
       try {
         cb()
@@ -252,7 +255,10 @@ const fx: FxSessions = new FxSessions({
 })
 
 const fxTerms: FxTerminals = new FxTerminals({
-  onData: (termID, data, end) => send("pty:data", termID, data, end),
+  onData: (termID, data, end) => {
+    send("pty:data", termID, data, end)
+    remote.fxData(termID, data)
+  },
   onChange: () => {
     fx.rebuild()
     saveOpen()
@@ -333,6 +339,70 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
     watchBridge()
     push()
   },
+})
+
+// ---------- remote control (src/main/remote.ts) ----------
+
+/** Unassigned sessions the phone lists besides the spaces' (bounded, like the sidebar's Recents pages). */
+const REMOTE_RECENTS = 30
+
+/** Session the phone's TUI shows, so a theme change restarts it on the same one. */
+let remoteRoute: string | null = null
+const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
+  onData: (data) => remote.tuiData(data),
+  onReset: () => remote.tuiReset(),
+  onRoute: (id) => (remoteRoute = id),
+  onBridge: () => {},
+})
+
+const remoteSnapshot = (): RemoteSnapshot => {
+  const { spaces, assignments, archived } = store.data
+  const spaceIDs = new Set(spaces.map((s) => s.id))
+  let others = 0
+  const list = sessions.filter((s) => {
+    if (archived[s.id] || pendingDeletes.has(s.id)) return false
+    if (spaceIDs.has(assignments[s.id])) return true
+    return others++ < REMOTE_RECENTS
+  })
+  return {
+    dark: nativeTheme.shouldUseDarkColors,
+    spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
+    sessions: list.map((s) => ({
+      id: s.id,
+      harness: s.harness,
+      title: s.title,
+      status: s.status,
+      statusDetail: s.statusDetail,
+      updated: s.updated,
+      spaceID: spaceIDs.has(assignments[s.id]) ? assignments[s.id] : null,
+      directory: s.directory,
+    })),
+  }
+}
+
+// Dev runs get their own port so they can run next to the installed app.
+const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
+
+const remote: RemoteServer = new RemoteServer({
+  port: REMOTE_PORT,
+  staticDir: join(root, "dist/remote"),
+  token: () => store.remoteToken(),
+  snapshot: remoteSnapshot,
+  tui: remoteTui,
+  fx: {
+    open: (sessionID) => fxTermFor(sessionID),
+    backlog: (termID) => fxTerms.backlog(termID),
+    write: (termID, data) => fxTerms.write(termID, data),
+    resize: (termID, size) => fxTerms.resizeTerm(termID, size),
+  },
+  cantOpen: (sessionID) => {
+    const session = sessionByID(sessionID)
+    if (!session) return "This session doesn't exist anymore"
+    if (session.harness === "opencode" && !opencodeStarted) return "opencode isn't installed on this Mac"
+    if (session.elsewhere) return "This session is open in fx in another terminal"
+    return null
+  },
+  onStatus: push,
 })
 
 // ---------- opencode install, read-session skill, updates ----------
@@ -487,10 +557,9 @@ const applyTheme = () => {
   const dark = nativeTheme.shouldUseDarkColors
   win?.setBackgroundColor(dark ? DARK_BG : LIGHT_BG)
   // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
-  terminal.setCliOverrides(
-    { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } },
-    opencodeRoute,
-  )
+  const overrides = { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } }
+  terminal.setCliOverrides(overrides, opencodeRoute)
+  remoteTui.setCliOverrides(overrides, remoteRoute)
   fxTerms.colorScheme(dark)
   push()
 }
@@ -498,6 +567,7 @@ const applyTheme = () => {
 const applySettings = (patch: Partial<Settings>) => {
   if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
   store.setSettings(patch)
+  if (patch.remoteControl !== undefined) void remote.setEnabled(patch.remoteControl)
   if (patch.adapterModes) {
     adapters.setModes(patch.adapterModes)
     // Panels re-read their resources: without an adapter that's off, with or without its details.
@@ -1494,6 +1564,8 @@ app.whenReady().then(async () => {
   registerIpc()
   cliServer.start().catch((err) => console.error("[ctrl] cli socket failed", err))
   await terminal.init()
+  await remoteTui.init()
+  if (store.data.settings.remoteControl) void remote.setEnabled(true)
   watchBridge()
   loadThemes()
   applyTheme()
@@ -1543,6 +1615,8 @@ app.on("window-all-closed", () => app.quit())
 
 app.on("will-quit", () => {
   cliServer.stop()
+  remote.stop()
+  remoteTui.dispose()
   terminal.dispose()
   fxTerms.dispose()
   fx.stop()

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { DEFAULT_SOUND_CHOICES, type AgentOrigin, FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: Settings = {
   ctrlInstructions: true,
   adapterModes: {},
   shortcuts: {},
+  remoteControl: false,
 }
 
 type Persisted = {
@@ -47,6 +49,8 @@ type Persisted = {
   open: { sessions: string[]; current: string | null }
   /** Terminal area size, so restored and new fx processes start at the right size */
   termSize?: { cols: number; rows: number }
+  /** Secret in the remote control URL (src/main/remote.ts), kept so the link saved on the phone keeps working */
+  remoteToken?: string
 }
 
 export class Store {
@@ -129,6 +133,14 @@ export class Store {
     if (this.data.termSize?.cols === cols && this.data.termSize.rows === rows) return
     this.data.termSize = { cols, rows }
     this.saveSoon()
+  }
+
+  remoteToken() {
+    if (!this.data.remoteToken) {
+      this.data.remoteToken = randomBytes(24).toString("base64url")
+      this.save()
+    }
+    return this.data.remoteToken
   }
 
   setViewed(sessionID: string, at: number) {
