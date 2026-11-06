@@ -3,7 +3,7 @@ import { Service } from "@opencode/client/service"
 import { homedir } from "node:os"
 import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
-import type { McpServerItem, ModelChoices, ModelOption, ModelRef, SessionItem } from "../shared/types"
+import type { McpServerItem, ModelChoices, ModelOption, ModelRef, OpencodeServer, SessionItem } from "../shared/types"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
 const CTRL_INSTRUCTIONS_KEY = "ctrl.cli"
@@ -13,10 +13,27 @@ const MCP_DIR = process.env.CTRL_MCP_DIR || homedir()
 type Client = ReturnType<typeof OpenCode.make>
 type Event = { type: string; data?: Record<string, unknown> }
 
-/** Cap for the full sync on launch; sessions created afterwards are added on top. */
+/** Cap for the full sync on launch plus loadOlder(); sessions created afterwards are added on top. */
 const MAX_SESSIONS = 1000
+/** Page size for session.list, on every page (cursor pages fall back to 50 without it). */
+const PAGE_SIZE = 300
+/**
+ * The full sync only loads sessions updated this recently; older ones wait for loadOlder() (Archived
+ * section, palette search, CLI). Keeps launch and reconnects proportional to recent activity, not history.
+ */
+const RECENT_MS = 30 * 24 * 60 * 60_000
 /** Coalesce a burst of events for one session (execution end + idle) into one fetch. */
 const FETCH_DEBOUNCE_MS = 100
+
+/**
+ * Runs inside the service. Fails once it lost its macOS login session (e.g. the terminal that
+ * spawned it went away): user lookups then return the bare uid.
+ */
+const HEALTH_PROBE = `[ "$(/usr/bin/id -un)" != "$(/usr/bin/id -u)" ]`
+const HEALTH_INTERVAL_MS = 5 * 60_000
+const HEALTH_TIMEOUT_MS = 15_000
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function message(err: unknown) {
   return err instanceof Error ? err.message : String(err)
@@ -46,9 +63,10 @@ type Pending = { sessionID: string; detail: string }
  * Keeps the sidebar's session list in sync with opencode.
  *
  * One full sync on launch and after the event stream reconnects (events may
- * have been missed). After that, events patch the in-memory state directly, or
- * re-read just the session they're about, so the cost of an update doesn't grow
- * with the number of sessions.
+ * have been missed), of the sessions updated in the last RECENT_MS; older ones
+ * load on demand (loadOlder). After that, events patch the in-memory state
+ * directly, or re-read just the session they're about, so the cost of an update
+ * doesn't grow with the number of sessions.
  */
 export class OpenCodeService {
   client?: Client
@@ -74,13 +92,29 @@ export class OpenCodeService {
   private ending = new Set<string>()
   /** Deleted while a fetch was in flight: don't let the fetch bring it back. */
   private deleted = new Set<string>()
+  /** Where the recent sync stopped: the older sessions it already got, and the cursor for the rest. */
+  private olderStart: { head: SessionInfo[]; cursor: string | null } | null = null
+  private olderLoad: Promise<void> | null = null
+  /** loadOlder() was asked for: a re-sync loads the older sessions again. */
+  private wantOlder = false
+  /** Bumped by every full sync, so an older-load started before it doesn't merge stale data. */
+  private generation = 0
 
   constructor(private onChange: () => void) {}
 
   /** Set while the opencode service can't be reached or sessions can't be loaded. */
   problem: string | null = null
 
+  server: OpencodeServer = { state: "checking" }
+  private checking = false
+
   async start() {
+    await this.connect()
+    void this.listen()
+    setInterval(() => void this.checkHealth(), HEALTH_INTERVAL_MS)
+  }
+
+  private async connect() {
     // Keep retrying: the service may still be starting, or come back later.
     while (true) {
       try {
@@ -88,13 +122,12 @@ export class OpenCodeService {
         const bin = findOpencode()
         const endpoint = await Service.ensure(bin ? { command: [bin, "serve", "--service"] } : {})
         this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-        break
+        return
       } catch (err) {
         this.setProblem(`Can't reach opencode: ${message(err)}`)
-        await new Promise((r) => setTimeout(r, 3000))
+        await sleep(3000)
       }
     }
-    void this.listen()
   }
 
   private setProblem(problem: string | null) {
@@ -103,21 +136,123 @@ export class OpenCodeService {
     this.onChange()
   }
 
-  /** Full snapshot: every root session, which ones run, and what's waiting on you. */
+  private setServer(server: OpencodeServer) {
+    if (JSON.stringify(server) === JSON.stringify(this.server)) return
+    this.server = server
+    this.onChange()
+  }
+
+  /** Runs HEALTH_PROBE inside the service. Only a clean failure counts: an unreachable or slow service isn't this. */
+  async checkHealth() {
+    const client = this.client
+    if (!client || this.checking || this.server.state === "restarting") return
+    this.checking = true
+    try {
+      const info = await client.server.info()
+      const healthy = await this.probe(client)
+      this.setServer({ state: healthy ? "ok" : "broken", version: info.version, pid: info.pid })
+    } catch (err) {
+      console.error("[ctrl] opencode health check failed", err)
+    } finally {
+      this.checking = false
+    }
+  }
+
+  private async probe(client: Client) {
+    const location = { directory: homedir() }
+    const { data } = await client.shell.create({ location, command: HEALTH_PROBE, timeout: HEALTH_TIMEOUT_MS })
+    try {
+      let shell = data
+      const deadline = Date.now() + HEALTH_TIMEOUT_MS
+      while (shell.status === "running" && Date.now() < deadline) {
+        await sleep(250)
+        shell = (await client.shell.get({ id: shell.id, location })).data
+      }
+      return !(shell.status === "exited" && shell.exit !== 0)
+    } finally {
+      void client.shell.remove({ id: data.id, location }).catch(() => {})
+    }
+  }
+
+  /** Stops the registered service (whoever started it) and starts a fresh one from ctrl. Runs in progress stop. */
+  async restart() {
+    if (this.server.state === "restarting") return
+    this.setServer({ state: "restarting" })
+    try {
+      await Service.stop({ pty: "handoff" })
+      // listen() picks up the new client on its next reconnect.
+      await this.connect()
+    } finally {
+      this.server = { state: "checking" }
+      this.onChange()
+      await this.checkHealth()
+    }
+  }
+
+  /** Snapshot of recently updated root sessions, which ones run, and what's waiting on you. */
   private async sync() {
     const client = this.client!
-    const [all, active] = await Promise.all([
-      this.listAll(),
+    const generation = ++this.generation
+    // Older sessions load again once this sync is done (wantOlder); asking before then waits for nothing.
+    this.olderStart = null
+    this.olderLoad = null
+    const [{ recent, older }, active] = await Promise.all([
+      this.listRecent(),
       client.session.active().catch(() => ({}) as Record<string, unknown>),
     ])
-    const roots = all.filter((s) => !s.parentID && !s.time.archived)
-    const pending = await this.pendingInput([...new Set(roots.map((s) => s.location.directory))])
-    this.infos = new Map(roots.map((s) => [s.id, s]))
-    this.running = new Set(Object.keys(active))
+    const roots = recent.filter((s) => !s.parentID && !s.time.archived)
+    const byID = new Map(roots.map((s) => [s.id, s]))
+    // Only a running session can wait on you, so only their folders are asked. Asking a folder makes
+    // opencode load it (config, plugins, MCP), and every folder that ever had a session adds up.
+    const running = Object.keys(active)
+    const pending = await this.pendingInput([
+      ...new Set(running.flatMap((id) => byID.get(id)?.location.directory ?? [])),
+    ])
+    if (generation !== this.generation) return
+    this.infos = byID
+    this.olderStart = older
+    this.olderLoad = null
+    this.running = new Set(running)
     this.pending = pending
     this.rebuild()
     this.refreshMcpSoon()
-    console.log(`[ctrl] full sync: ${roots.length} sessions`)
+    console.log(`[ctrl] full sync: ${roots.length} recent sessions`)
+    if (this.wantOlder) void this.loadOlder()
+  }
+
+  /**
+   * Adds the sessions the full sync left out (not updated in RECENT_MS). Called when they're about to be
+   * shown or looked up; cheap once loaded, and a no-op before the first sync.
+   */
+  loadOlder(): Promise<void> {
+    this.wantOlder = true
+    const start = this.olderStart
+    if (!start || !this.client) return Promise.resolve()
+    this.olderLoad ??= (async () => {
+      const generation = this.generation
+      const found = [...start.head]
+      let cursor = start.cursor
+      try {
+        while (cursor && this.infos.size + found.length < MAX_SESSIONS) {
+          const res = await this.client!.session.list({ cursor, limit: PAGE_SIZE })
+          found.push(...res.data)
+          cursor = (res.data.length ? res.cursor.next : null) ?? null
+        }
+      } catch (err) {
+        console.error("[ctrl] loading older sessions failed", err)
+      }
+      if (generation !== this.generation) return
+      this.olderStart = null
+      let added = 0
+      for (const s of found) {
+        if (s.parentID || s.time.archived || this.infos.has(s.id) || this.deleted.has(s.id)) continue
+        this.infos.set(s.id, s)
+        added++
+      }
+      if (added) this.rebuild()
+      console.log(`[ctrl] loaded ${added} older sessions`)
+    })()
+    return this.olderLoad
   }
 
   /** Status changes arrive one server at a time (and per folder); re-list once per burst. */
@@ -145,15 +280,24 @@ export class OpenCodeService {
     await this.refreshMcp()
   }
 
-  private async listAll() {
-    const all: SessionInfo[] = []
-    let res = await this.client!.session.list({ parentID: "null", limit: 300 })
-    all.push(...res.data)
-    while (res.cursor.next && res.data.length > 0 && all.length < MAX_SESSIONS) {
-      res = await this.client!.session.list({ cursor: res.cursor.next })
-      all.push(...res.data)
+  /**
+   * Root sessions updated in the last RECENT_MS, newest first (opencode lists by update time). Stops at the
+   * first page that reaches older ones, and returns where it stopped so loadOlder() can pick up from there.
+   */
+  private async listRecent() {
+    const cutoff = Date.now() - RECENT_MS
+    const recent: SessionInfo[] = []
+    let res = await this.client!.session.list({ parentID: "null", limit: PAGE_SIZE })
+    while (true) {
+      const fresh = res.data.filter((s) => s.time.updated >= cutoff)
+      recent.push(...fresh)
+      const next = (res.data.length ? res.cursor.next : null) ?? null
+      if (fresh.length < res.data.length || !next || recent.length >= MAX_SESSIONS) {
+        const older = res.data.filter((s) => s.time.updated < cutoff)
+        return { recent, older: older.length || next ? { head: older, cursor: next } : null }
+      }
+      res = await this.client!.session.list({ cursor: next, limit: PAGE_SIZE })
     }
-    return all
   }
 
   private async pendingInput(directories: string[]) {
@@ -185,6 +329,7 @@ export class OpenCodeService {
           () => {
             this.setProblem(null)
             this.setReady(this.client!)
+            void this.checkHealth()
           },
           (err) => this.setProblem(`Couldn't load sessions: ${message(err)}`),
         )

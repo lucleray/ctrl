@@ -30,6 +30,8 @@ type Term = {
   sessionID: string | null
   /** Space a brand-new session joins once fx reports its id */
   spaceID?: string | null
+  /** Parent session a brand-new session gets once fx reports its id */
+  parentID?: string | null
   status?: LiveStatus
   backlog: string[]
   backlogSize: number
@@ -53,7 +55,7 @@ type Events = {
   onExit(termID: string, sessionID: string | null, code: number): void
 }
 
-type SpawnOptions = { cwd: string; args: string[]; env: Record<string, string>; spaceID?: string | null }
+type SpawnOptions = { cwd: string; args: string[]; env: Record<string, string>; spaceID?: string | null; parentID?: string | null }
 
 /** Parses `state=working:app=fx:msg=…` (base64 msg) per the Program Status Protocol. */
 function parseStatus(body: string): LiveStatus | "clear" | undefined {
@@ -119,7 +121,7 @@ export class FxTerminals {
     // The status belonged to the previous session.
     term.status = undefined
     this.events.onChange()
-    return { termID: term.id, previous, spaceID: term.spaceID }
+    return { termID: term.id, previous, spaceID: term.spaceID, parentID: term.parentID }
   }
 
   /**
@@ -180,6 +182,7 @@ export class FxTerminals {
       opts,
       sessionID,
       spaceID: opts.spaceID,
+      parentID: opts.parentID,
       backlog: [],
       backlogSize: 0,
       total: 0,

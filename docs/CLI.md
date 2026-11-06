@@ -69,7 +69,9 @@ ctrl help [<noun> [<verb>]] [--json]
 - **Flags:** long form only. Booleans are `--flag` / `--no-flag` (or `--flag=false`). Values are
   `--key value` or `--key=value`. Repeatable flags build a list (`--status running --status failed`).
 - **stdin:** a text value of `-` is read from stdin, for prompts and instructions with newlines:
-  `ctrl session send ses_x --text - <<'EOF'`.
+  `ctrl session send ses_x --text - <<'EOF'`. Pass anything long this way rather than inline
+  (`--prompt "$(cat prompt.md)"`): no shell quoting to get wrong, no argument size limits, the text doesn't
+  show up in `ps`, and some endpoint security tools kill processes with long arguments.
 - **Global flags:** `--pretty` (indented JSON), `--fields id,title` (keep only these fields of the returned
   object, or of each item in `items`), `--timeout <ms>` (wait for the app, default 15s).
 - **`--help`** on any command prints its usage. `ctrl <noun>` prints that noun's commands.
@@ -118,6 +120,9 @@ Wherever a command takes a session or a space, it also takes a selector:
 ```
 
 - Errors go to stdout too, so one parser handles both. The exit code is non-zero.
+- Even a CLI killed before it could answer (by a signal other than Ctrl-C or a closed pipe) gets a reply:
+  the launcher prints an `INTERNAL` error naming the signal, with a hint to use stdin when an argument was
+  long, and exits 1.
 - `events` streams NDJSON instead: a `{"type":"ready"}` line, then one event per line.
 - Object shapes (`Session`, `Space`, `Resource`), settings keys and the error table are in
   [CLI-REFERENCE.md](CLI-REFERENCE.md).
@@ -146,8 +151,15 @@ Wherever a command takes a session or a space, it also takes a selector:
   the background. Typing without sending (`session send --no-submit`, `session reference` without
   `--submit`) needs the session's terminal: opencode has one TUI, so the session must be on screen
   (`--focus`), while fx sessions get typed into in the background.
+- **`session new` always replies within 12s,** under the default `--timeout`: creating, renaming and
+  prompting share one budget. If the harness is stuck, the `TIMEOUT` error's `hint` says whether the session
+  was created and what to run next, instead of the CLI waiting silently.
 - **New fx sessions:** fx only reports a session id once its process is up, so `session new` waits for it.
-  If it doesn't come within 15s, `data` is `{pending:true, terminal}`.
+  If it doesn't come within that budget, `data` is `{pending:true, terminal}`.
+- **fx turns:** fx writes a turn to `events.jsonl` only when it ends, and keeps the turn in progress in
+  `recovery.json`. ctrl reads that file, so a prompted fx session shows `running` within a second or two,
+  `session wait --for done` works, and `session read` shows `Turn N · running`. fx 0.0.13 sends no OSC 7501
+  status reports, so `needs-input` and `failed` never show: a turn waiting on a permission stays `running`.
 - **No session deletes:** agents archive (`session archive`, `space archive-all`). To delete, the user
   right-clicks the session in the sidebar.
 
@@ -178,7 +190,7 @@ first launch ──► toast "Let agents read your sessions and drive ctrl?" ─
 ## Architecture
 
 ```text
-bin/ctrl (sh) ─► node, else ctrl's Electron with ELECTRON_RUN_AS_NODE=1
+bin/ctrl (sh) ─► node, else ctrl's Electron with ELECTRON_RUN_AS_NODE=1 (waits: JSON error if it's killed)
    └─ dist/cli/cli.cjs: parse argv against the registry ─► validate ─► one request on the socket
 src/main/cli-server.ts: net.Server on <state folder>/ctrl.sock, created 0600
    └─ handler from src/main/cli-handlers.ts ─► CliHost (implemented in main.ts) ─► reply
@@ -198,6 +210,10 @@ src/main/cli-server.ts: net.Server on <state folder>/ctrl.sock, created 0600
 - **Waiting:** `session wait`, the "turn started" check and `events` subscribe to main's state pushes
   (`changeListeners`, run after each coalesced push). No polling. `events` diffs a small per-session snapshot
   only while a stream is open.
+- **Launcher:** `bin/ctrl` runs `cli.cjs` and waits for it rather than `exec`ing it, so when the CLI is
+  killed before it answers (exit 128+n), the launcher still prints the JSON error ([Output](#output)). Seen
+  in the wild: an endpoint security tool SIGKILLing `node <script> <argument over ~1 KB>` before any JS ran,
+  so a long inline `--prompt` used to exit 137 with no output and nothing created.
 - **Shipping:** the CLI is built to `dist/cli/` (excluded from `app.asar`) and copied to
   `Contents/Resources/cli/`, so plain node can run it. ~45 KB, starts in ~30ms with node.
 

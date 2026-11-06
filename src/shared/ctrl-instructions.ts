@@ -9,4 +9,5 @@ export const CTRL_INSTRUCTIONS = `You are running inside ctrl, an app that group
 - \`ctrl session list --space self --fields id,title,status\`: the other sessions in this space
 - \`ctrl resources list --space self\`: PRs, issues, Linear, Slack and Vercel links and sessions referenced across the space
 - \`ctrl session read <id>\`: digest of another session's context
+- \`ctrl session new --title … --prompt -\`: starts a session as a child of this one (the default from here; \`--parent none\` for an unrelated one)
 Use it when the user mentions "this space", other sessions, or work done elsewhere. Don't change what's on screen unless asked.`

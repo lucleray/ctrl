@@ -25,7 +25,7 @@ import {
   type Toast,
   type UiState,
 } from "../shared/types"
-import { accelFromInput, commandFor, type CommandID } from "../shared/shortcuts"
+import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
 import { setChildEnv } from "./child-env"
 import { createHandlers, type CliHost } from "./cli-handlers"
@@ -33,7 +33,7 @@ import { CliInstall } from "./cli-install"
 import { CliServer } from "./cli-server"
 import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
-import { ADAPTERS } from "../shared/adapters"
+import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
 import { checkFx, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
@@ -43,11 +43,12 @@ import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
-import { RemoteServer, type RemoteSnapshot } from "./remote"
+import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
 import { cliThemeName, listThemes } from "./themes"
+import { Companion } from "../companion/companion"
 
 const root = join(fileURLToPath(import.meta.url), "../..")
 const LIGHT_BG = "#f7f7f6"
@@ -142,6 +143,7 @@ const terms = (): TermInfo[] => [
 const state = (): AppState => ({
   version: app.getVersion(),
   opencode: opencodeCheck,
+  opencodeServer: opencode.server,
   fx: fxCheck,
   skill: skill.current,
   cli: cliInstall.current,
@@ -151,6 +153,7 @@ const state = (): AppState => ({
   assignments: store.data.assignments,
   archived: store.data.archived,
   createdByAgent: store.data.createdByAgent,
+  parents: store.data.parents,
   ui: store.data.ui,
   settings: store.data.settings,
   themes,
@@ -193,6 +196,7 @@ const push = () => {
     syncCtrlInstructions()
     attention.refreshBadge(sessions)
     send("state", state())
+    companion.changed()
     remote.changed()
     for (const cb of [...changeListeners]) {
       try {
@@ -219,6 +223,7 @@ const sessionsChanged = () => {
 
 const opencode = new OpenCodeService(() => {
   watchMcp()
+  watchServer()
   sessionsChanged()
 })
 
@@ -243,6 +248,7 @@ const fx: FxSessions = new FxSessions({
     const claimed = fxTerms.claim(sessionID, pid)
     if (!claimed) return
     // A session started from a space joins it once fx tells us its id.
+    if (claimed.parentID && !claimed.previous) store.setParent(sessionID, claimed.parentID)
     if (claimed.spaceID && !claimed.previous) store.assign(sessionID, claimed.spaceID)
     // /new or /resume inside a space's session keeps you in that space.
     else if (claimed.previous && store.data.assignments[claimed.previous] && !store.data.assignments[sessionID])
@@ -293,6 +299,8 @@ const recheckFx = async () => {
 const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
   send("resources:changed", ids)
   adapters.resourcesChanged(ids)
+  companion.changed()
+  remote.boardChanged()
 })
 
 const adapters = new AdapterService(
@@ -301,11 +309,39 @@ const adapters = new AdapterService(
   store.data.settings.adapterModes,
   {
     list: (sessionIDs) => search.resources(sessionIDs),
-    onMeta: (metas) => send("resources:meta", metas),
+    onMeta: (metas) => {
+      send("resources:meta", metas)
+      remote.boardChanged()
+    },
     onStatus: push,
   },
 )
 void adapters.check()
+
+const companion = new Companion({
+  root,
+  sessions: () => sessions,
+  isArchived: (id) => !!store.data.archived[id],
+  spaceOf: (id) => {
+    const spaceID = store.data.assignments[id]
+    return spaceID ? store.data.spaces.find((s) => s.id === spaceID) : undefined
+  },
+  sessionsMentioning: (ids, prefixes) => search.sessionsMentioning(ids, prefixes),
+  open: (id) => {
+    raiseWindow()
+    openSession(id)
+  },
+  newSession: (text) => {
+    raiseWindow()
+    void newSessionWith(text).catch(report)
+  },
+  shortcuts: () => bindings("companion-new-session", store.data.settings.shortcuts),
+  show: (settings) => {
+    raiseWindow()
+    if (settings) send("ui:settings", true)
+  },
+  disable: () => applySettings({ companion: false }),
+})
 
 // wrapped-links
 const wrappedLinks = new WrappedLinks(
@@ -380,6 +416,45 @@ const remoteSnapshot = (): RemoteSnapshot => {
   }
 }
 
+/** The Board for phones: same cards as src/renderer/Board.tsx, flattened to what the phone draws. */
+const remoteBoard = (): RemoteBoardCard[] => {
+  const ids = [...new Set([...sessions.map((s) => s.id), ...Object.keys(store.data.assignments)])]
+  const items = search.resourcesWithSessions(ids).filter((r) => adapters.shows(r.type))
+  const me = adapters.adapters.find((a) => a.id === "github")?.status?.account
+  const now = Date.now()
+  const spaceNames = new Map(store.data.spaces.map((s) => [s.id, s.name]))
+  const cards: RemoteBoardCard[] = []
+  for (const r of items) {
+    const meta = adapters.get(r)
+    const placement = boardPlacement({ ...r, meta }, { me, now })
+    if (!placement) continue
+    const live = meta?.missing ? undefined : meta
+    const parsed = resourceType(r.type)?.describe(r.data) ?? { title: r.url }
+    const mentioning = (r.sessionIDs ?? [])
+      .map((id) => sessionByID(id))
+      .filter((x): x is SessionItem => !!x)
+      .sort((a, b) => b.updated - a.updated)
+    cards.push({
+      id: r.id,
+      url: r.url,
+      source: adapterOf(r.type)?.name ?? "",
+      title: live?.title ?? parsed.title,
+      subtitle: live?.subtitle ?? parsed.subtitle,
+      tone: live?.tone,
+      chips: live?.chips?.map((c) => ({ text: c.text, tone: c.tone })) ?? [],
+      stage: placement.stage,
+      reason: placement.reason,
+      last: r.last,
+      spaces: [...new Set((r.sessionIDs ?? []).map((id) => store.data.assignments[id] ?? null))].map((id) => ({
+        id,
+        name: id ? (spaceNames.get(id) ?? "") : "No space",
+      })),
+      sessions: mentioning.slice(0, 2).map((x) => ({ id: x.id, title: x.title })),
+    })
+  }
+  return cards.sort((a, b) => b.last - a.last)
+}
+
 // Dev runs get their own port so they can run next to the installed app.
 const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
 
@@ -388,6 +463,14 @@ const remote: RemoteServer = new RemoteServer({
   staticDir: join(root, "dist/remote"),
   token: () => store.remoteToken(),
   snapshot: remoteSnapshot,
+  board: remoteBoard,
+  // Freshen live details (PR states, CI) for what the phone is about to show, like the panel does on focus.
+  refreshBoard: (cards) => {
+    const items = search
+      .resourcesWithSessions([...new Set([...sessions.map((s) => s.id), ...Object.keys(store.data.assignments)])])
+      .filter((r) => cards.has(r.id))
+    void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
+  },
   tui: remoteTui,
   fx: {
     open: (sessionID) => fxTermFor(sessionID),
@@ -416,6 +499,8 @@ const recheckOpencode = async () => {
   console.log(`[ctrl] opencode: ${JSON.stringify(opencodeCheck)}`)
   if (opencodeCheck.state === "ok" && !opencodeStarted) {
     opencodeStarted = true
+    // An open Archived section shows sessions the recent sync leaves out.
+    if (!store.data.ui.archivedCollapsed) void opencode.loadOlder()
     opencode.start().catch(report)
     const size = store.data.termSize ?? fxTerms.size
     terminal.start(size.cols, size.rows)
@@ -573,6 +658,8 @@ const applySettings = (patch: Partial<Settings>) => {
     // Panels re-read their resources: without an adapter that's off, with or without its details.
     send("resources:changed", null)
   }
+  if (patch.companion !== undefined && !headless) companion.setEnabled(patch.companion)
+  if (patch.shortcuts && !headless) companion.updateShortcuts()
   loadThemes()
   applyTheme()
 }
@@ -637,6 +724,18 @@ const openFxSession = (sessionID: string) => {
   })
 }
 
+/** Settings → Sessions → Folder, or ~. A missing folder falls back to ~ rather than failing the session. */
+const defaultDirectory = () => {
+  const dir = store.data.settings.defaultDirectory
+  return dir && existsSync(dir) ? dir : homedir()
+}
+
+/** Settings → Sessions → Space for new chats, or none. A deleted space counts as none. */
+const defaultSpaceID = () => {
+  const id = store.data.settings.defaultSpace
+  return id && store.space(id) ? id : null
+}
+
 /** Space harness if it sets one, else the app default. Falls back to the other one when that isn't installed. */
 const harnessFor = (space?: Space): Harness => {
   const wanted = space?.harness ?? store.data.settings.defaultHarness
@@ -659,6 +758,8 @@ type NewSessionOptions = {
   focus?: boolean
   /** Overrides the space / app model */
   model?: ModelRef
+  /** Makes it a child session of this one */
+  parentID?: string | null
 }
 
 /** Returns the new session's id, or for fx the terminal that will report it (onOwner). */
@@ -666,18 +767,18 @@ const newSession = async (
   spaceID: string | null,
   directory?: string,
   harness?: Harness,
-  { focus = true, model: modelOverride }: NewSessionOptions = {},
+  { focus = true, model: modelOverride, parentID }: NewSessionOptions = {},
 ): Promise<{ id: string } | { pending: true; terminal: string }> => {
   const space = spaceID ? store.space(spaceID) : undefined
   harness ??= harnessFor(space)
-  const cwd = directory || space?.directory || homedir()
+  const cwd = directory || space?.directory || defaultDirectory()
   const model = modelOverride ?? modelFor(harness, space)
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
     const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
     if (focus) showFxTerm()
     // The session joins the space once fx reports its id (onOwner).
-    const terminal = fxTerms.create({ cwd, args, env: {}, spaceID }, focus)
+    const terminal = fxTerms.create({ cwd, args, env: {}, spaceID, parentID }, focus)
     push()
     return { pending: true, terminal }
   }
@@ -685,6 +786,7 @@ const newSession = async (
     throw new CliError("HARNESS_MISSING", "opencode isn't installed, so ctrl can't start an opencode session")
   const id = await opencode.createSession(cwd, { model, instructions: space?.instructions, ctrl: ctrlInstructionsOn(spaceID) })
   if (spaceID) store.assign(id, spaceID)
+  if (parentID) store.setParent(id, parentID)
   if (focus) openSession(id)
   else push()
   return { id }
@@ -693,8 +795,45 @@ const newSession = async (
 /** New session in the current session's folder, space and harness; a plain new chat when none is open. */
 const newSessionHere = () => {
   const current = sessionByID(currentSessionID() ?? "")
-  if (!current) return newSession(null)
+  if (!current) return newSession(defaultSpaceID())
   return newSession(store.data.assignments[current.id] ?? null, current.directory, current.harness)
+}
+
+/** Brings ctrl's main window forward, from another app (the companion). */
+const raiseWindow = () => {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  app.focus({ steal: true })
+}
+
+/**
+ * A new chat (home folder, no space) with `text` typed in, not sent. opencode: its new-session screen,
+ * so nothing is created until you send. fx: a new session, typed in once fx is ready.
+ */
+const newSessionWith = async (text: string) => {
+  const prompt = text ? `${text} ` : ""
+  if (harnessFor() === "opencode" && opencodeStarted) {
+    showOpencodeTerm()
+    if (prompt) terminal.prefill(prompt)
+    else terminal.home()
+    push()
+  } else {
+    const created = await newSession(defaultSpaceID())
+    if (prompt && "pending" in created) {
+      await fxTerms.ready(created.terminal)
+      await typeIntoFx(created.terminal, prompt, false)
+    }
+  }
+  // Out of Settings or the palette, onto the prompt.
+  send("shortcut", "companion-new-session")
+}
+
+/** New session under this one, in its space, folder and harness. */
+const newChildSession = (parentID: string) => {
+  const parent = sessionByID(parentID)
+  if (!parent) return
+  return newSession(store.data.assignments[parentID] ?? null, parent.directory, parent.harness, { parentID })
 }
 
 // ---------- reopening sessions at launch ----------
@@ -849,14 +988,22 @@ const latestUndo = () => {
   return [...undos].reverse().find(([, u]) => u.expires > now)?.[0]
 }
 
-/** `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8). */
+/**
+ * Children come along (and come back on undo).
+ * `toast: false` for the CLI, which hands the agent an undo command instead (docs/CLI.md, principle 8).
+ */
 const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
-  const ids = sessionIDs.filter((id) => !store.data.archived[id])
+  const ids = store.withDescendants(sessionIDs).filter((id) => !store.data.archived[id])
   if (!ids.length) return
   const current = currentSessionID()
   const wasCurrent = current && ids.includes(current) ? current : null
   store.setArchived(ids, true)
   if (wasCurrent) leave(wasCurrent)
+  // Archiving counts as seeing it: no blue/red dot left behind if it comes back.
+  for (const id of ids) {
+    if (harnessOf(id) === "fx") markFxViewed(id)
+    else void opencode.markViewed(id)
+  }
   // Archived fx sessions don't need a process, unless they're busy.
   for (const id of ids) {
     if (harnessOf(id) !== "fx") continue
@@ -865,12 +1012,16 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
   }
   push()
   if (!withToast) return
-  const title = ids.length === 1 ? sessionByID(ids[0])?.title : undefined
+  // One session asked for (its children may have come along): name it.
+  const asked = sessionIDs.length === 1 && ids.includes(sessionIDs[0]) ? sessionIDs[0] : undefined
+  const title = asked ? sessionByID(asked)?.title : undefined
+  const children = ids.length - 1
+  const named = title ? `Archived “${title}”` : "Archived chat"
   toast(
     {
       icon: "archive",
-      message: ids.length === 1 ? (title ? `Archived “${title}”` : "Archived chat") : `Archived ${ids.length} chats`,
-      viewSessionID: ids.length === 1 ? ids[0] : undefined,
+      message: asked ? (children ? `${named} and ${children} sub-session${children > 1 ? "s" : ""}` : named) : `Archived ${ids.length} chats`,
+      viewSessionID: asked,
     },
     {
       undo: () => {
@@ -958,6 +1109,29 @@ const deleteSpace = (id: string, { toast: withToast = true } = {}) => {
   )
 }
 
+// ---------- opencode service health ----------
+
+let serverAlert: string | null = null
+
+/** Sticky toast while the opencode service is broken (OpencodeServer), cleared once it's healthy again. */
+const watchServer = () => {
+  const broken = opencode.server.state === "broken"
+  if (broken && !serverAlert) {
+    serverAlert = toast(
+      { icon: "alert", message: "opencode lost its macOS session: DNS, GitHub and the keychain fail in every session" },
+      { sticky: true, action: { label: "Restart", run: () => void restartOpencode() } },
+    )
+  } else if (!broken && serverAlert) {
+    dismissToast(serverAlert)
+    serverAlert = null
+  }
+}
+
+const restartOpencode = async () => {
+  await opencode.restart().catch(report)
+  terminal.restart(opencodeRoute)
+}
+
 // ---------- MCP servers ----------
 
 const MCP_BROKEN = new Set(["failed", "needs_auth"])
@@ -1033,6 +1207,7 @@ const runCommand = (id: CommandID) => {
     return
   }
   if (id === "new-session-here") void newSessionHere().catch(report)
+  if (id === "companion-new-session") return companion.newSession()
   if (id === "toggle-resources") {
     store.setUi({ resourcesOpen: !store.data.ui.resourcesOpen })
     push()
@@ -1066,10 +1241,20 @@ function registerIpc() {
     if (!space || !win) return
     const res = await dialog.showOpenDialog(win, {
       properties: ["openDirectory"],
-      defaultPath: space.directory || homedir(),
+      defaultPath: space.directory || defaultDirectory(),
     })
     if (res.canceled || !res.filePaths[0]) return
     store.patchSpace(id, { directory: res.filePaths[0] })
+    push()
+  })
+  ipcMain.handle("settings:pick-folder", async () => {
+    if (!win) return
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: defaultDirectory(),
+    })
+    if (res.canceled || !res.filePaths[0]) return
+    store.setSettings({ defaultDirectory: res.filePaths[0] })
     push()
   })
   ipcMain.handle("models:list", (_e, harness: Harness, directory?: string) =>
@@ -1101,6 +1286,7 @@ function registerIpc() {
   })
   ipcMain.handle("ui:set", (_e, patch: Partial<UiState>) => {
     store.setUi(patch)
+    if (patch.archivedCollapsed === false) void opencode.loadOlder()
     push()
     // The agents offer waits for the welcome screen, so it doesn't land on top of it.
     if (patch.onboarded && !store.data.ui.agentsPrompted) setTimeout(suggestAgents, 1500)
@@ -1128,6 +1314,7 @@ function registerIpc() {
   ipcMain.handle("mcp:reconnect", (_e, name: string) => opencode.reconnectMcp(name).catch(report))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
+    if (!headless) companion.pauseShortcuts(on)
   })
   ipcMain.handle("space:toggle", (_e, id: string) => {
     store.updateSpace(id, { collapsed: !store.space(id)?.collapsed })
@@ -1147,6 +1334,7 @@ function registerIpc() {
       { type: "separator" },
       { label: "Rename", click: () => send("space:rename", id) },
       { label: "Space settings…", click: () => send("space:settings", id) },
+      { label: "Board", click: () => send("board:open", id) },
       { type: "separator" },
       {
         label: "Archive all sessions",
@@ -1160,8 +1348,10 @@ function registerIpc() {
     if (!win) return
     const current = store.data.assignments[sessionID] ?? null
     const fxTerm = harnessOf(sessionID) === "fx" ? fxTerms.bySession(sessionID) : undefined
+    const parentID = store.data.parents[sessionID]
     Menu.buildFromTemplate([
       { label: "Open", click: () => openSession(sessionID) },
+      { label: "New child session", click: () => void newChildSession(sessionID)?.catch(report) },
       { label: "Rename", click: () => send("session:rename", sessionID) },
       store.data.archived[sessionID]
         ? { label: "Unarchive", click: () => (store.setArchived([sessionID], false), push()) }
@@ -1178,6 +1368,16 @@ function registerIpc() {
           })),
         ],
       },
+      ...(parentID
+        ? [
+            {
+              label: `Open parent “${sessionByID(parentID)?.title ?? parentID}”`,
+              enabled: !!sessionByID(parentID),
+              click: () => openSession(parentID),
+            },
+            { label: "Detach from parent", click: () => (store.setParent(sessionID, null), push()) },
+          ]
+        : []),
       ...(harnessOf(sessionID) === "fx"
         ? [
             { type: "separator" as const },
@@ -1193,18 +1393,35 @@ function registerIpc() {
     ]).popup({ window: win })
   })
   const move = (sessionID: string, spaceID: string | null) => {
-    store.assign(sessionID, spaceID)
+    store.assignTree(sessionID, spaceID)
     // Moving a session somewhere is a clear signal it's wanted again.
     if (store.data.archived[sessionID]) store.setArchived([sessionID], false)
     push()
   }
   ipcMain.handle("session:move", (_e, sessionID: string, spaceID: string | null) => move(sessionID, spaceID))
-  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID))
+  ipcMain.handle("session:set-parent", (_e, sessionID: string, parentID: string | null) => {
+    if (!store.setParent(sessionID, parentID)) return
+    // A child lives with its parent: same as `ctrl session move --parent`.
+    if (parentID) move(sessionID, store.data.assignments[parentID] ?? null)
+    else push()
+  })
+  ipcMain.handle("session:new", (_e, spaceID: string | null) => newSession(spaceID ?? defaultSpaceID()))
+  ipcMain.handle("session:new-child", (_e, parentID: string) => newChildSession(parentID))
   ipcMain.handle("session:open", (_e, sessionID: string) => openSession(sessionID))
-  ipcMain.handle("search", (_e, query: string) => search.search(query))
+  ipcMain.handle("search", (_e, query: string) => {
+    // Searching can surface any session, so the palette needs the older ones too.
+    void opencode.loadOlder()
+    return search.search(query)
+  })
   ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
     search
       .resources(sessionIDs)
+      .filter((r) => adapters.shows(r.type))
+      .map((r) => ({ ...r, meta: adapters.get(r) })),
+  )
+  ipcMain.handle("resources:board", (_e, sessionIDs: string[]) =>
+    search
+      .resourcesWithSessions(sessionIDs)
       .filter((r) => adapters.shows(r.type))
       .map((r) => ({ ...r, meta: adapters.get(r) })),
   )
@@ -1219,7 +1436,8 @@ function registerIpc() {
     return adapters.check()
   })
 
-  ipcMain.handle("opencode:recheck", () => Promise.all([recheckOpencode(), recheckFx()]))
+  ipcMain.handle("opencode:recheck", () => Promise.all([recheckOpencode(), recheckFx(), opencode.checkHealth()]))
+  ipcMain.handle("opencode:restart", () => restartOpencode())
   ipcMain.handle("skill:install", () => installSkill())
   ipcMain.handle("skill:uninstall", () => {
     skill.uninstall()
@@ -1293,13 +1511,15 @@ const cliHost: CliHost = {
     cli: cliInstall.refresh(),
     problem: state().problem,
   }),
-  newSession: ({ spaceID, harness, directory, model, focus }) => newSession(spaceID, directory, harness, { focus, model }),
+  newSession: ({ spaceID, harness, directory, model, focus, parentID }) =>
+    newSession(spaceID, directory, harness, { focus, model, parentID }),
   openSession,
   renameSession,
   move: (id, spaceID) => {
-    store.assign(id, spaceID)
+    const moved = store.assignTree(id, spaceID)
     if (store.data.archived[id]) store.setArchived([id], false)
     push()
+    return moved
   },
   archive: (ids) => archive(ids, { toast: false }),
   unarchive: (ids) => {
@@ -1397,7 +1617,19 @@ const cliHost: CliHost = {
   },
 }
 
-const cliServer = new CliServer(SOCKET, createHandlers(cliHost))
+/** Agents can name any session, so the CLI sees older ones too: a one-time load, then free. */
+const withOlderSessions = (handlers: ReturnType<typeof createHandlers>) =>
+  Object.fromEntries(
+    Object.entries(handlers).map(([name, handler]) => [
+      name,
+      async (...args: Parameters<typeof handler>) => {
+        if (opencodeStarted) await opencode.loadOlder()
+        return handler(...args)
+      },
+    ]),
+  ) as ReturnType<typeof createHandlers>
+
+const cliServer = new CliServer(SOCKET, withOlderSessions(createHandlers(cliHost)))
 
 const openExternal = (url: string) => {
   let parsed: URL
@@ -1577,6 +1809,7 @@ app.whenReady().then(async () => {
   // Both checks first: the session on screen at quit comes back, whichever harness it belongs to.
   void Promise.all([recheckOpencode(), recheckFx()]).then(restoreOpen)
   search.start()
+  if (!headless) companion.setEnabled(store.data.settings.companion)
   refreshSkill()
   if (!store.data.ui.agentsPrompted) {
     win!.webContents.once("did-finish-load", () =>
@@ -1621,6 +1854,7 @@ app.on("will-quit", () => {
   fxTerms.dispose()
   fx.stop()
   search.stop()
+  companion.dispose()
   adapters.stop()
   updater.stop()
 })

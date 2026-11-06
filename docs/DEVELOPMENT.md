@@ -50,6 +50,7 @@ Point it at a running dev or test ctrl with `CTRL_SOCKET`:
 ```bash
 CTRL_SOCKET="$HOME/Library/Application Support/ctrl-dev/ctrl.sock" node dist/cli/cli.cjs status --pretty
 npm run cli-docs   # regenerate docs/CLI-REFERENCE.md after changing src/shared/cli/commands.ts
+npm test           # CLI tests (test/): the launcher against a fake app socket, handlers against a fake host
 ```
 
 ## Debug hooks

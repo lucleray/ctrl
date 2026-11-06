@@ -183,6 +183,8 @@ type ResourceRow = {
   first: number
   last: number
   by_user: number
+  /** JSON array, board query only */
+  session_ids?: string
 }
 
 const toItem = (r: ResourceRow): ResourceItem => ({
@@ -195,11 +197,13 @@ const toItem = (r: ResourceRow): ResourceItem => ({
   first: r.first,
   last: r.last,
   sharedByYou: r.by_user === 1,
+  ...(r.session_ids ? { sessionIDs: JSON.parse(r.session_ids) } : {}),
 })
 
 export class ResourceReader {
   private query
   private byIDQuery
+  private withSessionsQuery
 
   constructor(db: DatabaseSync) {
     this.byIDQuery = db.prepare(`
@@ -222,6 +226,23 @@ export class ResourceReader {
       ORDER BY last DESC
       LIMIT ${RESOURCE_LIMIT}
     `)
+    this.withSessionsQuery = db.prepare(`
+      SELECT r.id, r.type, r.url, r.data,
+        count(*) AS mentions, count(DISTINCT m.session_id) AS sessions,
+        min(m.created) AS first, max(m.created) AS last, max(m.role = 'user') AS by_user,
+        json_group_array(DISTINCT m.session_id) AS session_ids
+      FROM resource_mentions m JOIN resources r ON r.id = m.resource_id
+      WHERE m.session_id IN (SELECT value FROM json_each(?))
+      GROUP BY r.id
+      ORDER BY last DESC
+      LIMIT ${RESOURCE_LIMIT}
+    `)
+  }
+
+  /** list() plus which of the sessions mention each resource (the board links cards back to them). */
+  listWithSessions(sessionIDs: string[]): ResourceItem[] {
+    if (!sessionIDs.length) return []
+    return (this.withSessionsQuery.all(JSON.stringify(sessionIDs)) as ResourceRow[]).map(toItem)
   }
 
   /** Resources mentioned in any of these sessions. Cost grows with their mentions, not with the whole index. */
@@ -234,5 +255,34 @@ export class ResourceReader {
   byIDs(ids: string[]): ResourceItem[] {
     if (!ids.length) return []
     return (this.byIDQuery.all(JSON.stringify(ids)) as ResourceRow[]).map(toItem)
+  }
+}
+
+export type SessionMention = { session_id: string; resource_id: string; last: number }
+
+/** Sessions that mentioned a resource (the companion window). Both lookups walk mentions_resource. */
+export class MentionReader {
+  private exact
+  private prefix
+
+  constructor(db: DatabaseSync) {
+    this.exact = db.prepare(`
+      SELECT session_id, resource_id, max(created) AS last FROM resource_mentions
+      WHERE resource_id IN (SELECT value FROM json_each(?))
+      GROUP BY session_id, resource_id ORDER BY last DESC LIMIT 200
+    `)
+    // A range instead of LIKE, which SQLite won't serve from the index on a case-sensitive TEXT key.
+    this.prefix = db.prepare(`
+      SELECT session_id, resource_id, max(created) AS last FROM resource_mentions
+      WHERE resource_id >= ? AND resource_id < ?
+      GROUP BY session_id, resource_id ORDER BY last DESC LIMIT 200
+    `)
+  }
+
+  sessionsMentioning(ids: string[], prefixes: string[]): { exact: SessionMention[]; related: SessionMention[] } {
+    return {
+      exact: ids.length ? (this.exact.all(JSON.stringify(ids)) as SessionMention[]) : [],
+      related: prefixes.flatMap((p) => this.prefix.all(p, `${p}\uffff`) as SessionMention[]),
+    }
   }
 }

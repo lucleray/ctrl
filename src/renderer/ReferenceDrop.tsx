@@ -3,6 +3,22 @@ import type { Harness, SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 
 export const SESSION_DRAG = "application/x-ctrl-session"
+/** A row of the resources panel, carrying `ResourceDrag` as JSON. */
+export const RESOURCE_DRAG = "application/x-ctrl-resource"
+
+/** What a resource row pastes when dropped: its link, or a mention for a referenced session. */
+export type ResourceDrag = { text: string; session: boolean }
+
+type Dragging = "session" | "resource" | "files"
+
+function parseResourceDrag(raw: string): ResourceDrag | null {
+  try {
+    const r = JSON.parse(raw) as ResourceDrag
+    return typeof r.text === "string" && r.text ? { text: r.text, session: !!r.session } : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * `@session[Title](id)`, resolved by the read-session skill on the agent side, for either kind of
@@ -19,18 +35,18 @@ const escapePath = (path: string) => path.replace(/([\s\\'"()[\]{}$`!&*?;<>|#~])
 const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files")
 
 /**
- * Drop zone over the terminal, shown while a session is dragged from the sidebar or files
- * are dragged in from Finder. Dropping pastes a session mention or the file paths into the
- * TUI prompt.
+ * Drop zone over the terminal, shown while a session is dragged from the sidebar, a resource from
+ * the resources panel, or files from Finder. Dropping pastes a session mention, the resource's
+ * link or the file paths into the TUI prompt.
  */
 export function ReferenceDrop(props: {
   sessions: SessionItem[]
   currentSessionID: string | null
   /** Harness of the terminal on screen, which decides the mention's format */
   target: Harness
-  onReference(text: string, kind: "session" | "files"): void
+  onReference(text: string, kind: "session" | "link" | "files"): void
 }) {
-  const [dragging, setDragging] = useState<"session" | "files" | null>(null)
+  const [dragging, setDragging] = useState<Dragging | null>(null)
   const [over, setOver] = useState(false)
   // Drags from outside the window never fire dragstart/dragend, so count enter/leave instead.
   const depth = useRef(0)
@@ -41,7 +57,12 @@ export function ReferenceDrop(props: {
       setDragging(null)
       setOver(false)
     }
-    const start = (e: DragEvent) => setDragging(e.dataTransfer?.types.includes(SESSION_DRAG) ? "session" : null)
+    const start = (e: DragEvent) => {
+      const types = e.dataTransfer?.types ?? []
+      // Referenced sessions in the resources panel paste a mention, so they get the session card.
+      const resource = types.includes(RESOURCE_DRAG) ? parseResourceDrag(e.dataTransfer!.getData(RESOURCE_DRAG)) : null
+      setDragging(types.includes(SESSION_DRAG) || resource?.session ? "session" : resource ? "resource" : null)
+    }
     const enter = (e: DragEvent) => {
       if (!hasFiles(e)) return
       depth.current++
@@ -97,6 +118,8 @@ export function ReferenceDrop(props: {
           if (paths.length) props.onReference(paths.map(escapePath).join(" "), "files")
           return
         }
+        const resource = parseResourceDrag(e.dataTransfer.getData(RESOURCE_DRAG))
+        if (resource) return props.onReference(resource.text, resource.session ? "session" : "link")
         const id = e.dataTransfer.getData(SESSION_DRAG)
         const session = props.sessions.find((s) => s.id === id)
         if (session && id !== props.currentSessionID) props.onReference(sessionMention(session, props.target), "session")
@@ -108,6 +131,11 @@ export function ReferenceDrop(props: {
           <div>
             <div className="reference-title">Add to prompt</div>
             <div className="reference-desc">Pastes the file paths into the prompt</div>
+          </div>
+        ) : dragging === "resource" ? (
+          <div>
+            <div className="reference-title">Add to prompt</div>
+            <div className="reference-desc">Pastes the link into the prompt</div>
           </div>
         ) : (
           <div>

@@ -51,7 +51,10 @@ const session = (description = "Session: id, `self`, `current` or `name:<title>`
   description,
 })
 
-const space = (description = "Space: id, `name:<name>` or `current` (the space of the session on screen)"): ArgSpec => ({
+/** What every space argument accepts (resolveSpace in cli-handlers.ts). */
+const SPACES = "id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)"
+
+const space = (description = `Space: ${SPACES}`): ArgSpec => ({
   name: "space",
   type: "string",
   positional: true,
@@ -65,7 +68,7 @@ const cursor: ArgSpec = { name: "cursor", type: "string", description: "`next` f
 const harnessArg: ArgSpec = { name: "harness", type: "enum", values: ["opencode", "fx"], description: "Harness" }
 
 const spaceSettingFlags: ArgSpec[] = [
-  { name: "directory", type: "string", description: "Folder new sessions start in; \"\" clears it (back to ~)" },
+  { name: "directory", type: "string", description: "Folder new sessions start in; \"\" clears it (back to the defaultDirectory setting, else ~)" },
   {
     name: "harness",
     type: "enum",
@@ -162,7 +165,7 @@ export const COMMANDS: CommandSpec[] = [
       {
         name: "space",
         type: "string",
-        description: "Only sessions in this space (id, `name:<name>`, `current`), or `none` for sessions in no space",
+        description: `Only sessions in this space (${SPACES}), or \`none\` for sessions in no space`,
       },
       { name: "archived", type: "bool", description: "Only archived sessions" },
       { name: "all", type: "bool", description: "Archived sessions too" },
@@ -176,11 +179,16 @@ export const COMMANDS: CommandSpec[] = [
       harnessArg,
       { name: "query", type: "string", description: "Title contains this text (case-insensitive)" },
       { name: "directory", type: "string", description: "Only sessions started in this folder" },
+      { name: "parent", type: "string", description: "Only child sessions of this session (direct children; selectors as for <session>)" },
       limit,
       cursor,
     ],
     returns: "{items:[Session], next:string|null, total:number}",
-    examples: ["ctrl session list --status needs-input --fields id,title,statusDetail", "ctrl session list --space name:reviews"],
+    examples: [
+      "ctrl session list --status needs-input --fields id,title,statusDetail",
+      "ctrl session list --space name:reviews",
+      "ctrl session list --parent self --fields id,title,status",
+    ],
   },
   {
     name: "session get",
@@ -195,33 +203,46 @@ export const COMMANDS: CommandSpec[] = [
     details: [
       "Created in the background: the screen doesn't change unless --focus.",
       "Flags override the space's settings for this session only.",
+      "Replies within 12s: if the harness is stuck, a TIMEOUT error says whether the session was created and what to run next.",
+      "Run from a session, it starts as a child of that session by default (`--parent self`), like the sidebar's New child session: in the parent's space, folder and harness unless flags say otherwise. `--parent none` starts a top-level session.",
     ],
     args: [
       {
         name: "space",
         type: "string",
-        description: "Space to start it in (id, `name:<name>`, `current`); omitted = no space",
+        description: `Space to start it in (${SPACES}); omitted = the parent's space, else the defaultSpace setting, else no space`,
       },
-      harnessArg,
-      { name: "directory", type: "string", description: "Folder to start in (default: the space's folder, else ~)" },
+      {
+        name: "parent",
+        type: "string",
+        description: "Parent session (selectors as for <session>), or `none`. Default: `self` when run from a session, else none",
+      },
+      { ...harnessArg, description: "Harness (default: the parent's when --space is omitted, else the space's)" },
+      {
+        name: "directory",
+        type: "string",
+        description: "Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~)",
+      },
       {
         name: "model",
         type: "string",
         description: "Model, `<provider>/<model>[#<variant>]` (opencode) or `<model>[#<effort>]` (fx)",
       },
       { name: "title", type: "string", description: "Title (opencode: right away; fx: once fx lets go of it)" },
-      { name: "prompt", type: "string", description: "First message, sent right away. `-` reads stdin" },
+      { name: "prompt", type: "string", description: "First message, sent right away. `-` reads stdin (use it for long or multi-line prompts)" },
       { name: "focus", type: "bool", description: "Put it on screen" },
       { name: "raise", type: "bool", description: "With --focus: also bring ctrl's window to the front" },
     ],
     returns: "Session",
     harness: [
-      "fx: fx only reports a new session's id once its process is up; `new` waits for it (up to 15s). If it doesn't come, `data` is {pending:true, terminal} and the session shows up in `session list` later.",
-      "fx: --prompt is typed into the fx prompt and submitted.",
+      "fx: fx only reports a new session's id once its process is up; `new` waits for it (within its 12s budget). If it doesn't come, `data` is {pending:true, terminal} and the session shows up in `session list` later.",
+      "fx: --prompt is typed into the fx prompt and submitted; the reply has `status: running` once the turn started. To know it's over, `ctrl session wait <id> --for done`. fx writes a turn to its log only when it ends, so until then `session read` shows it as `Turn N · running`.",
     ],
     examples: [
       'ctrl session new --space name:reviews --title "Review #42" --prompt "Review PR #42"',
+      "ctrl session new --space self --title \"Follow-up\" --prompt - < prompt.md",
       "ctrl session new --focus --raise",
+      "ctrl session new --parent none --space name:reviews --title \"Unrelated\"",
     ],
     mutates: true,
   },
@@ -243,23 +264,34 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "session move",
-    summary: "Files a session in a space, or takes it out (`--space none`)",
-    details: ["Unarchives it, like the UI."],
+    summary: "Files a session in a space or under a parent session, or takes it out (`--space none`, `--parent none`)",
+    details: [
+      "Unarchives it, like the UI.",
+      "Pass --space, --parent or both. --parent without --space also moves it into the parent's space; a parent in another space works too (the sidebar shows a link to it instead of nesting).",
+      "A session can't go under itself or one of its own children (CONFLICT).",
+      "Its children (any depth) that were in the same space move with it, listed in `followed`; a child filed in another space stays there.",
+    ],
     args: [
       session(),
       {
         name: "space",
         type: "string",
-        required: true,
-        description: "Target space (id, `name:<name>`, `current`), or `none`",
+        description: `Target space (${SPACES}), or \`none\``,
+      },
+      {
+        name: "parent",
+        type: "string",
+        description: "Parent session (selectors as for <session>), or `none` to make it top-level",
       },
     ],
-    returns: "Session & {changed}",
+    returns: "Session & {changed, followed?}",
+    examples: ["ctrl session move ses_x --parent self", "ctrl session move ses_x --parent none", "ctrl session move ses_x --space name:reviews"],
     mutates: true,
   },
   {
     name: "session archive",
-    summary: "Archives sessions (reply has the `undo` command)",
+    summary: "Archives sessions and their sub-sessions (reply has the `undo` command)",
+    details: ["Child sessions (and theirs) are archived too, and listed in `archived`."],
     args: [{ ...session("Sessions (selectors as for <session>)"), list: true, placeholder: "<session>..." }],
     returns: "{archived:[id], changed, undo?}",
     mutates: true,
@@ -276,7 +308,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Sends a message to a session, as if you typed it",
     args: [
       session(),
-      { name: "text", type: "string", required: true, description: "Message. `-` reads stdin" },
+      { name: "text", type: "string", required: true, description: "Message. `-` reads stdin (use it for long or multi-line text)" },
       {
         name: "submit",
         type: "bool",
@@ -288,7 +320,7 @@ export const COMMANDS: CommandSpec[] = [
     returns: "{id, submitted:boolean}",
     harness: [
       "opencode: sent through the opencode service, works in the background. --no-submit types into the one TUI, so the session must be on screen (pass --focus).",
-      "fx: typed into the session's fx process (started in the background if needed). Fails with CONFLICT when fx has it open in another terminal.",
+      "fx: typed into the session's fx process (started in the background if needed). Fails with CONFLICT when fx has it open in another terminal. Taken: the session turns `running` within a second or two (`ctrl session wait <id> --for running`).",
     ],
     mutates: true,
   },
@@ -311,7 +343,10 @@ export const COMMANDS: CommandSpec[] = [
       { name: "timeout", type: "int", default: 600000, description: "Give up after this many ms (TIMEOUT)" },
     ],
     returns: "Session",
-    harness: ["fx: `needs-input` and `failed` only show for sessions open in ctrl (OSC 7501)."],
+    harness: [
+      "fx: `running` while a turn is in progress, `done` once it ends.",
+      "fx: `needs-input` and `failed` only show for sessions open in ctrl, and only with an fx that sends OSC 7501 status reports (fx 0.0.13 doesn't). Without them, a turn stuck on a permission prompt stays `running`, so pass a --timeout.",
+    ],
     examples: ["ctrl session wait ses_x --for done --timeout 1800000"],
   },
   {
@@ -355,6 +390,7 @@ export const COMMANDS: CommandSpec[] = [
     details: ["The same digest the read-session skill prints."],
     args: [session(), { name: "turn", type: "int", description: "Everything said in this turn instead" }],
     returns: "{id, digest:string}",
+    harness: ["fx: a turn still in progress shows as `Turn N · running` with what it did so far (fx logs a turn only once it ends)."],
     examples: ["ctrl session read ses_abc | jq -r .data.digest"],
   },
   {
@@ -482,7 +518,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "What's on screen: current session, terminal, panels, window",
     args: [],
     returns:
-      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
+      "{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,docked,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}",
   },
   {
     name: "ui home",
@@ -511,12 +547,12 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "ui resources",
-    summary: "Opens or closes the resources panel",
+    summary: "Opens, closes, folds, unfolds, docks or floats the resources panel",
     args: [
-      { name: "action", type: "enum", values: ["open", "close", "toggle"], positional: true, required: true, placeholder: "open|close|toggle", description: "What to do with the panel" },
+      { name: "action", type: "enum", values: ["open", "close", "toggle", "fold", "unfold", "dock", "float"], positional: true, required: true, placeholder: "open|close|toggle|fold|unfold|dock|float", description: "What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed)" },
       { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space" },
     ],
-    returns: "{open, scope}",
+    returns: "{open, collapsed, docked, scope}",
     mutates: true,
   },
   {
@@ -575,7 +611,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "resources list",
-    summary: "Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first",
+    summary: "Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)",
     details: [
       "Live details (`live`, with plain values in `live.fields`) are fetched like the resources panel does: only what's due by each adapter's cache policy (never fetched, mentioned again since, or past its max age; merged PRs never again), only for the returned items, through the service's own CLI (gh, vercel, slack-cli).",
       "Waits up to --wait ms for those fetches. Items still fetching come back with `pending: true` and their cached details; the next call has them.",
@@ -584,7 +620,7 @@ export const COMMANDS: CommandSpec[] = [
     ],
     args: [
       { name: "session", type: "string", list: true, description: "Sessions (repeatable; default `current`)" },
-      { name: "space", type: "string", description: "Every session in this space instead" },
+      { name: "space", type: "string", description: `Every session in this space instead (${SPACES})` },
       { name: "type", type: "string", list: true, description: "Only these link types, e.g. github-pr (repeatable)" },
       { name: "limit", type: "int", default: 100, description: "Max items (max 500)" },
       { name: "cached", type: "bool", description: "Don't fetch: cached live details only, instant" },
@@ -607,7 +643,7 @@ export const COMMANDS: CommandSpec[] = [
     args: [
       { name: "resource", type: "string", positional: true, list: true, placeholder: "[<id|url>...]", description: "Resources to refetch (default: the scope below)" },
       { name: "session", type: "string", list: true, description: "Without ids: these sessions' resources (repeatable; default `current`)" },
-      { name: "space", type: "string", description: "Without ids: every session in this space instead" },
+      { name: "space", type: "string", description: `Without ids: every session in this space instead (${SPACES})` },
       { name: "type", type: "string", list: true, description: "Only these link types (repeatable)" },
       { name: "limit", type: "int", default: 100, description: "Max items (max 500)" },
       { name: "wait", type: "int", default: 10000, description: "Most ms to wait (max 60000; raise --timeout past it)" },
@@ -704,6 +740,8 @@ export const OBJECTS: Record<string, string> = {
   spaceID: string | null     // null = in no space
   archived: number | null    // archived at (ms); null = not archived
   createdByAgent: {agent: string, by: string | null, at: number} | null   // made by an agent with \`session new\`; by = its own session
+  parentID: string | null    // parent session (child sessions); can be in another space, or deleted
+  children: string[]         // ids of its direct child sessions, archived ones too
   status: "needs-input" | "running" | "failed" | "unread" | "idle"
   statusDetail?: string      // e.g. "Waiting for permission: bash"
   updated: number            // ms
@@ -716,7 +754,7 @@ export const OBJECTS: Record<string, string> = {
   name: string
   index: number              // position in the sidebar, 0 = top
   collapsed: boolean
-  directory: string | null   // folder new sessions start in; null = ~
+  directory: string | null   // folder new sessions start in; null = defaultDirectory setting, else ~
   harness: "opencode" | "fx" | null   // null = app default
   model: string | null       // opencode model ref, "<provider>/<model>[#<variant>]"
   fxModel: string | null     // fx model ref, "<model>[#<effort>]"
@@ -740,7 +778,8 @@ export const OBJECTS: Record<string, string> = {
   live?: {title?, subtitle?, tone?, chips?, details?, fields?, missing?, fetched}   // live details, when its adapter has them
   // live.fields: the same details as plain values (null = unknown):
   //   github-pr      {state: open|closed|merged, draft, ci: success|failure|pending, review: approved|changes_requested|review_required,
-  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions}
+  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions,
+  //                   reviewers: pending review requests, comma-separated logins / team slugs}
   //   github-issue   {state: open|closed, stateReason, author}
   //   github-commit  {ci, author}
   //   github-repo    {archived, description}

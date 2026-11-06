@@ -2,7 +2,9 @@ import { spawn } from "node:child_process"
 import * as esbuild from "esbuild"
 import { createServer } from "vite"
 import electron from "electron"
-import { configs } from "./build.mjs"
+import { buildNative, configs } from "./build.mjs"
+
+buildNative()
 
 const server = await createServer({ configFile: "vite.config.ts" })
 await server.listen()

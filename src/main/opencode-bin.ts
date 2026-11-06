@@ -10,6 +10,9 @@ import type { OpencodeCheck } from "../shared/types"
  */
 export const MIN_OPENCODE = "2.0.25"
 
+/** First opencode whose TUI opens clicked links itself, wrapped ones included (anomalyco/opencode#53903). */
+const OPENCODE_OPENS_LINKS = "2.0.26"
+
 /** Where installers put opencode, for when PATH doesn't have it (bare launchd env, broken shell rc). */
 const KNOWN_LOCATIONS = [
   join(homedir(), ".opencode/bin/opencode"),
@@ -46,5 +49,5 @@ export async function checkOpencode(): Promise<OpencodeCheck> {
   if (out instanceof Error) return { state: "missing", detail: `${bin} --version failed: ${out.message}` }
   const version = out.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? (out.trim() || "unknown")
   if (compareVersions(version, MIN_OPENCODE) < 0) return { state: "outdated", version, min: MIN_OPENCODE, bin }
-  return { state: "ok", version, bin }
+  return { state: "ok", version, bin, opensLinks: compareVersions(version, OPENCODE_OPENS_LINKS) >= 0 }
 }

@@ -1,0 +1,159 @@
+/* On top of the app's styles.css (main.tsx imports both): rows, icons, tags and colors are the sidebar's. */
+
+html,
+body {
+  background: var(--sidebar-bg);
+}
+
+/* The window is sized to this box (Companion.tsx → resize). */
+.companion {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 8px;
+  height: auto;
+}
+
+.companion-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 0 0 10px;
+  -webkit-app-region: drag;
+}
+
+.companion-title {
+  font-weight: 600;
+  flex: 1;
+}
+
+.companion .companion-menu {
+  flex-shrink: 0;
+  color: var(--text);
+  -webkit-app-region: no-drag;
+}
+
+.companion .companion-menu .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* What's on screen (app, then the tab, channel or page), with a new session about it on the right. */
+.companion-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.companion-context-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.companion-app {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.companion-label {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stands out from the context row without the glare of a primary button. */
+.companion .companion-new {
+  --new-bg: rgba(0, 0, 0, 0.08);
+  --new-bg-hover: rgba(0, 0, 0, 0.13);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px 3px 7px;
+  font-size: 12px;
+  border: none;
+  background: var(--new-bg);
+  color: var(--text);
+}
+
+.companion .companion-new:hover {
+  background: var(--new-bg-hover);
+}
+
+.companion .companion-new .icon {
+  width: 11px;
+  height: 11px;
+  color: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .companion .companion-new {
+    --new-bg: rgba(255, 255, 255, 0.14);
+    --new-bg-hover: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.companion-access {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.13);
+  font-size: 12px;
+  text-align: left;
+}
+
+.companion-access .icon {
+  width: 14px;
+  height: 14px;
+  color: #f59e0b;
+}
+
+/* Space headings aren't clickable here, unlike the sidebar's. */
+.companion-space:hover {
+  background: none;
+}
+
+/* Sections sit closer than in the sidebar; the first one hugs the header. */
+.companion .section {
+  margin-top: 12px;
+}
+
+.companion-header + .section,
+.companion-context + .section,
+.companion-access + .section {
+  margin-top: 2px;
+}
+
+/* Mentioned a thread in the channel on screen, not the thing itself. */
+.companion-via {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.companion-via .icon {
+  width: 12px;
+  height: 12px;
+  color: inherit;
+}
+
+.companion .empty {
+  padding: 2px 10px 4px;
+}
+
+/* The sidebar swaps these for an archive button on hover; there's none here. */
+.companion-session:hover .meta {
+  display: inline;
+}
+
+.companion-session:hover .spinner,
+.companion-session:hover .status-dot {
+  display: block;
+}

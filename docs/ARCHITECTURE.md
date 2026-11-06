@@ -46,9 +46,15 @@ supports: [HARNESSES.md](HARNESSES.md).
 - The bridge is injected only into the embedded TUI via `OPENCODE_CLI_CONFIG_CONTENT` (tabs and the TUI's
   own sidebar are turned off there too).
 - The sidebar's session list (`src/main/opencode.ts`) does one full sync on launch and whenever the event stream
-  reconnects. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
+  reconnects, of the sessions updated in the last 30 days (300 per page). Older ones load once something can show
+  or name them: the Archived section opening, a palette search, any CLI command. Pending permissions and questions
+  are only asked for in the folders of running sessions: asking a folder makes opencode load it (config, plugins,
+  MCP connections), and every worktree that ever had a session would add one. After that, events patch it in memory (renames, moves, deletes, views, permissions, questions), or
   re-read only the session they're about (created, run started/ended), so an update costs the same with 50 or
   5,000 sessions.
+- Child sessions are ctrl's own too (`parents` in `state.json`, child → parent), not opencode's `parentID`,
+  which opencode uses for subagents and hides from session lists. The sidebar builds each space's tree from it
+  when the list changes, proportional to that space's sessions.
 - Spaces live in `~/Library/Application Support/ctrl/state.json`. Sessions without a space still show under **Recents**, which lists every non-archived session (foldable, 10 at a time).
 
 ## fx
@@ -58,6 +64,7 @@ fx has no server and no plugin API, so ctrl works from its files and its termina
 ```text
 ~/.fx/sessions/<id>/ ── session.json (title, folder) ┐
                      ── events.jsonl (last line)     ├─► src/main/fx.ts ─► sidebar
+                     ── recovery.json (turn running) │
                      ── owner.live (pid)             ┘
 fx process in a pty ── OSC 7501 status reports ─────────► running / needs you / failed
 ```
@@ -68,7 +75,9 @@ fx process in a pty ── OSC 7501 status reports ─────────�
   appends once the file is closed. So sessions with a live fx process (`owner.live`) are also checked on a
   timer, one stat each (2s in main, 5s in the indexer), and re-read when their log grew.
 - **Status:** OSC 7501 (Program Status Protocol) reports from the processes ctrl runs give running, needs you
-  and failed. Otherwise the last line of `events.jsonl` says whether a turn is in progress. Read state is
+  and failed (fx 0.0.13 sends none). Otherwise `recovery.json` says a turn is in progress: fx writes a turn
+  to `events.jsonl` only once it ends, and keeps the one in flight in `recovery.json` until then (the poller
+  also notices that file appearing or going away). Read state is
   ctrl's own (`viewed` in `state.json`); turns that ended before ctrl first saw fx count as read.
 - **Processes:** `src/main/fx-terminals.ts` runs one `fx resume --id <id>` per open session, up to 12, and
   closes the least recently used idle ones past that. `owner.live` tells which session a process has, so
@@ -162,6 +171,73 @@ adapter = { id, name, types[], live? }
 - **Same pipeline as search:** mentions are written in the same transaction as their message and deleted with it.
   Like search, only your prompts and the assistant's text are read, not tool output.
 
+## ctrl Companion
+
+Settings → ctrl Companion opens a small always-on-top window listing the sessions that mentioned what's on screen.
+It's a module of its own: `src/companion/` (main side, helper, preload) and `src/renderer/companion/` (its page).
+Main only creates it, turns it on and off, and calls `changed()` when sessions or resources change.
+
+```text
+ctrl-context (Swift) ──JSON line on change──► Companion (main) ──view──► companion window
+ ├ browser: AppleScript, active tab URL         │ URLs → keys (shared adapters)
+ ├ Slack: AX tree + hover (ported from Orchid)  │ mentions_resource lookup (exact + prefix)
+ └ Notion, Linear: AX web area URL              └ sessions list → rows
+```
+
+- **Off costs nothing:** no helper process, no window. On, the helper scans the frontmost app on activation
+  and every second, on its own main thread, and prints only when what it sees changed. Main parses a short
+  JSON line and runs two indexed queries (bounded to 200 mentions); refreshes from session/resource changes
+  are coalesced to one per 300ms, and the view is sent only when it changed.
+- **Slack** (the tricky one): the channel id comes from Slack's own client URL in the AX tree
+  (`app.slack.com/client/<team>/<channel>`); an open thread panel is the first permalink after
+  `Thread in channel …`; on the Threads page, the card under the pointer gives `threads_view_<channel>-<ts>`.
+  A channel also matches the threads in it (`slack-thread:<channel>/` prefix). Switching channels, Slack
+  updates the content before the window title, so a scan where the header (`Channel details for #…`) and the
+  title disagree is dropped. A DM opened from Activity keeps Activity's client URL, so its channel comes from
+  the message links on screen. Keys don't depend on the
+  workspace, so a guessed workspace in a rebuilt permalink doesn't matter.
+- **Permissions:** the helper inherits ctrl's (TCC follows the responsible app): Accessibility for Slack,
+  Notion and Linear, Automation per browser (`NSAppleEventsUsageDescription`). Electron apps only expose
+  their tree after `AXManualAccessibility`, which the helper sets on them, never on ctrl.
+- **Own window:** an `NSPanel` (`type: "panel"`) at floating level on every Space. Clicking it doesn't
+  activate ctrl, so the app you were in stays frontmost and its context stays on screen. When ctrl itself is
+  frontmost, the helper keeps the last context.
+- **New session from screen:** the New button and the global shortcut (`globalShortcut`, registered only while
+  on, and paused while Settings records a shortcut) both call `host.newSession(url)`; main types the URL into
+  a new chat without sending it.
+- **⌃1–9:** main numbers the rows it sends and keeps exactly `Ctrl+1…Ctrl+n` registered (`globalShortcut`), so
+  rows coming and going register or free keys. The ⌃ hold comes from the helper: a global `flagsChanged`
+  monitor (needs Accessibility, and `NSApp.run()` rather than a bare run loop) prints `{"type":"hold"}` when
+  ⌃ alone goes down or up; the page shows the hints after 300ms, like the main window's ⌘.
+- The helper is built by `scripts/build.mjs` (universal, `swiftc`, only when its source changed) into
+  `dist/companion/` and shipped in `Contents/Resources/companion`. `ctrl-context --once --debug` prints what
+  it sees in the frontmost app after 3s (`--app <bundle id>` reads a background app, without hover).
+
+## Remote control
+
+Settings → Remote control serves `dist/remote` (built from `src/remote/`) to your phone over Tailscale.
+
+```text
+phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: snapshot of spaces + sessions
+      ◄──ws /ws─┤                                     ├─► board: cards built like Board.tsx
+                │                                     ├─► opencode: its own TUI (Terminal #2)
+                └ token → HttpOnly cookie, Origin check└─► fx: the desktop's pty (fx-terminals.ts)
+```
+
+- **Listens only on the Tailscale interface** (100.64.0.0/10), or localhost without one, rechecked every 15s.
+  The MagicDNS name comes from `tailscale status --json` when the CLI is around.
+- **Separate opencode TUI:** sharing the desktop one would navigate and resize it under you. A second
+  `Terminal` with its own bridge runs at the phone's size, started on first open and stopped after 10 idle
+  minutes. Both TUIs use the same service, so a turn started on one shows up on the other.
+- **fx** can only have one process per session, so the phone mirrors ctrl's: backlog on open, then live output.
+  That pty is resized to the phone while it's viewed and back to the shared size after.
+- **Board:** main places cards with the same `boardPlacement()` as the desktop and sends them flattened
+  (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
+  (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
+  phones on the board and only when it changed.
+- **Cheap for main:** the list is sent only when it changed, and bounded (sessions in spaces + the newest 30
+  others). Viewers that fall 8 MB behind are dropped and reconnect.
+
 ## CLI
 
 `ctrl` drives the app from agents' shells over a unix socket in the state folder. Details, principles and how
@@ -195,13 +271,14 @@ toast({ icon: "alert", message }, { sticky: true, action: { label: "Fix", run } 
   it dismisses it with `dismissToast(id)` once the problem goes away.
 - Add an icon to the `Toast["icon"]` union and `icons.tsx` if you need a new one.
 
-The two other channels each have a single purpose, so don't use them for anything else:
+The other channels each have a single purpose, so don't use them for anything else:
 
 | Channel | Where | Only for |
 |---|---|---|
 | Sidebar banner (`problem` / `error` in `AppState`) | bottom of the sidebar | ctrl can't reach opencode or the TUI, or a ctrl action failed |
 | macOS notification (`src/main/attention.ts`) | system | a background session needs you, finished or failed, while ctrl isn't focused |
 | Sound (`src/main/sound.ts`, via `attention.ts`) | speakers | the same transitions; in the background only unless **Also when ctrl is focused** is on |
+| Archived bar (`src/renderer/ArchivedBanner.tsx`) | over the terminal's prompt | the session on screen is archived, so its terminal is read-only. A state of that session, not a notification: it leaves with it |
 
 **MCP servers** (Settings → MCP servers) is the first sticky toast: when a server is `failed` or
 `needs_auth`, a toast says so and has a **Fix** button. It opens the TUI's new-session screen with a

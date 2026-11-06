@@ -1,7 +1,7 @@
 import { utilityProcess, type UtilityProcess } from "electron"
 import type { DatabaseSync } from "node:sqlite"
 import type { IndexerMessage, IndexStatus, ResourceItem, SearchResult } from "../shared/types"
-import { openSearchDb, ResourceReader, SearchReader } from "./search-db"
+import { MentionReader, openSearchDb, ResourceReader, SearchReader } from "./search-db"
 
 const HIT_LIMIT = 30
 
@@ -15,6 +15,7 @@ export class Search {
   private db?: DatabaseSync
   private reader?: SearchReader
   private resourceReader?: ResourceReader
+  private mentionReader?: MentionReader
   private status: IndexStatus = { indexing: false, done: 0, total: 0 }
   private stopped = false
 
@@ -37,6 +38,7 @@ export class Search {
         this.db = openSearchDb(this.dbPath, { readOnly: true })
         this.reader = new SearchReader(this.db)
         this.resourceReader = new ResourceReader(this.db)
+        this.mentionReader = new MentionReader(this.db)
         this.onResourcesChanged(null)
       } else if (msg.type === "status") {
         this.status = msg.status
@@ -60,8 +62,16 @@ export class Search {
     return this.resourceReader?.list(sessionIDs) ?? []
   }
 
+  resourcesWithSessions(sessionIDs: string[]): ResourceItem[] {
+    return this.resourceReader?.listWithSessions(sessionIDs) ?? []
+  }
+
   resourcesByID(ids: string[]): ResourceItem[] {
     return this.resourceReader?.byIDs(ids) ?? []
+  }
+
+  sessionsMentioning(ids: string[], prefixes: string[]) {
+    return this.mentionReader?.sessionsMentioning(ids, prefixes) ?? { exact: [], related: [] }
   }
 
   stop() {

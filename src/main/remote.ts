@@ -5,7 +5,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { networkInterfaces } from "node:os"
 import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
-import type { Harness, RemoteStatus, SessionStatus } from "../shared/types"
+import type { Stage } from "../shared/adapters/adapter"
+import type { Harness, RemoteStatus, SessionStatus, Tone } from "../shared/types"
 import type { Terminal } from "./terminal"
 
 /** What the phone's list shows. Kept small: spaces, their sessions and the newest others. */
@@ -25,11 +26,34 @@ export type RemoteSnapshot = {
   }[]
 }
 
+/** One Board card, flattened for the phone (src/renderer/Board.tsx draws the desktop one). */
+export type RemoteBoardCard = {
+  id: string
+  url: string
+  /** Adapter name: GitHub, Slack, Vercel… */
+  source: string
+  title: string
+  subtitle?: string
+  tone?: Tone
+  chips: { text: string; tone: Tone }[]
+  stage: Stage
+  /** Why it's in its column: "CI failed", "Waiting on @vvo"… */
+  reason: string
+  last: number
+  /** Spaces of the sessions mentioning it (id null: no space) */
+  spaces: { id: string | null; name: string }[]
+  /** Newest two sessions mentioning it */
+  sessions: { id: string; title: string }[]
+}
+
 type Deps = {
   port: number
   staticDir: string
   token(): string
   snapshot(): RemoteSnapshot
+  board(): RemoteBoardCard[]
+  /** Fetch live details that are due for these resources (ids) */
+  refreshBoard(ids: Set<string>): void
   /** The phone's own opencode TUI, separate from the desktop one so each keeps its own size and session */
   tui: Terminal
   fx: {
@@ -45,19 +69,22 @@ type Deps = {
 }
 
 type View = { sessionID: string; harness: Harness; termID?: string; cols: number; rows: number }
-type Viewer = { ws: WebSocket; view?: View; seq: number }
+type Viewer = { ws: WebSocket; view?: View; seq: number; board?: boolean }
 
 type Inbound =
   | { t: "open"; id: string; cols: number; rows: number }
   | { t: "input"; data: string }
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
+  | { t: "board"; on: boolean }
 
 const COOKIE = "ctrl_remote"
 /** The phone's TUI quits after this long with nobody looking at it, and comes back on the next open. */
 const TUI_IDLE_MS = 10 * 60_000
 /** Interfaces are checked this often, so Tailscale connecting (or its address changing) is picked up. */
 const RECHECK_MS = 15_000
+/** Board updates (new mentions, live details landing) are batched this long. */
+const BOARD_DEBOUNCE_MS = 500
 /** A viewer this far behind (slow network) is dropped; it reconnects and repaints. */
 const MAX_BUFFERED = 8 * 1024 * 1024
 
@@ -135,6 +162,8 @@ export class RemoteServer {
   private recheck?: ReturnType<typeof setInterval>
   private idleTimer?: ReturnType<typeof setTimeout>
   private lastSnapshot = ""
+  private boardTimer?: ReturnType<typeof setTimeout>
+  private lastBoard = ""
 
   constructor(private deps: Deps) {}
 
@@ -289,6 +318,14 @@ export class RemoteServer {
   private async message(viewer: Viewer, msg: Inbound) {
     if (msg.t === "open") return this.open(viewer, msg.id, size(msg))
     if (msg.t === "leave") return this.leave(viewer)
+    if (msg.t === "board") {
+      viewer.board = !!msg.on
+      if (!viewer.board) return
+      const cards = this.deps.board()
+      this.send(viewer, { t: "board", cards })
+      this.deps.refreshBoard(new Set(cards.filter((c) => c.stage !== "done").map((c) => c.id)))
+      return
+    }
     const view = viewer.view
     if (!view) return
     if (msg.t === "input" && typeof msg.data === "string") {
@@ -361,6 +398,19 @@ export class RemoteServer {
   fxData(termID: string, data: string) {
     if (!this.viewers.size) return
     for (const v of this.viewers) if (v.view?.termID === termID) this.send(v, { t: "data", data })
+  }
+
+  /** Resources or their live details changed: resend the board to phones looking at it. */
+  boardChanged() {
+    if (![...this.viewers].some((v) => v.board)) return
+    clearTimeout(this.boardTimer)
+    this.boardTimer = setTimeout(() => {
+      const cards = this.deps.board()
+      const json = JSON.stringify(cards)
+      if (json === this.lastBoard) return
+      this.lastBoard = json
+      for (const v of this.viewers) if (v.board) this.send(v, { t: "board", cards })
+    }, BOARD_DEBOUNCE_MS)
   }
 
   /** Sessions or spaces may have changed: send the list to phones when it did. */

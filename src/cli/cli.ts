@@ -383,7 +383,12 @@ async function main() {
   // Commands that wait on their own get their timeout plus a margin for the reply.
   const ownTimeout = typeof args.timeout === "number" ? args.timeout + 5000 : undefined
   const timeout = ownTimeout ?? globals.timeout
-  const reply = await request(req, timeout)
+  const reply = await request(req, timeout).catch((err) => {
+    if (err instanceof CliError && err.code === "TIMEOUT" && spec.mutates) {
+      err.extra.hint = "The app may still have done it: check (e.g. ctrl session list) before retrying, or pass a larger --timeout"
+    }
+    throw err
+  })
   if (!reply.ok) fail(new CliError(reply.error.code, reply.error.message, reply.error))
   print(reply)
 }

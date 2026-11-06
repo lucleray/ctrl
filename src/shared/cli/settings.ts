@@ -9,6 +9,8 @@ export type SettingType =
   | { kind: "bool" }
   | { kind: "int"; min: number; max: number }
   | { kind: "string"; nullable: true }
+  | { kind: "folder" }
+  | { kind: "space" }
   | { kind: "model"; harness: "opencode" | "fx" }
   | { kind: "sound" }
   | { kind: "accelerators" }
@@ -27,6 +29,16 @@ export const SETTING_KEYS: SettingKey[] = [
     key: "defaultHarness",
     type: { kind: "enum", values: ["opencode", "fx"] },
     description: "Harness new sessions start with; spaces can override",
+  },
+  {
+    key: "defaultDirectory",
+    type: { kind: "folder" },
+    description: "Folder new sessions start in when their space doesn't set one; null = ~",
+  },
+  {
+    key: "defaultSpace",
+    type: { kind: "space" },
+    description: "Space new chats land in (⌘N, New chat, `session new` with no --space and no parent); null = no space",
   },
   {
     key: "defaultModelEnabled",
@@ -72,6 +84,11 @@ export const SETTING_KEYS: SettingKey[] = [
     description: "Bindings for an app command, e.g. [\"Cmd+Shift+N\"]; [] disables it, null restores the default",
   },
   {
+    key: "companion",
+    type: { kind: "bool" },
+    description: "ctrl Companion: always-on-top window listing the sessions that mentioned what's on screen (browser tab, Slack thread, Notion page), with a global shortcut for a new session about it",
+  },
+  {
     key: "adapterModes.<adapter>",
     type: { kind: "enum", values: ["off", "links", "live"] },
     description: "Resource adapter mode: off hides its links, links only, or live details",
@@ -88,6 +105,10 @@ export function describeType(t: SettingType): string {
       return `integer ${t.min}-${t.max}`
     case "string":
       return "string | null"
+    case "folder":
+      return "folder path | null"
+    case "space":
+      return "space id | name:<name> | null"
     case "model":
       return t.harness === "fx"
         ? '"<model>[#<effort>]" | {providerID:"fx",id,variant?} | null'

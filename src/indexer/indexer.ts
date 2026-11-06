@@ -237,17 +237,21 @@ class OpencodeIndexer extends Queue {
 
   async start() {
     void this.reextract().catch((err) => log("resource re-extraction failed", err))
+    await this.connect()
+    void this.listen()
+  }
+
+  private async connect() {
     while (true) {
       try {
         const endpoint = await Service.ensure()
         this.client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
-        break
+        return
       } catch (err) {
         log("opencode not reachable, retrying", err)
         await new Promise((r) => setTimeout(r, 3000))
       }
     }
-    void this.listen()
   }
 
   /**
@@ -322,6 +326,8 @@ class OpencodeIndexer extends Queue {
         log("event stream failed, retrying", err)
       }
       await new Promise((r) => setTimeout(r, 2000))
+      // The service may have been replaced (ctrl restarts it) and moved to a new URL and password.
+      await this.connect()
     }
   }
 

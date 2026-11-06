@@ -43,7 +43,8 @@ function translateKey(e: KeyboardEvent): string | null {
 }
 
 // The TUIs own plain clicks (they track the mouse), so links open on ⌘-click like
-// iTerm and VS Code.
+// iTerm and VS Code. Newer opencode opens clicked links itself, and terminals don't
+// report ⌘ to the app, so there a ⌘-click would open the link twice: leave it to the TUI.
 const openLink = (event: MouseEvent, uri: string) => {
   if (!event.metaKey) return
   event.preventDefault()
@@ -70,24 +71,41 @@ window.ctrl.onPtyData((termID, data, end) => {
 
 window.ctrl.onPtyReset((termID) => panes.get(termID)?.term.reset())
 
+// SGR mouse reports: wheel buttons are 64-67 (plus modifier bits), 32 marks motion.
+const MOUSE_REPORT = /\x1b\[<(\d+);\d+;\d+[Mm]/g
+/** A locked (archived) terminal still scrolls, but takes no keys, clicks or pastes. */
+const onlyWheel = (data: string) => data.replace(MOUSE_REPORT, (seq, b) => ((Number(b) & 96) === 64 ? "" : seq)) === ""
+
 export type TerminalHandle = {
   focus(): void
   /** Bracketed paste into the terminal on screen, so it's inserted as text (no submit, no @file search) */
   paste(text: string): void
 }
 
-type Props = { terms: TermInfo[]; activeID: string | null; dark: boolean; fontSize: number }
+type Props = {
+  terms: TermInfo[]
+  activeID: string | null
+  dark: boolean
+  fontSize: number
+  /** opencode's TUI opens clicked links itself */
+  opencodeOpensLinks: boolean
+  /** Terminals showing one of these sessions are read-only until it's unarchived */
+  archived: Record<string, number>
+}
 
 /**
  * One xterm per terminal (the opencode TUI and each fx process), stacked; only the
  * active one is visible. They all keep the same size, so switching never reflows.
  */
 export const TerminalStack = forwardRef<TerminalHandle, Props>(function TerminalStack(
-  { terms, activeID, dark, fontSize },
+  { terms, activeID, dark, fontSize, opencodeOpensLinks, archived },
   ref,
 ) {
   const activeRef = useRef(activeID)
   activeRef.current = activeID
+  const isLocked = (t: TermInfo) => !!(t.sessionID && archived[t.sessionID])
+  const lockedIDs = useRef(new Set<string>())
+  lockedIDs.current = new Set(terms.filter(isLocked).map((t) => t.id))
 
   useImperativeHandle(
     ref,
@@ -95,7 +113,7 @@ export const TerminalStack = forwardRef<TerminalHandle, Props>(function Terminal
       focus: () => (activeRef.current ? panes.get(activeRef.current)?.term.focus() : undefined),
       paste: (text) => {
         const id = activeRef.current
-        if (!id) return
+        if (!id || lockedIDs.current.has(id)) return
         window.ctrl.ptyWrite(id, `\x1b[200~${text}\x1b[201~`)
         panes.get(id)?.term.focus()
       },
@@ -118,6 +136,8 @@ export const TerminalStack = forwardRef<TerminalHandle, Props>(function Terminal
           active={t.id === activeID}
           dark={dark}
           fontSize={fontSize}
+          opensLinks={t.harness === "opencode" && opencodeOpensLinks}
+          locked={isLocked(t)}
         />
       ))}
       {!active && <EmptyState />}
@@ -131,12 +151,18 @@ const TermPane = memo(function TermPane({
   active,
   dark,
   fontSize,
+  opensLinks,
+  locked,
 }: {
   id: string
   harness: Harness
   active: boolean
   dark: boolean
   fontSize: number
+  /** The TUI opens clicked links itself, so ctrl leaves them alone */
+  opensLinks: boolean
+  /** Archived session on screen: scrolling only, other input is dropped */
+  locked: boolean
 }) {
   const el = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -145,6 +171,10 @@ const TermPane = memo(function TermPane({
   const initial = useRef({ dark, fontSize })
   const fallback = useRef(palette(harness, dark))
   fallback.current = palette(harness, dark)
+  const tuiLinks = useRef(opensLinks)
+  tuiLinks.current = opensLinks
+  const lockedRef = useRef(locked)
+  lockedRef.current = locked
 
   useEffect(() => {
     const t = new Terminal({
@@ -158,7 +188,7 @@ const TermPane = memo(function TermPane({
       scrollback: harness === "fx" ? 10_000 : 0,
       theme: fallback.current,
       // OSC 8 hyperlinks (e.g. markdown links the TUI renders)
-      linkHandler: { activate: openLink, allowNonHttpProtocols: true },
+      linkHandler: { activate: (e, uri) => tuiLinks.current || openLink(e, uri), allowNonHttpProtocols: true },
     })
     termRef.current = t
     const fit = new FitAddon()
@@ -170,18 +200,18 @@ const TermPane = memo(function TermPane({
     t.loadAddon(
       new WebLinksAddon(
         (event, uri) => {
-          if (!event.metaKey) return
+          if (!event.metaKey || tuiLinks.current) return
           event.preventDefault()
           void resolveLink(uri).then(window.ctrl.openExternal) // wrapped-links (was: openLink)
         },
-        { hover: (_e, uri, range) => onLinkHover(t, uri, range), leave: onLinkLeave }, // wrapped-links
+        { hover: (_e, uri, range) => tuiLinks.current || onLinkHover(t, uri, range), leave: onLinkLeave }, // wrapped-links
       ),
     )
     t.attachCustomKeyEventHandler((e) => {
       const seq = translateKey(e)
       if (!seq) return true
       // Swallow keydown/keypress/keyup so xterm doesn't also send its own encoding.
-      if (e.type === "keydown") window.ctrl.ptyWrite(id, seq)
+      if (e.type === "keydown" && !lockedRef.current) window.ctrl.ptyWrite(id, seq)
       e.preventDefault()
       return false
     })
@@ -232,7 +262,9 @@ const TermPane = memo(function TermPane({
     ;(window as unknown as { __terms: Map<string, Pane> }).__terms = panes
     if (harness === "opencode") (window as unknown as { __term: Terminal }).__term = t
 
-    const input = t.onData((d) => window.ctrl.ptyWrite(id, d))
+    const input = t.onData((d) => {
+      if (!lockedRef.current || onlyWheel(d)) window.ctrl.ptyWrite(id, d)
+    })
     const resize = t.onResize(({ cols, rows }) => window.ctrl.ptyResize(cols, rows))
     window.ctrl.ptyResize(t.cols, t.rows)
 

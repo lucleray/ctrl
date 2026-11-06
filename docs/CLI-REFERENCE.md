@@ -110,20 +110,21 @@ ctrl app update install
 Sessions, newest first
 
 ```text
-ctrl session list [--space <space>] [--archived] [--all] [--status needs-input|running|failed|unread|idle...] [--harness opencode|fx] [--query <query>] [--directory <directory>] [--limit <n>] [--cursor <cursor>]
+ctrl session list [--space <space>] [--archived] [--all] [--status needs-input|running|failed|unread|idle...] [--harness opencode|fx] [--query <query>] [--directory <directory>] [--parent <parent>] [--limit <n>] [--cursor <cursor>]
 ```
 
 - Archived sessions are left out unless --archived or --all.
 
 | Argument | Meaning |
 |---|---|
-| `--space <space>` | Only sessions in this space (id, `name:<name>`, `current`), or `none` for sessions in no space |
+| `--space <space>` | Only sessions in this space (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)), or `none` for sessions in no space |
 | `--archived / --no-archived` | Only archived sessions |
 | `--all / --no-all` | Archived sessions too |
 | `--status needs-input\|running\|failed\|unread\|idle` | Only these statuses (repeatable) · repeatable |
 | `--harness opencode\|fx` | Harness |
 | `--query <query>` | Title contains this text (case-insensitive) |
 | `--directory <directory>` | Only sessions started in this folder |
+| `--parent <parent>` | Only child sessions of this session (direct children; selectors as for <session>) |
 | `--limit <n>` | Page size (max 500) · default: 50 |
 | `--cursor <cursor>` | `next` from the previous page |
 
@@ -132,6 +133,7 @@ ctrl session list [--space <space>] [--archived] [--all] [--status needs-input|r
 ```bash
 ctrl session list --status needs-input --fields id,title,statusDetail
 ctrl session list --space name:reviews
+ctrl session list --parent self --fields id,title,status
 ```
 
 ### session get
@@ -158,31 +160,36 @@ ctrl session get current
 Starts a session, like the sidebar's + (space folder, harness, model and instructions apply) *(changes state)*
 
 ```text
-ctrl session new [--space <space>] [--harness opencode|fx] [--directory <directory>] [--model <model>] [--title <title>] [--prompt <prompt>] [--focus] [--raise]
+ctrl session new [--space <space>] [--parent <parent>] [--harness opencode|fx] [--directory <directory>] [--model <model>] [--title <title>] [--prompt <prompt>] [--focus] [--raise]
 ```
 
 - Created in the background: the screen doesn't change unless --focus.
 - Flags override the space's settings for this session only.
+- Replies within 12s: if the harness is stuck, a TIMEOUT error says whether the session was created and what to run next.
+- Run from a session, it starts as a child of that session by default (`--parent self`), like the sidebar's New child session: in the parent's space, folder and harness unless flags say otherwise. `--parent none` starts a top-level session.
 
 | Argument | Meaning |
 |---|---|
-| `--space <space>` | Space to start it in (id, `name:<name>`, `current`); omitted = no space |
-| `--harness opencode\|fx` | Harness |
-| `--directory <directory>` | Folder to start in (default: the space's folder, else ~) |
+| `--space <space>` | Space to start it in (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)); omitted = the parent's space, else the defaultSpace setting, else no space |
+| `--parent <parent>` | Parent session (selectors as for <session>), or `none`. Default: `self` when run from a session, else none |
+| `--harness opencode\|fx` | Harness (default: the parent's when --space is omitted, else the space's) |
+| `--directory <directory>` | Folder to start in (default: the parent's folder when --space is omitted, else the space's folder, else the defaultDirectory setting, else ~) |
 | `--model <model>` | Model, `<provider>/<model>[#<variant>]` (opencode) or `<model>[#<effort>]` (fx) |
 | `--title <title>` | Title (opencode: right away; fx: once fx lets go of it) |
-| `--prompt <prompt>` | First message, sent right away. `-` reads stdin |
+| `--prompt <prompt>` | First message, sent right away. `-` reads stdin (use it for long or multi-line prompts) |
 | `--focus / --no-focus` | Put it on screen |
 | `--raise / --no-raise` | With --focus: also bring ctrl's window to the front |
 
 **Returns:** `Session`
 
-- **Harness:** fx: fx only reports a new session's id once its process is up; `new` waits for it (up to 15s). If it doesn't come, `data` is {pending:true, terminal} and the session shows up in `session list` later.
-- **Harness:** fx: --prompt is typed into the fx prompt and submitted.
+- **Harness:** fx: fx only reports a new session's id once its process is up; `new` waits for it (within its 12s budget). If it doesn't come, `data` is {pending:true, terminal} and the session shows up in `session list` later.
+- **Harness:** fx: --prompt is typed into the fx prompt and submitted; the reply has `status: running` once the turn started. To know it's over, `ctrl session wait <id> --for done`. fx writes a turn to its log only when it ends, so until then `session read` shows it as `Turn N · running`.
 
 ```bash
 ctrl session new --space name:reviews --title "Review #42" --prompt "Review PR #42"
+ctrl session new --space self --title "Follow-up" --prompt - < prompt.md
 ctrl session new --focus --raise
+ctrl session new --parent none --space name:reviews --title "Unrelated"
 ```
 
 ### session focus
@@ -221,28 +228,40 @@ ctrl session rename <session> <title>
 
 ### session move
 
-Files a session in a space, or takes it out (`--space none`) *(changes state)*
+Files a session in a space or under a parent session, or takes it out (`--space none`, `--parent none`) *(changes state)*
 
 ```text
-ctrl session move <session> --space <space>
+ctrl session move <session> [--space <space>] [--parent <parent>]
 ```
 
 - Unarchives it, like the UI.
+- Pass --space, --parent or both. --parent without --space also moves it into the parent's space; a parent in another space works too (the sidebar shows a link to it instead of nesting).
+- A session can't go under itself or one of its own children (CONFLICT).
+- Its children (any depth) that were in the same space move with it, listed in `followed`; a child filed in another space stays there.
 
 | Argument | Meaning |
 |---|---|
 | `<session>` | Session: id, `self`, `current` or `name:<title>` · required |
-| `--space <space>` | Target space (id, `name:<name>`, `current`), or `none` · required |
+| `--space <space>` | Target space (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)), or `none` |
+| `--parent <parent>` | Parent session (selectors as for <session>), or `none` to make it top-level |
 
-**Returns:** `Session & {changed}`
+**Returns:** `Session & {changed, followed?}`
+
+```bash
+ctrl session move ses_x --parent self
+ctrl session move ses_x --parent none
+ctrl session move ses_x --space name:reviews
+```
 
 ### session archive
 
-Archives sessions (reply has the `undo` command) *(changes state)*
+Archives sessions and their sub-sessions (reply has the `undo` command) *(changes state)*
 
 ```text
 ctrl session archive <session>...
 ```
+
+- Child sessions (and theirs) are archived too, and listed in `archived`.
 
 | Argument | Meaning |
 |---|---|
@@ -275,14 +294,14 @@ ctrl session send <session> --text <text> [--submit] [--focus]
 | Argument | Meaning |
 |---|---|
 | `<session>` | Session: id, `self`, `current` or `name:<title>` · required |
-| `--text <text>` | Message. `-` reads stdin · required |
+| `--text <text>` | Message. `-` reads stdin (use it for long or multi-line text) · required |
 | `--submit / --no-submit` | --no-submit only types it into the session's prompt (see harness notes) · default: true |
 | `--focus / --no-focus` | Put the session on screen first |
 
 **Returns:** `{id, submitted:boolean}`
 
 - **Harness:** opencode: sent through the opencode service, works in the background. --no-submit types into the one TUI, so the session must be on screen (pass --focus).
-- **Harness:** fx: typed into the session's fx process (started in the background if needed). Fails with CONFLICT when fx has it open in another terminal.
+- **Harness:** fx: typed into the session's fx process (started in the background if needed). Fails with CONFLICT when fx has it open in another terminal. Taken: the session turns `running` within a second or two (`ctrl session wait <id> --for running`).
 
 ### session wait
 
@@ -303,7 +322,8 @@ ctrl session wait <session> [--for done|idle|needs-input|running|failed] [--time
 
 **Returns:** `Session`
 
-- **Harness:** fx: `needs-input` and `failed` only show for sessions open in ctrl (OSC 7501).
+- **Harness:** fx: `running` while a turn is in progress, `done` once it ends.
+- **Harness:** fx: `needs-input` and `failed` only show for sessions open in ctrl, and only with an fx that sends OSC 7501 status reports (fx 0.0.13 doesn't). Without them, a turn stuck on a permission prompt stays `running`, so pass a --timeout.
 
 ```bash
 ctrl session wait ses_x --for done --timeout 1800000
@@ -371,6 +391,8 @@ ctrl session read <session> [--turn <n>]
 
 **Returns:** `{id, digest:string}`
 
+- **Harness:** fx: a turn still in progress shows as `Turn N · running` with what it did so far (fx logs a turn only once it ends).
+
 ```bash
 ctrl session read ses_abc | jq -r .data.digest
 ```
@@ -411,7 +433,7 @@ ctrl space get <space> [--sessions]
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 | `--sessions / --no-sessions` | Include its sessions (non-archived) |
 
 **Returns:** `Space & {items?:[Session]}`
@@ -428,7 +450,7 @@ ctrl space create <name> [--index <n>] [--directory <directory>] [--harness open
 |---|---|
 | `<name>` | Name · required |
 | `--index <n>` | Position, 0 = top |
-| `--directory <directory>` | Folder new sessions start in; "" clears it (back to ~) |
+| `--directory <directory>` | Folder new sessions start in; "" clears it (back to the defaultDirectory setting, else ~) |
 | `--harness opencode\|fx\|default` | Harness for new sessions; `default` follows the app setting |
 | `--model <model>` | opencode model for new sessions, `<provider>/<model>[#<variant>]`; "" clears it |
 | `--fx-model <fx-model>` | fx model for new sessions, `<model>[#<effort>]`; "" clears it |
@@ -448,7 +470,7 @@ ctrl space rename <space> <name>
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 | `<name>` | New name · required |
 
 **Returns:** `Space & {changed}`
@@ -463,8 +485,8 @@ ctrl space set <space> [--directory <directory>] [--harness opencode|fx|default]
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
-| `--directory <directory>` | Folder new sessions start in; "" clears it (back to ~) |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
+| `--directory <directory>` | Folder new sessions start in; "" clears it (back to the defaultDirectory setting, else ~) |
 | `--harness opencode\|fx\|default` | Harness for new sessions; `default` follows the app setting |
 | `--model <model>` | opencode model for new sessions, `<provider>/<model>[#<variant>]`; "" clears it |
 | `--fx-model <fx-model>` | fx model for new sessions, `<model>[#<effort>]`; "" clears it |
@@ -490,7 +512,7 @@ ctrl space move <space> --index <n>
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 | `--index <n>` | Position, 0 = top · required |
 
 **Returns:** `Space & {changed}`
@@ -505,7 +527,7 @@ ctrl space fold <space>
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 
 **Returns:** `Space & {changed}`
 
@@ -519,7 +541,7 @@ ctrl space unfold <space>
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 
 **Returns:** `Space & {changed}`
 
@@ -533,7 +555,7 @@ ctrl space archive-all <space>
 
 | Argument | Meaning |
 |---|---|
-| `<space>` | Space: id, `name:<name>` or `current` (the space of the session on screen) · required |
+| `<space>` | Space: id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen) · required |
 
 **Returns:** `{archived:[id], undo?}`
 
@@ -621,7 +643,7 @@ What's on screen: current session, terminal, panels, window
 ctrl ui get
 ```
 
-**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
+**Returns:** `{currentSessionID, activeTerminal, sidebarWidth, resources:{open,collapsed,docked,scope,width}, recentsCollapsed, archivedCollapsed, window:{visible,focused}}`
 
 ### ui home
 
@@ -655,18 +677,18 @@ ctrl ui window show|hide|raise
 
 ### ui resources
 
-Opens or closes the resources panel *(changes state)*
+Opens, closes, folds, unfolds, docks or floats the resources panel *(changes state)*
 
 ```text
-ctrl ui resources open|close|toggle [--scope session|space]
+ctrl ui resources open|close|toggle|fold|unfold|dock|float [--scope session|space]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `open\|close\|toggle` | What to do with the panel · required |
+| `open\|close\|toggle\|fold\|unfold\|dock\|float` | What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed) · required |
 | `--scope session\|space` | Links of the current session or of its whole space |
 
-**Returns:** `{open, scope}`
+**Returns:** `{open, collapsed, docked, scope}`
 
 ### ui sidebar
 
@@ -760,7 +782,7 @@ ctrl search <query>... [--limit <n>] [--archived]
 
 ### resources list
 
-Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first
+Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)
 
 ```text
 ctrl resources list [--session <session>...] [--space <space>] [--type <type>...] [--limit <n>] [--cached] [--wait <n>]
@@ -774,7 +796,7 @@ ctrl resources list [--session <session>...] [--space <space>] [--type <type>...
 | Argument | Meaning |
 |---|---|
 | `--session <session>` | Sessions (repeatable; default `current`) · repeatable |
-| `--space <space>` | Every session in this space instead |
+| `--space <space>` | Every session in this space instead (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)) |
 | `--type <type>` | Only these link types, e.g. github-pr (repeatable) · repeatable |
 | `--limit <n>` | Max items (max 500) · default: 100 |
 | `--cached / --no-cached` | Don't fetch: cached live details only, instant |
@@ -803,7 +825,7 @@ ctrl resources refresh [<id|url>...] [--session <session>...] [--space <space>] 
 |---|---|
 | `[<id\|url>...]` | Resources to refetch (default: the scope below) |
 | `--session <session>` | Without ids: these sessions' resources (repeatable; default `current`) · repeatable |
-| `--space <space>` | Without ids: every session in this space instead |
+| `--space <space>` | Without ids: every session in this space instead (id, `name:<name>`, `self` (the space of the session you run in) or `current` (the space of the session on screen)) |
 | `--type <type>` | Only these link types (repeatable) · repeatable |
 | `--limit <n>` | Max items (max 500) · default: 100 |
 | `--wait <n>` | Most ms to wait (max 60000; raise --timeout past it) · default: 10000 |
@@ -927,6 +949,8 @@ ctrl events [--type <type>...] [--session <session>...]
   spaceID: string | null     // null = in no space
   archived: number | null    // archived at (ms); null = not archived
   createdByAgent: {agent: string, by: string | null, at: number} | null   // made by an agent with `session new`; by = its own session
+  parentID: string | null    // parent session (child sessions); can be in another space, or deleted
+  children: string[]         // ids of its direct child sessions, archived ones too
   status: "needs-input" | "running" | "failed" | "unread" | "idle"
   statusDetail?: string      // e.g. "Waiting for permission: bash"
   updated: number            // ms
@@ -944,7 +968,7 @@ ctrl events [--type <type>...] [--session <session>...]
   name: string
   index: number              // position in the sidebar, 0 = top
   collapsed: boolean
-  directory: string | null   // folder new sessions start in; null = ~
+  directory: string | null   // folder new sessions start in; null = defaultDirectory setting, else ~
   harness: "opencode" | "fx" | null   // null = app default
   model: string | null       // opencode model ref, "<provider>/<model>[#<variant>]"
   fxModel: string | null     // fx model ref, "<model>[#<effort>]"
@@ -973,7 +997,8 @@ ctrl events [--type <type>...] [--session <session>...]
   live?: {title?, subtitle?, tone?, chips?, details?, fields?, missing?, fetched}   // live details, when its adapter has them
   // live.fields: the same details as plain values (null = unknown):
   //   github-pr      {state: open|closed|merged, draft, ci: success|failure|pending, review: approved|changes_requested|review_required,
-  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions}
+  //                   mergeable: mergeable|conflicting|unknown, author, additions, deletions,
+  //                   reviewers: pending review requests, comma-separated logins / team slugs}
   //   github-issue   {state: open|closed, stateReason, author}
   //   github-commit  {ci, author}
   //   github-repo    {archived, description}
@@ -992,6 +1017,8 @@ ctrl events [--type <type>...] [--session <session>...]
 | `tuiTheme` | string \| null | opencode TUI theme name; null follows opencode's cli.json (choices in `values`) |
 | `fontSize` | integer 9-24 | Terminal text size in px |
 | `defaultHarness` | "opencode" \| "fx" | Harness new sessions start with; spaces can override |
+| `defaultDirectory` | folder path \| null | Folder new sessions start in when their space doesn't set one; null = ~ |
+| `defaultSpace` | space id \| name:<name> \| null | Space new chats land in (⌘N, New chat, `session new` with no --space and no parent); null = no space |
 | `defaultModelEnabled` | boolean | Off: ctrl passes no model and the harness picks its own |
 | `defaultModel` | "<provider>/<model>[#<variant>]" \| {providerID,id,variant?} \| null | opencode model for new sessions, used when defaultModelEnabled |
 | `defaultFxModel` | "<model>[#<effort>]" \| {providerID:"fx",id,variant?} \| null | fx model for new sessions, used when defaultModelEnabled |
@@ -1000,8 +1027,10 @@ ctrl events [--type <type>...] [--session <session>...]
 | `notifications` | boolean | macOS notifications when a background session needs you, finishes or fails |
 | `sounds` | boolean | Sounds when a session needs you, fails or finishes |
 | `soundsWhenFocused` | boolean | Also play sounds while ctrl is focused |
+| `remoteControl` | boolean | Remote control: serve a web page on your Tailscale network to use ctrl from your phone |
 | `soundChoices.<event>` | system sound name \| absolute path \| null | Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null |
 | `shortcuts.<command>` | string[] \| null | Bindings for an app command, e.g. ["Cmd+Shift+N"]; [] disables it, null restores the default |
+| `companion` | boolean | ctrl Companion: always-on-top window listing the sessions that mentioned what's on screen (browser tab, Slack thread, Notion page), with a global shortcut for a new session about it |
 | `adapterModes.<adapter>` | "off" \| "links" \| "live" | Resource adapter mode: off hides its links, links only, or live details |
 
 ## Errors

@@ -1,6 +1,6 @@
 {
   "name": "ctrl",
-  "version": "0.5.0",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -9,6 +9,7 @@
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true; node scripts/brand-electron.mjs",
     "icon": "node scripts/icon.mjs",
     "brand": "node scripts/brand-electron.mjs",
@@ -56,6 +57,7 @@
       "!dist/**/*.map",
       "!dist/bridge/**",
       "!dist/cli/**",
+      "!dist/companion/**",
       "package.json",
       "!node_modules/node-pty/prebuilds/win32-*/**"
     ],
@@ -71,6 +73,10 @@
       {
         "from": "dist/cli",
         "to": "cli"
+      },
+      {
+        "from": "dist/companion",
+        "to": "companion"
       }
     ],
     "asarUnpack": [
@@ -87,7 +93,8 @@
         "NSDesktopFolderUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
         "NSDownloadsFolderUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
         "NSNetworkVolumesUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
-        "NSRemovableVolumesUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in."
+        "NSRemovableVolumesUsageDescription": "ctrl runs your coding agents, which read and edit files in the folders you work in.",
+        "NSAppleEventsUsageDescription": "ctrl's companion reads the address of the tab you're looking at to show the sessions that mentioned it."
       }
     },
     "electronLanguages": [

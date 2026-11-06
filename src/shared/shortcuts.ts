@@ -9,8 +9,16 @@ export type CommandID =
   | "zoom-in"
   | "zoom-out"
   | "zoom-reset"
+  | "companion-new-session"
 
-export type Command = { id: CommandID; label: string; desc?: string; defaults: string[] }
+export type Command = {
+  id: CommandID
+  label: string
+  desc?: string
+  defaults: string[]
+  /** Works from any app (a global shortcut), not only while ctrl is focused */
+  global?: boolean
+}
 
 export const COMMANDS: Command[] = [
   { id: "palette", label: "Search", defaults: ["Cmd+P", "Cmd+K"] },
@@ -33,6 +41,13 @@ export const COMMANDS: Command[] = [
   { id: "zoom-in", label: "Larger text", defaults: ["Cmd+=", "Cmd++"] },
   { id: "zoom-out", label: "Smaller text", defaults: ["Cmd+-"] },
   { id: "zoom-reset", label: "Reset text size", defaults: ["Cmd+0"] },
+  {
+    id: "companion-new-session",
+    label: "New session from screen",
+    desc: "From any app while the ctrl Companion is on, with what's on screen typed in",
+    defaults: ["Ctrl+Alt+Cmd+Space"],
+    global: true,
+  },
 ]
 
 /** commandID → its bindings; an empty list disables the command. Missing = defaults. */
@@ -46,9 +61,10 @@ export function commandFor(accel: string, overrides: ShortcutOverrides = {}): Co
   return COMMANDS.find((c) => bindings(c.id, overrides).includes(accel))?.id
 }
 
-/** ⌘1–9 jump to sessions; ⌘Q quits. */
+/** ⌘1–9 jump to sessions, ⌃1–9 to the ctrl Companion's; ⌘Q quits. */
 export function reservedReason(accel: string): string | undefined {
   if (/^Cmd\+[1-9]$/.test(accel)) return "⌘1–9 jump to sessions"
+  if (/^Ctrl\+[1-9]$/.test(accel)) return "⌃1–9 jump to the ctrl Companion's sessions"
   if (accel === "Cmd+Q") return "⌘Q quits ctrl"
 }
 

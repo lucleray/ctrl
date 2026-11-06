@@ -3,8 +3,9 @@
 // session's own text and only extend it when the next screen row confirms the
 // continuation.
 //
-// Remove once both emit OSC 8 hyperlinks for wrapped URLs
-// (https://github.com/anomalyco/opencode/issues/35649): delete this file and
+// opencode 2.0.26+ opens clicked links itself, wrapped ones included, so this only
+// runs for fx and older opencode. Remove once fx handles them too and MIN_OPENCODE
+// is 2.0.26 or newer: delete this file and
 // src/renderer/wrapped-links.ts, then the lines tagged `wrapped-links`.
 import type { OpenCode } from "@opencode/client"
 import { open, stat } from "node:fs/promises"

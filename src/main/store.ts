@@ -10,6 +10,8 @@ const DEFAULT_UI: UiState = {
   resourcesOpen: true,
   resourcesWidth: 300,
   resourcesScope: "session",
+  resourcesCollapsed: false,
+  resourcesDocked: false,
 }
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
@@ -21,12 +23,15 @@ const DEFAULT_SETTINGS: Settings = {
   soundChoices: DEFAULT_SOUND_CHOICES,
   fontSize: FONT_SIZE.default,
   defaultHarness: "opencode",
+  defaultDirectory: null,
+  defaultSpace: null,
   defaultModel: null,
   defaultFxModel: null,
   defaultModelEnabled: false,
   ctrlInstructions: true,
   adapterModes: {},
   shortcuts: {},
+  companion: false,
   remoteControl: false,
 }
 
@@ -37,6 +42,8 @@ type Persisted = {
   archived: Record<string, number>
   /** sessionID → the agent that created it through the CLI */
   createdByAgent: Record<string, AgentOrigin>
+  /** sessionID → parent sessionID (child sessions, any depth; the parent can be in another space) */
+  parents: Record<string, string>
   ui: UiState
   settings: Settings
   /** fx sessions: end of the last turn you've seen (fx has no read state; opencode keeps its own) */
@@ -66,6 +73,7 @@ export class Store {
       assignments: {},
       archived: {},
       createdByAgent: {},
+      parents: {},
       viewed: {},
       viewedSince: Date.now(),
       titles: {},
@@ -114,6 +122,42 @@ export class Store {
     this.save()
   }
 
+  /** Whether `ancestorID` is `sessionID` or one of its ancestors. */
+  isAncestor(ancestorID: string, sessionID: string) {
+    const seen = new Set<string>()
+    for (let id: string | undefined = sessionID; id && !seen.has(id); id = this.data.parents[id]) {
+      if (id === ancestorID) return true
+      seen.add(id)
+    }
+    return false
+  }
+
+  /** The given sessions plus all their children, grandchildren, etc. */
+  withDescendants(sessionIDs: string[]) {
+    const out = new Set(sessionIDs)
+    const children = new Map<string, string[]>()
+    for (const [id, p] of Object.entries(this.data.parents)) children.set(p, [...(children.get(p) ?? []), id])
+    const queue = [...out]
+    while (queue.length) {
+      for (const child of children.get(queue.pop()!) ?? []) {
+        if (out.has(child)) continue
+        out.add(child)
+        queue.push(child)
+      }
+    }
+    return [...out]
+  }
+
+  /** null detaches. Refuses cycles (a session under itself or one of its children). */
+  setParent(sessionID: string, parentID: string | null) {
+    if (parentID && this.isAncestor(sessionID, parentID)) return false
+    if ((this.data.parents[sessionID] ?? null) === parentID) return true
+    if (parentID) this.data.parents[sessionID] = parentID
+    else delete this.data.parents[sessionID]
+    this.save()
+    return true
+  }
+
   private saveTimer?: ReturnType<typeof setTimeout>
 
   /** For values that change often (every switch, finished turn or resize): one write per second at most. */
@@ -159,6 +203,14 @@ export class Store {
     delete this.data.assignments[sessionID]
     delete this.data.archived[sessionID]
     delete this.data.createdByAgent[sessionID]
+    // Its children move up to its own parent, so the tree stays connected.
+    const parent = this.data.parents[sessionID]
+    delete this.data.parents[sessionID]
+    for (const [id, p] of Object.entries(this.data.parents)) {
+      if (p !== sessionID) continue
+      if (parent) this.data.parents[id] = parent
+      else delete this.data.parents[id]
+    }
     delete this.data.viewed[sessionID]
     delete this.data.titles[sessionID]
     this.save()
@@ -230,5 +282,31 @@ export class Store {
     if (spaceID && this.space(spaceID)) this.data.assignments[sessionID] = spaceID
     else delete this.data.assignments[sessionID]
     this.save()
+  }
+
+  /**
+   * Moves a session with its descendants that were in the same space, so the tree stays together.
+   * A child filed elsewhere stays put, with its own subtree. Returns the descendants that moved.
+   */
+  assignTree(sessionID: string, spaceID: string | null): string[] {
+    const from = this.data.assignments[sessionID] ?? null
+    const moved: string[] = []
+    const seen = new Set([sessionID])
+    const queue = [sessionID]
+    while (queue.length) {
+      const id = queue.shift()!
+      for (const [kid, parent] of Object.entries(this.data.parents)) {
+        if (parent !== id || seen.has(kid) || (this.data.assignments[kid] ?? null) !== from) continue
+        seen.add(kid)
+        moved.push(kid)
+        queue.push(kid)
+      }
+    }
+    for (const id of [sessionID, ...moved]) {
+      if (spaceID && this.space(spaceID)) this.data.assignments[id] = spaceID
+      else delete this.data.assignments[id]
+    }
+    this.save()
+    return moved
   }
 }

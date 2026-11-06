@@ -70,7 +70,8 @@ turns.forEach((t, i) => {
   out.push(`### Turn ${i + 1}${t.outcome && t.outcome !== "completed" ? ` · ${t.outcome}` : ""}`)
   out.push(`**User:** ${clip(t.prompt, recent ? 1500 : 300)}`)
   const answer = t.texts.at(-1)
-  out.push(answer ? `**Assistant (final reply):** ${clip(answer, recent ? 2500 : 400)}` : "**Assistant:** (no text reply)")
+  const label = t.outcome === "running" ? "latest" : "final reply"
+  out.push(answer ? `**Assistant (${label}):** ${clip(answer, recent ? 2500 : 400)}` : "**Assistant:** (no text reply)")
 })
 out.push("")
 out.push("## Activity")
@@ -177,6 +178,9 @@ function readFx(rawID) {
     if (kind === "turn_completed") t.outcome = "completed"
     if (kind === "interrupted") t.outcome = `interrupted (${p.reason ?? "?"})`
   }
+  // fx writes a turn to events.jsonl only once it ends; until then it lives in recovery.json.
+  const inFlight = readFxRecovery(dir)
+  if (inFlight) turns.push(inFlight)
   return {
     title: info.title,
     header: [
@@ -184,8 +188,35 @@ function readFx(rawID) {
       `- directory: ${info.workspace_root ?? "?"}`,
       `- model: ${info.model ?? "?"} (${info.provider ?? "?"})`,
       `- created ${when(info.created_at_ms)} · last activity ${when(last || info.updated_at_ms)}`,
-      `- ${turns.length} turn(s), ${lines.length} events`,
+      `- ${turns.length} turn(s), ${lines.length} events${inFlight ? " (+ the turn in progress)" : ""}`,
     ],
     turns,
   }
+}
+
+function readFxRecovery(dir) {
+  let c, owner
+  try {
+    c = JSON.parse(readFileSync(join(dir, "recovery.json"), "utf8")).checkpoint
+  } catch {
+    return undefined
+  }
+  try {
+    owner = JSON.parse(readFileSync(join(dir, "owner.live"), "utf8")).pid
+    process.kill(owner, 0)
+  } catch (err) {
+    if (err.code !== "EPERM") owner = undefined
+  }
+  const t = { prompt: c?.user?.text ?? "", texts: [], tools: [], outcome: owner ? "running" : "unfinished (fx stopped mid-turn)" }
+  for (const step of c?.execution?.tool_steps ?? []) {
+    if (step.assistant?.trim()) t.texts.push(step.assistant)
+    for (const call of step.tool_calls ?? []) {
+      let input = {}
+      try {
+        input = JSON.parse(call.arguments_json ?? "{}")
+      } catch {}
+      t.tools.push({ name: call.name, input })
+    }
+  }
+  return t
 }

@@ -1,5 +1,6 @@
 import * as esbuild from "esbuild"
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -22,6 +23,7 @@ export const configs = [
   },
   { ...common, entryPoints: ["src/preload/preload.ts"], outfile: "dist/preload.cjs", format: "cjs" },
   { ...common, entryPoints: ["src/indexer/indexer.ts"], outfile: "dist/indexer.cjs", format: "cjs" },
+  { ...common, entryPoints: ["src/companion/preload.ts"], outfile: "dist/companion-preload.cjs", format: "cjs" },
   // The `ctrl` CLI (docs/CLI.md): shipped outside app.asar (Contents/Resources/cli) so plain node can run it.
   {
     ...common,
@@ -70,6 +72,26 @@ configs.push({
   ],
 })
 
+// The companion's helper (src/companion/native): a universal binary, shipped outside app.asar
+// (Contents/Resources/companion). Rebuilt only when the source changed (~20s for both archs).
+const NATIVE_SRC = "src/companion/native/context.swift"
+const NATIVE_OUT = "dist/companion/ctrl-context"
+export function buildNative() {
+  if (process.platform !== "darwin") return
+  if (existsSync(NATIVE_OUT) && statSync(NATIVE_OUT).mtimeMs >= statSync(NATIVE_SRC).mtimeMs) return
+  mkdirSync("dist/companion", { recursive: true })
+  const slices = ["arm64", "x86_64"].map((arch) => {
+    const out = `${NATIVE_OUT}-${arch}`
+    execFileSync("swiftc", ["-O", "-swift-version", "5", "-target", `${arch}-apple-macos12.0`, NATIVE_SRC, "-o", out], {
+      stdio: "inherit",
+    })
+    return out
+  })
+  execFileSync("lipo", ["-create", ...slices, "-output", NATIVE_OUT])
+  for (const slice of slices) rmSync(slice)
+  console.log(`[build] ${NATIVE_OUT}`)
+}
+
 // The packaged app can't point opencode at bridge/tui.ts (no node_modules next to
 // it, and opencode can't read inside app.asar), so ship a self-contained copy.
 // Only Plugin.define is used at runtime, so skip the solid-js half of the module.
@@ -95,6 +117,7 @@ const bridgeConfig = {
 }
 
 if (process.argv[1].endsWith("build.mjs")) {
+  buildNative()
   await Promise.all([...configs, bridgeConfig].map((c) => esbuild.build(c)))
   mkdirSync("dist/bridge", { recursive: true })
   writeFileSync(

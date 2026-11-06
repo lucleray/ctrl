@@ -199,6 +199,69 @@ button {
 
 .row.session {
   padding-left: 35px;
+  position: relative;
+}
+
+/* Child sessions: fold toggle in the indent, left of the label */
+.tree-toggle {
+  position: absolute;
+  top: 4px;
+  width: 18px;
+  opacity: 0.55;
+}
+.row.session:hover .tree-toggle {
+  opacity: 1;
+}
+
+/* Parent in another space (or archived): a link to it instead of nesting */
+.parent-link {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+}
+.parent-link .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.parent-tip {
+  position: fixed;
+  z-index: 50;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.parent-tip-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+.parent-tip-title {
+  margin: 2px 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.parent-tip-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.row.session.flash {
+  animation: flash 1.2s ease-out;
+}
+
+/* A session dragged here becomes its child */
+.row.session.nest-over {
+  outline: 1.5px solid rgba(59, 130, 246, 0.45);
+  outline-offset: -1.5px;
+  background: rgba(59, 130, 246, 0.07);
 }
 
 .section > .row.session,
@@ -628,6 +691,147 @@ button {
   padding: 36px 32px 48px;
 }
 
+/* Settings (⌘,): a section list on the left, one section at a time on the right. */
+.settings.settings-split {
+  display: flex;
+  overflow: hidden;
+}
+
+.settings-nav {
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 36px 12px 16px;
+  border-right: 1px solid var(--border);
+}
+
+.settings .settings-nav h1 {
+  padding: 0 10px;
+  margin-bottom: 14px;
+}
+
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--hover-strong);
+  color: var(--muted);
+  cursor: text;
+}
+
+.settings-search:focus-within {
+  background: var(--input-bg);
+  border-color: var(--border);
+}
+
+.settings-search input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border: 0;
+  outline: none;
+  background: transparent;
+}
+
+.settings-search input::placeholder {
+  color: var(--placeholder);
+}
+
+.settings-nav-group {
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 16px 10px 6px;
+}
+
+.settings-nav-group:empty {
+  padding: 8px 0 0;
+}
+
+.settings-nav .row .icon {
+  color: var(--icon);
+  flex-shrink: 0;
+}
+
+.settings-nav .row .mcp-dot {
+  margin: 0 2px 0 0;
+}
+
+.settings-nav .row.dim {
+  opacity: 0.4;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.settings-split .settings-inner > h1 {
+  margin-bottom: 20px;
+}
+
+.settings-split .settings-inner > section h2 {
+  margin-top: 24px;
+}
+
+.settings-split .settings-inner > section:first-of-type h2 {
+  margin-top: 0;
+}
+
+.settings-result-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+  font: inherit;
+}
+
+.settings-result-title .icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+}
+
+.settings-result-title:hover {
+  color: var(--text);
+}
+
+.settings-result-title:hover .icon {
+  opacity: 1;
+}
+
+.settings-close {
+  position: absolute;
+  top: 34px;
+  right: 24px;
+}
+
+.settings-empty {
+  color: var(--muted);
+  padding: 4px 2px;
+}
+
+.settings [hidden] {
+  display: none !important;
+}
+
+/* Search hides rows: the first one left loses its top border. */
+.settings-card > .setting[data-first] {
+  border-top-color: transparent;
+}
+
+::highlight(settings-search) {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
@@ -668,6 +872,19 @@ button {
 
 .setting-title {
   font-weight: 500;
+}
+
+/* "Experimental" next to a setting's title */
+.pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  vertical-align: 1px;
 }
 
 .setting-desc {
@@ -1232,6 +1449,11 @@ button {
   -webkit-app-region: no-drag;
 }
 
+.resize-handle.left {
+  right: auto;
+  left: -4px;
+}
+
 .resize-handle::after {
   content: "";
   position: absolute;
@@ -1605,6 +1827,39 @@ body.resizing .terminal-pane.active {
   opacity: 0.88;
 }
 
+/* ---------- archived session banner ---------- */
+
+/* Floats over the TUI's prompt (the part that's locked), clear of the resources panel up top. */
+.archived-banner {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  background: color-mix(in srgb, var(--panel-bg) 85%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  animation: toast-in 160ms ease-out;
+}
+
+.archived-banner > .icon {
+  color: var(--icon);
+  flex-shrink: 0;
+}
+
+.archived-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
 /* ---------- resources panel ---------- */
 
 /* A floating card over the terminal's top-right corner; the terminal keeps its full width. */
@@ -1643,7 +1898,117 @@ body.resizing .terminal-pane.active {
   justify-content: space-between;
   font-size: 14px;
   font-weight: 600;
-  padding: 2px 4px 8px 10px;
+  padding: 2px 4px 8px 4px;
+}
+
+.resources-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 2px;
+  border-radius: 6px;
+  font: inherit;
+  color: inherit;
+}
+
+.resources-toggle:hover {
+  background: var(--hover);
+}
+
+.resources-toggle .icon {
+  color: var(--icon);
+}
+
+.resources-toggle .count {
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* Folded to its header: a small pill in the corner, the terminal stays readable underneath. */
+.resources.collapsed {
+  width: auto;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.resources.collapsed .resources-header {
+  gap: 8px;
+  padding: 0;
+}
+
+.resources.collapsed .segmented,
+.resources.collapsed .scroll {
+  display: none;
+}
+
+.resources-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Docked: a column next to the terminal, like the sidebar on the other side. The terminal narrows instead. */
+.resources.docked {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  flex-shrink: 0;
+  width: 300px;
+  max-height: none;
+  padding: 14px 8px 8px;
+  background: var(--sidebar-bg);
+  backdrop-filter: none;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.resources.docked .scroll {
+  min-height: 0;
+}
+
+/* Keeps the window draggable from the top of the column, like .main-drag. */
+.resources-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  -webkit-app-region: drag;
+}
+
+/* Docked and folded: a thin side tab with the title running down it. */
+.resources.docked.collapsed {
+  width: 40px;
+  padding: 14px 4px 8px;
+  border-radius: 0;
+}
+
+.resources.docked.collapsed .resources-header {
+  flex-direction: column;
+}
+
+.resources.docked.collapsed .resources-toggle {
+  flex-direction: column;
+  height: auto;
+  padding: 6px 4px;
+  gap: 6px;
+}
+
+.resources.docked.collapsed .resources-toggle > span:first-of-type {
+  writing-mode: vertical-rl;
+}
+
+.resources.docked.collapsed .resources-toggle .count {
+  margin-left: 0;
+}
+
+.resources.docked.collapsed .resources-actions {
+  display: none;
 }
 
 .icon-btn.on {
@@ -2096,4 +2461,316 @@ body.resizing .terminal-pane.active {
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Board (src/renderer/Board.tsx): the resources of a space, or of every space, by whose turn it is. */
+.board {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  padding: 28px 24px 20px;
+  -webkit-app-region: no-drag;
+}
+
+.board-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.board-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.board-title h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.board-title select {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.board-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.board-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--hover);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.board-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 6px 10px;
+}
+
+.board-column-header::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.stage-you .board-column-header::before {
+  background: var(--tone-warn);
+}
+.stage-waiting .board-column-header::before {
+  background: var(--accent);
+}
+.stage-moving .board-column-header::before {
+  background: var(--tone-good);
+}
+
+.board-column-header .count {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.board-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px;
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+.board-card:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+}
+
+.stage-done .board-card {
+  opacity: 0.6;
+}
+
+.board-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.board-card-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.board-card-top .meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.board-card-reason {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.stage-you .board-card-reason {
+  color: var(--tone-warn);
+}
+
+.board-card-sessions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.board-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 60%;
+  padding: 1px 6px 1px 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--hover);
+}
+
+.board-session:hover {
+  color: var(--text);
+  background: var(--hover-strong);
+}
+
+.board-session .icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.board-session span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-more {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 14px;
+}
+
+.board-filters + .board-filters {
+  margin-top: -6px;
+}
+
+.board-filters-label {
+  width: 52px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.board-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--dim);
+  background: transparent;
+}
+
+.board-filter:hover {
+  background: var(--hover);
+}
+
+.board-filter.on {
+  color: var(--text);
+  background: var(--active);
+  border-color: transparent;
+}
+
+.board-filter .count {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-card-reason {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-card-reason > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-card-spaces {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Legend-style chips: a dot that's filled when the row is filtered and the chip shows. */
+.board-filter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  margin-left: -2px;
+}
+
+.board-filter.on .board-filter-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.board-filter.hidden {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.board-filter.hidden .board-filter-name {
+  text-decoration: line-through;
+}
+
+/* Counts always show, hidden chips included (what showing them would add): no empty gaps, no reflow. */
+.board-filter .count.zero {
+  opacity: 0.5;
+}
+
+.board-filter:focus:not(:focus-visible) {
+  outline: none;
 }

@@ -22,9 +22,10 @@ terminals ctrl runs, plain `ctrl` works too.
 Inside a session ctrl runs, `self` is the session you're in. Start here:
 
 ```bash
-ctrl session get self                                  # this session: title, folder, spaceID
+ctrl session get self                                  # this session: title, folder, spaceID, parentID, children
 ctrl space get self                                    # its space: name, folder, instructions
 ctrl session list --space self --fields id,title,status  # the other sessions in the space
+ctrl session list --parent self --fields id,title,status # sessions started from this one (child sessions)
 ctrl resources list --space self                       # PRs, issues, links and referenced sessions in the space
 ctrl session read <id>                                 # digest of another session
 ```
@@ -41,11 +42,11 @@ Don't guess flags: read `help` first. The most used ones:
 | Command | Does |
 |---|---|
 | `session list [--space <s>] [--status needs-input]` | find sessions |
-| `session new [--space <s>] [--title t] [--prompt p] [--focus]` | start one (background unless `--focus`) |
+| `session new [--space <s>] [--parent <s>\|none] [--title t] [--prompt p\|-] [--focus]` | start one (background unless `--focus`; `--prompt -` reads stdin) |
 | `session wait <s> --for done` | block until its turn is over |
 | `session read <s>` | digest of another session's context |
 | `session reference <src> --into <dst> [--text t] [--submit]` | reference one session in another |
-| `session move <s> --space <space\|none>` · `session archive <s>` | file / archive |
+| `session move <s> [--space <space\|none>] [--parent <s>\|none]` · `session archive <s>` | file / nest / archive |
 | `space create <name> [--directory d]` · `space list` | spaces |
 | `settings list` · `settings set <key> <value>` | settings |
 | `focus <s> [--raise]` | put a session on screen |
@@ -54,6 +55,9 @@ Don't guess flags: read `help` first. The most used ones:
 
 - Sessions: an id (`ses_…`, `fx:…`), `self` (the session you're in), `current` (on screen) or
   `name:<title>`. Spaces: an id, `name:<name>`, `self` (your session's space) or `current`.
+- Sessions form a tree: a session can have child sessions (`parentID`, `children`). `session new` run from
+  a session makes a child of it by default, in the same space and folder, so the user sees where it came
+  from. Pass `--parent none` only when the new session is unrelated to yours.
 - Check `ok`. On errors, read `error.code` and follow `error.hint`; `AMBIGUOUS` lists `candidates`
   (retry with an id).
 - Don't change what's on screen (`focus`, `--focus`, `ui …`) unless the user asked for it.
@@ -63,4 +67,8 @@ Don't guess flags: read `help` first. The most used ones:
   command: mention it to the user ("you can undo this with …") or run it if they ask.
 - Run it through `ctrl.sh`, or with `AI_AGENT=<your name>` set, so sessions you create are marked as made
   by an agent (opencode sets `AI_AGENT` for you).
+- Pass long or multi-line text on stdin, not inline: `--prompt - < prompt.md`, `--text - <<'EOF'`.
 - Use `--fields id,title` on lists to keep output small.
+- To check a prompt was taken (`session new --prompt`, `session send`), look for status `running`, then
+  `session wait <s> --for done`. fx only logs a turn once it ends, so `session read` shows an fx turn in
+  progress as `Turn N · running`. fx can't report `needs-input`, so give waits on fx a `--timeout`.

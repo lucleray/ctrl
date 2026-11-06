@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
+import { ArchivedBanner } from "./ArchivedBanner"
+import { Board, loadFilter, onlySpace, saveFilter, type BoardFilter } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
@@ -15,6 +17,7 @@ import { Toasts } from "./Toast"
 const EMPTY: AppState = {
   version: "",
   opencode: { state: "checking" },
+  opencodeServer: { state: "checking" },
   fx: { state: "checking" },
   skill: { state: "missing" },
   cli: { state: "missing", link: "", target: "" },
@@ -27,13 +30,16 @@ const EMPTY: AppState = {
     resourcesOpen: true,
     resourcesWidth: 300,
     resourcesScope: "session",
+    resourcesCollapsed: false,
+    resourcesDocked: false,
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, remoteControl: false },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
   assignments: {},
   createdByAgent: {},
+  parents: {},
   archived: {},
   sessions: [],
   currentSessionID: null,
@@ -51,6 +57,13 @@ export function App() {
   const [paletteQuery, setPaletteQuery] = useState("")
   const [settings, setSettings] = useState(false)
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
+  const [board, setBoard] = useState(false)
+  // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
+  const [boardFilter, setBoardFilterState] = useState<BoardFilter>(loadFilter)
+  const setBoardFilter = useCallback((f: BoardFilter) => {
+    setBoardFilterState(f)
+    saveFilter(f)
+  }, [])
   const editingSpace = state.spaces.find((s) => s.id === spaceSettingsID)
   // Hints stay up while ⌘ is held, so you can hop ⌘1 → ⌘3 → ⌘2 in one go.
   const { hints, cancel: cancelHints } = useJumpHints((n) => {
@@ -61,6 +74,8 @@ export function App() {
   // Either harness is enough: without opencode, ctrl runs fx sessions only (and the other way round).
   const ready = state.opencode.state === "ok" || state.fx.state === "ok"
   const activeTerm = state.terms.find((t) => t.id === state.activeTermID)
+  // Its terminal is read-only (TerminalStack) until it's unarchived.
+  const archivedOnScreen = activeTerm?.sessionID && state.archived[activeTerm.sessionID] ? activeTerm.sessionID : null
   const checked = state.opencode.state !== "checking" && state.fx.state !== "checking"
   // First launch, or nothing usable installed. Drawn over the terminals, which keep running underneath.
   const onboarding = checked && (!state.ui.onboarded || !ready)
@@ -75,6 +90,7 @@ export function App() {
   const open = useCallback((id: string) => {
     setSettings(false)
     setSpaceSettingsID(null)
+    setBoard(false)
     void window.ctrl.openSession(id)
     terminal.current?.focus()
   }, [])
@@ -82,6 +98,7 @@ export function App() {
   const create = useCallback(async (spaceID: string | null) => {
     setSettings(false)
     setSpaceSettingsID(null)
+    setBoard(false)
     await window.ctrl.newSession(spaceID)
     terminal.current?.focus()
   }, [])
@@ -120,10 +137,33 @@ export function App() {
     () =>
       window.ctrl.onSpaceSettings((id) => {
         setSettings(false)
+        setBoard(false)
         setSpaceSettingsID(id)
       }),
     [],
   )
+
+  useEffect(
+    () =>
+      window.ctrl.onBoardOpen((id) => {
+        setSettings(false)
+        setSpaceSettingsID(null)
+        setBoardFilter(onlySpace(id))
+        setBoard(true)
+      }),
+    [setBoardFilter],
+  )
+
+  const toggleBoard = useCallback(() => {
+    setSettings(false)
+    setSpaceSettingsID(null)
+    setBoard((b) => !b)
+  }, [])
+
+  const closeBoard = useCallback(() => {
+    setBoard(false)
+    terminal.current?.focus()
+  }, [])
 
   // The CLI (`ctrl ui settings`, `ctrl ui palette`) drives these too.
   useEffect(
@@ -131,6 +171,7 @@ export function App() {
       window.ctrl.onUiSettings((open) => {
         setPalette(false)
         setSpaceSettingsID(null)
+        setBoard(false)
         setSettings(open)
       }),
     [],
@@ -160,6 +201,7 @@ export function App() {
         if (name === "settings") {
           setPalette(false)
           setSpaceSettingsID(null)
+          setBoard(false)
           setSettings((v) => !v)
         }
         if (name === "new-chat") {
@@ -167,7 +209,7 @@ export function App() {
           void create(null)
         }
         // Main creates the session; just get out of the way.
-        if (name === "new-session-here") {
+        if (name === "new-session-here" || name === "companion-new-session") {
           setPalette(false)
           setSettings(false)
           setSpaceSettingsID(null)
@@ -175,6 +217,18 @@ export function App() {
         }
       }),
     [create, cancelHints],
+  )
+
+  const showResources = state.ui.resourcesOpen && !settings && !editingSpace && !board && ready && !onboarding
+  // Floating, it sits over the terminal inside main; docked, it's a column next to main.
+  const resources = (
+    <ResourcesPanel
+      state={state}
+      onClose={() => {
+        void window.ctrl.setUi({ resourcesOpen: false })
+        terminal.current?.focus()
+      }}
+    />
   )
 
   return (
@@ -187,8 +241,11 @@ export function App() {
         onSearch={() => setPalette(true)}
         onSettings={() => {
           setSpaceSettingsID(null)
+          setBoard(false)
           setSettings((v) => !v)
         }}
+        boardOpen={!!board}
+        onToggleBoard={toggleBoard}
         onToggleResources={() => void window.ctrl.setUi({ resourcesOpen: !state.ui.resourcesOpen })}
         footer={
           <Toasts
@@ -208,8 +265,18 @@ export function App() {
               activeID={state.activeTermID}
               dark={state.dark}
               fontSize={state.settings.fontSize}
+              opencodeOpensLinks={state.opencode.state === "ok" && state.opencode.opensLinks}
+              archived={state.archived}
             />
-            {activeTerm && (
+            {archivedOnScreen && !onboarding && (
+              <ArchivedBanner
+                onUnarchive={() => {
+                  void window.ctrl.setArchived(archivedOnScreen, false)
+                  terminal.current?.focus()
+                }}
+              />
+            )}
+            {activeTerm && !archivedOnScreen && (
               <ReferenceDrop
                 sessions={state.sessions}
                 currentSessionID={state.currentSessionID}
@@ -234,6 +301,9 @@ export function App() {
             }}
           />
         )}
+        {board && !settings && !editingSpace && ready && !onboarding && (
+          <Board state={state} filter={boardFilter} onFilter={setBoardFilter} onClose={closeBoard} onOpenSession={open} />
+        )}
         {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
         {editingSpace && (
           <SpaceSettings
@@ -244,16 +314,9 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {state.ui.resourcesOpen && !settings && !editingSpace && ready && !onboarding && (
-          <ResourcesPanel
-            state={state}
-            onClose={() => {
-              void window.ctrl.setUi({ resourcesOpen: false })
-              terminal.current?.focus()
-            }}
-          />
-        )}
+        {showResources && !state.ui.resourcesDocked && resources}
       </main>
+      {showResources && state.ui.resourcesDocked && resources}
       {palette && (
         <Palette
           key={paletteQuery}

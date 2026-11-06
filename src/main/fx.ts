@@ -65,6 +65,8 @@ export type FxSession = {
   ownerPid?: number
   /** events.jsonl size as of the last read, to notice appends while polling */
   size: number
+  /** recovery.json exists: fx is mid-turn (it writes the turn to events.jsonl only once it ends) */
+  recovery: boolean
 }
 
 /** Live status of a session open in ctrl, from OSC 7501 reports (see fx-terminals.ts). */
@@ -136,8 +138,9 @@ export class FxSessions {
         this.readSoon(s.id)
         continue
       }
-      const size = await stat(join(SESSIONS_DIR, s.id, "events.jsonl")).then((st) => st.size, () => 0)
-      if (size !== s.size) this.readSoon(s.id)
+      const dir = join(SESSIONS_DIR, s.id)
+      const size = await stat(join(dir, "events.jsonl")).then((st) => st.size, () => 0)
+      if (size !== s.size || existsSync(join(dir, "recovery.json")) !== s.recovery) this.readSoon(s.id)
     }
   }
 
@@ -180,6 +183,7 @@ export class FxSessions {
       if (meta.subagent_child) return
       const ownerPid = typeof owner?.pid === "number" && alive(owner.pid) ? owner.pid : undefined
       const tail = events?.size ? await lastEvent(join(dir, "events.jsonl"), events.size) : undefined
+      const recovery = existsSync(join(dir, "recovery.json"))
       const session: FxSession = {
         id,
         title: typeof meta.title === "string" && meta.title ? meta.title : undefined,
@@ -187,10 +191,11 @@ export class FxSessions {
         created: meta.created_at_ms ?? 0,
         updated: Math.max(meta.updated_at_ms ?? 0, events?.mtimeMs ?? 0),
         used: !!events?.size,
-        turn: tail?.turn ?? "none",
+        turn: recovery ? "in-turn" : (tail?.turn ?? "none"),
         turnEnded: tail?.ended,
         ownerPid,
         size: events?.size ?? 0,
+        recovery,
       }
       this.all.set(id, session)
       if (ownerPid && this.deps.isOurPid(ownerPid)) this.deps.onOwner(fxID(id), ownerPid)
@@ -237,7 +242,7 @@ export class FxSessions {
     if (live?.state === "blocked") return { status: "needs-input", statusDetail: live.msg || "Waiting for you" }
     if (live?.state === "working") return { status: "running", statusDetail: "Running" }
     if (live?.state === "error" && !current) return { status: "failed", statusDetail: "Failed" }
-    // No OSC 7501 (older fx, or another terminal): a turn that started and didn't end, in a live process, is running.
+    // No OSC 7501 (fx 0.0.13 sends none, or another terminal): a turn in progress (recovery.json) in a live process is running.
     if (!live && s.turn === "in-turn" && s.ownerPid !== undefined)
       return { status: "running", statusDetail: ours ? "Running" : "Running in another terminal" }
     const finished = s.turn === "completed" && s.turnEnded !== undefined

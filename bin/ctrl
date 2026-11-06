@@ -7,12 +7,34 @@ while [ -L "$self" ]; do
   case $link in /*) self=$link ;; *) self=$(dirname "$self")/$link ;; esac
 done
 dir=$(cd "$(dirname "$self")" && pwd)
+
+# Runs the CLI and waits (no exec), so a CLI killed before it could answer still replies in JSON
+# instead of exiting with no output (docs/CLI.md → Output). Ctrl-C and closed pipes stay quiet.
+run() {
+  "$@"
+  status=$?
+  if [ "$status" -le 128 ] || [ "$status" -eq 130 ] || [ "$status" -eq 141 ]; then
+    exit "$status"
+  fi
+  hint="Run it again. If it keeps happening, report it: https://github.com/lucleray/ctrl/issues"
+  for arg in "$@"; do
+    if [ "${#arg}" -gt 1000 ]; then
+      hint="Something on this machine may kill processes with long arguments: pass long text on stdin instead, e.g. --prompt - < prompt.md"
+      break
+    fi
+  done
+  printf '{"ok":false,"error":{"code":"INTERNAL","message":"The ctrl CLI was killed (signal %s) before it could answer","hint":"%s"}}\n' \
+    "$((status - 128))" "$hint"
+  exit 1
+}
+
 if command -v node >/dev/null 2>&1; then
-  exec node "$dir/cli.cjs" "$@"
+  run node "$dir/cli.cjs" "$@"
 fi
 for app in "$dir/../../MacOS/ctrl" /Applications/ctrl.app/Contents/MacOS/ctrl; do
   if [ -x "$app" ]; then
-    ELECTRON_RUN_AS_NODE=1 exec "$app" "$dir/cli.cjs" "$@"
+    export ELECTRON_RUN_AS_NODE=1
+    run "$app" "$dir/cli.cjs" "$@"
   fi
 done
 echo '{"ok":false,"error":{"code":"INTERNAL","message":"ctrl CLI needs node, or ctrl.app in /Applications"}}'

@@ -30,7 +30,7 @@ import {
   type UiState,
   type UpdateStatus,
 } from "../shared/types"
-import { parseResourceUrl, resourceType } from "../shared/adapters"
+import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
 import type { Handler } from "./cli-server"
 import type { Store } from "./store"
@@ -55,10 +55,12 @@ export type CliHost = {
     directory?: string
     model?: ModelRef
     focus: boolean
+    parentID?: string | null
   }): Promise<{ id: string } | { pending: true; terminal: string }>
   openSession(sessionID: string): void
   renameSession(sessionID: string, title: string): Promise<void>
-  move(sessionID: string, spaceID: string | null): void
+  /** Moves it with the descendants that shared its space; returns those descendants. */
+  move(sessionID: string, spaceID: string | null): string[]
   /** No toast: the CLI returns an undo command instead (principle 8) */
   archive(sessionIDs: string[]): void
   unarchive(sessionIDs: string[]): void
@@ -100,6 +102,9 @@ export type CliHost = {
 
 // ---------- helpers ----------
 
+/** Most ms `session new` spends before replying: under the CLI's default --timeout (15s). */
+export const SESSION_NEW_BUDGET = 12_000
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const ensureString = (value: unknown, what: string): string => {
@@ -122,7 +127,7 @@ const folder = (path: string, caller: CallerContext) => {
   return abs
 }
 
-export function createHandlers(host: CliHost): Record<string, Handler> {
+export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_BUDGET } = {}): Record<string, Handler> {
   const { store } = host
 
   const sessionView = (s: SessionItem) => ({
@@ -133,6 +138,8 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     spaceID: store.data.assignments[s.id] ?? null,
     archived: store.data.archived[s.id] ?? null,
     createdByAgent: store.data.createdByAgent[s.id] ?? null,
+    parentID: store.data.parents[s.id] ?? null,
+    children: childrenOf(s.id),
     status: s.status,
     ...(s.statusDetail ? { statusDetail: s.statusDetail } : {}),
     updated: s.updated,
@@ -165,6 +172,33 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
   }
 
   const byID = (id: string) => host.sessions().find((s) => s.id === id)
+
+  // Only child sessions have an entry, so this stays small next to the session list.
+  const childrenOf = (id: string) =>
+    Object.entries(store.data.parents)
+      .filter(([, parent]) => parent === id)
+      .map(([child]) => child)
+
+  /** The session the caller runs in, if ctrl knows it; undefined otherwise (no error). */
+  const selfSession = (caller: CallerContext) => {
+    try {
+      return byID(selfID(caller))
+    } catch {
+      return undefined
+    }
+  }
+
+  /** `none` = no parent. Refuses a parent that is the session itself or one of its children. */
+  const resolveParent = (selector: unknown, caller: CallerContext, child?: string): SessionItem | null => {
+    if (selector === "none") return null
+    const parent = resolveSession(selector, caller)
+    if (child && store.isAncestor(child, parent.id)) {
+      throw new CliError("CONFLICT", parent.id === child ? "A session can't be its own parent" : `${parent.id} is a child of ${child}`, {
+        hint: `Detach it first: ctrl session move ${parent.id} --parent none`,
+      })
+    }
+    return parent
+  }
 
   const selfID = (caller: CallerContext) => {
     const fromTerm = caller.termID ? host.termSession(caller.termID) : undefined
@@ -261,6 +295,12 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
   const resolveTargetSpace = (selector: unknown, caller: CallerContext): string | null =>
     selector === "none" ? null : resolveSpace(selector, caller).id
 
+  /** The defaultSpace setting, or none when unset or the space is gone. */
+  const defaultSpaceID = () => {
+    const id = store.data.settings.defaultSpace
+    return id && store.space(id) ? id : null
+  }
+
   const parseModelArg = (value: string, harness: Harness): ModelRef => {
     const model = parseModel(value, harness)
     if (!model) {
@@ -344,17 +384,29 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
       }, timeout)
     })
 
+  /** Rejects with TIMEOUT when `work` (a harness call) takes longer than `ms`, instead of hanging the reply. */
+  const bounded = <T>(work: Promise<T>, ms: number, what: string, hint?: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new CliError("TIMEOUT", `Timed out after ${ms}ms waiting for ${what}`, hint ? { hint } : {})),
+        ms,
+      )
+    })
+    return Promise.race([work, timeout]).finally(() => clearTimeout(timer))
+  }
+
   /**
    * After sending a prompt, wait (briefly) until the turn shows as started, so `send` then
    * `wait --for done` can't see the idle state from before the prompt.
    */
-  const started = (id: string, before: number) =>
+  const started = (id: string, before: number, max = 5000) =>
     waitFor(
       () => {
         const s = byID(id)
         return s && (s.status === "running" || s.status === "needs-input" || s.status === "failed" || s.updated > before)
       },
-      5000,
+      max,
       "the turn to start",
     ).catch(() => undefined)
 
@@ -408,7 +460,7 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     return value ?? null
   }
 
-  const parseValue = (raw: unknown, key: string, type: SettingType): unknown => {
+  const parseValue = (raw: unknown, key: string, type: SettingType, caller: CallerContext): unknown => {
     let value: unknown = raw
     if (typeof raw === "string") {
       try {
@@ -440,6 +492,14 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
         }
         return value
       }
+      case "space":
+        if (value === null || value === "" || value === "none") return null
+        if (typeof value !== "string") throw bad(describeType(type))
+        return resolveSpace(value, caller).id
+      case "folder":
+        if (value === null || value === "") return null
+        if (typeof value !== "string") throw bad(describeType(type))
+        return folder(value, caller)
       case "model": {
         if (value === null || value === "") return null
         if (typeof value === "string") return parseModelArg(value, type.harness)
@@ -489,6 +549,8 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     tuiTheme: null,
     fontSize: FONT_SIZE.default,
     defaultHarness: "opencode",
+    defaultDirectory: null,
+    defaultSpace: null,
     defaultModelEnabled: false,
     defaultModel: null,
     defaultFxModel: null,
@@ -541,7 +603,7 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
   const limitArg = (value: unknown) => Math.max(1, Math.min(500, Number(value ?? 100)))
   const waitArg = (value: unknown, fallback: number) => Math.max(0, Math.min(60_000, Number(value ?? fallback)))
 
-  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first. */
+  /** `--session` / `--space` / `--type` / `--limit`, as the panel scopes them: newest mention first, open PRs before merged/closed ones. */
   const scopedResources = (args: Record<string, any>, caller: CallerContext) => {
     let ids: string[]
     if (args.space !== undefined) {
@@ -552,7 +614,7 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     // A session never lists itself as a reference, like the panel.
     if (ids.length === 1) items = items.filter((r) => r.type !== "session" || r.data.id !== ids[0])
     if (args.type?.length) items = items.filter((r) => args.type.includes(r.type))
-    return items.slice(0, limitArg(args.limit))
+    return byRank(items).slice(0, limitArg(args.limit))
   }
 
   const resourceView = (r: ResourceItem & { meta?: ResourceMeta }, sessions: Map<string, SessionItem>, pending = false) => {
@@ -584,7 +646,10 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     const pending = new Set(result.pending)
     const sessions = sessionMap()
     return {
-      items: items.map((r) => resourceView({ ...r, meta: host.resourceMeta(r) }, sessions, pending.has(r.id))),
+      // Re-ranked: a PR fetched for the first time may turn out merged.
+      items: byRank(items.map((r) => ({ ...r, meta: host.resourceMeta(r) }))).map((r) =>
+        resourceView(r, sessions, pending.has(r.id)),
+      ),
       errors: result.errors,
     }
   }
@@ -629,39 +694,67 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
         const dir = expandPath(args.directory, req.caller).replace(/\/$/, "")
         list = list.filter((s) => s.directory.replace(/\/$/, "") === dir)
       }
+      if (args.parent !== undefined) {
+        const parent = resolveSession(args.parent, req.caller)
+        list = list.filter((s) => store.data.parents[s.id] === parent.id)
+      }
       if (args.archived) list = [...list].sort((a, b) => store.data.archived[b.id] - store.data.archived[a.id])
       const p = page(list, args)
       return { ...p, items: p.items.map(sessionView) }
     },
     "session get": (args, req) => sessionView(resolveSession(args.session, req.caller)),
     "session new": async (args, req) => {
-      const spaceID = args.space !== undefined ? resolveTargetSpace(args.space, req.caller) : null
+      // Everything below shares one budget that ends before the CLI's default --timeout (15s), so the
+      // agent always gets a reply that says what happened, never a silent wait.
+      const deadline = Date.now() + sessionNewBudget
+      const left = () => Math.max(250, deadline - Date.now())
+      // From a session, new sessions are its children unless --parent says otherwise.
+      const parent = args.parent !== undefined ? resolveParent(args.parent, req.caller) : (selfSession(req.caller) ?? null)
+      // Without --space, a child starts like the sidebar's New child session: the parent's space, folder and harness.
+      const fromParent = parent && args.space === undefined ? parent : undefined
+      const spaceID =
+        args.space !== undefined
+          ? resolveTargetSpace(args.space, req.caller)
+          : fromParent
+            ? (store.data.assignments[fromParent.id] ?? null)
+            : defaultSpaceID()
       const space = spaceID ? store.space(spaceID) : undefined
-      const harness: Harness | undefined = args.harness
-      const directory = args.directory ? folder(args.directory, req.caller) : undefined
+      const harness: Harness | undefined = args.harness ?? fromParent?.harness
+      const directory = args.directory ? folder(args.directory, req.caller) : fromParent?.directory
       const model = args.model ? parseModelArg(args.model, harness ?? space?.harness ?? store.data.settings.defaultHarness) : undefined
-      const created = await host.newSession({ spaceID, harness, directory, model, focus: !!args.focus })
+      const created = await bounded(
+        host.newSession({ spaceID, harness, directory, model, focus: !!args.focus, parentID: parent?.id ?? null }),
+        left(),
+        "the harness to create the session",
+        "Check the harness: ctrl app status. The session may still show up: ctrl session list --limit 5",
+      )
       if (args.focus && args.raise) host.window("raise")
+      const unsent = (id: string) =>
+        args.prompt ? `${id} was created, the prompt may not have been sent: ctrl session read ${id}, then ctrl session send ${id} --text -` : undefined
       if ("pending" in created) {
         const sentAt = Date.now()
-        if (args.prompt) await host.promptTerminal(created.terminal, args.prompt)
+        if (args.prompt) {
+          await bounded(host.promptTerminal(created.terminal, args.prompt), left(), "fx to take the prompt", "ctrl session list --harness fx --limit 5")
+        }
         // fx reports the id once its process is up (and, for some versions, after the first prompt).
-        const id = await waitFor(() => host.termSession(created.terminal) ?? undefined, 15000, "fx to report the new session's id").catch(
+        const id = await waitFor(() => host.termSession(created.terminal) ?? undefined, left(), "fx to report the new session's id").catch(
           () => undefined,
         )
         if (!id) return created
         markCreatedByAgent(id, req.caller)
-        if (args.title) await host.renameSession(id, args.title)
-        const s = await waitFor(() => byID(id), 5000, "the session to show up").catch(() => undefined)
-        if (s && args.prompt) await started(id, sentAt)
+        if (args.title) await bounded(host.renameSession(id, args.title), left(), "the rename", `ctrl session rename ${id} <title>`)
+        const s = await waitFor(() => byID(id), left(), "the session to show up").catch(() => undefined)
+        if (s && args.prompt) await started(id, sentAt, Math.min(5000, left()))
         return s ? sessionView(byID(id) ?? s) : { id, pending: true }
       }
       markCreatedByAgent(created.id, req.caller)
-      if (args.title) await host.renameSession(created.id, args.title)
-      const s = await waitFor(() => byID(created.id), 5000, "the session to show up")
+      if (args.title) {
+        await bounded(host.renameSession(created.id, args.title), left(), "the rename", unsent(created.id) ?? `ctrl session rename ${created.id} <title>`)
+      }
+      const s = await waitFor(() => byID(created.id), left(), "the session to show up")
       if (args.prompt) {
-        await host.prompt(created.id, args.prompt)
-        await started(created.id, s.updated)
+        await bounded(host.prompt(created.id, args.prompt), left(), "the prompt to be sent", unsent(created.id))
+        await started(created.id, s.updated, Math.min(5000, left()))
       }
       return sessionView(byID(created.id) ?? s)
     },
@@ -685,13 +778,36 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     },
     "session move": (args, req) => {
       const s = resolveSession(args.session, req.caller)
-      const target = resolveTargetSpace(args.space, req.caller)
-      const changed = (store.data.assignments[s.id] ?? null) !== target || !!store.data.archived[s.id]
-      if (changed) host.move(s.id, target)
-      return { ...sessionView(s), changed }
+      if (args.space === undefined && args.parent === undefined) {
+        throw new CliError("USAGE", "Pass --space, --parent or both", { hint: `ctrl session move ${s.id} --space <space>` })
+      }
+      const parent = args.parent !== undefined ? resolveParent(args.parent, req.caller, s.id) : undefined
+      let parentChanged = false
+      if (parent !== undefined) {
+        parentChanged = (store.data.parents[s.id] ?? null) !== (parent?.id ?? null)
+        if (parentChanged) {
+          store.setParent(s.id, parent?.id ?? null)
+          host.changed()
+        }
+      }
+      // A session moved under a parent joins the parent's space, unless --space says otherwise.
+      const target =
+        args.space !== undefined
+          ? resolveTargetSpace(args.space, req.caller)
+          : parent
+            ? (store.data.assignments[parent.id] ?? null)
+            : (store.data.assignments[s.id] ?? null)
+      const spaceChanged = (store.data.assignments[s.id] ?? null) !== target || !!store.data.archived[s.id]
+      const followed = spaceChanged ? host.move(s.id, target) : []
+      return {
+        ...sessionView(byID(s.id) ?? s),
+        changed: spaceChanged || parentChanged,
+        ...(followed.length ? { followed } : {}),
+      }
     },
     "session archive": (args, req) => {
-      const ids = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const asked = [...new Set((args.session as string[]).map((sel) => resolveSession(sel, req.caller).id))]
+      const ids = store.withDescendants(asked)
       const todo = ids.filter((id) => !store.data.archived[id])
       if (todo.length) host.archive(todo)
       return { archived: ids, changed: todo.length > 0, ...(todo.length ? { undo: `ctrl session unarchive ${todo.join(" ")}` } : {}) }
@@ -836,10 +952,11 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     },
     "space archive-all": (args, req) => {
       const space = resolveSpace(args.space, req.caller)
-      const ids = host
+      const inSpace = host
         .sessions()
-        .filter((s) => store.data.assignments[s.id] === space.id && !store.data.archived[s.id])
+        .filter((s) => store.data.assignments[s.id] === space.id)
         .map((s) => s.id)
+      const ids = store.withDescendants(inSpace).filter((id) => !store.data.archived[id])
       if (ids.length) host.archive(ids)
       return { archived: ids, ...(ids.length ? { undo: `ctrl session unarchive ${ids.join(" ")}` } : {}) }
     },
@@ -872,9 +989,9 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
       const k = findKey(String(args.key))
       return { key: k.key, value: readSetting(k) }
     },
-    "settings set": (args) => {
+    "settings set": (args, req) => {
       const k = findKey(String(args.key))
-      const value = parseValue(args.value, k.key, k.type)
+      const value = parseValue(args.value, k.key, k.type, req.caller)
       const before = JSON.stringify(readSetting(k))
       writeSetting(k, value)
       const after = readSetting(k)
@@ -903,7 +1020,7 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
         currentSessionID: host.currentSessionID(),
         activeTerminal: host.activeTermID(),
         sidebarWidth: ui.sidebarWidth,
-        resources: { open: ui.resourcesOpen, scope: ui.resourcesScope, width: ui.resourcesWidth },
+        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, docked: ui.resourcesDocked, scope: ui.resourcesScope, width: ui.resourcesWidth },
         recentsCollapsed: ui.recentsCollapsed,
         archivedCollapsed: ui.archivedCollapsed,
         window: host.window(),
@@ -918,9 +1035,18 @@ export function createHandlers(host: CliHost): Record<string, Handler> {
     "ui window": (args) => host.window(args.action),
     "ui resources": (args) => {
       const ui = store.data.ui
-      const open = args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
-      host.setUi({ resourcesOpen: open, ...(args.scope ? { resourcesScope: args.scope } : {}) })
-      return { open, scope: store.data.ui.resourcesScope }
+      const fold = args.action === "fold" || args.action === "unfold"
+      const dock = args.action === "dock" || args.action === "float"
+      const open = fold || dock ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
+      const collapsed = fold ? args.action === "fold" : ui.resourcesCollapsed
+      const docked = dock ? args.action === "dock" : ui.resourcesDocked
+      host.setUi({
+        resourcesOpen: open,
+        resourcesCollapsed: collapsed,
+        resourcesDocked: docked,
+        ...(args.scope ? { resourcesScope: args.scope } : {}),
+      })
+      return { open, collapsed, docked, scope: store.data.ui.resourcesScope }
     },
     "ui sidebar": (args) => {
       const width = Math.max(200, Math.min(520, Number(args.width)))

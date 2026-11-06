@@ -3,11 +3,11 @@ import "./style.css"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
-import type { RemoteSnapshot } from "../main/remote"
+import type { RemoteBoardCard, RemoteSnapshot } from "../main/remote"
 
 /**
- * Remote control's web app, served by src/main/remote.ts. Two screens, routed by the URL hash so the
- * phone's back gesture works: the list (#/) and one session's terminal (#/s/<id>).
+ * Remote control's web app, served by src/main/remote.ts. Screens are routed by the URL hash so the
+ * phone's back gesture works: the session list (#/), the Board (#/board) and one session's terminal (#/s/<id>).
  */
 
 type Session = RemoteSnapshot["sessions"][number]
@@ -16,12 +16,14 @@ type Outbound =
   | { t: "input"; data: string }
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
+  | { t: "board"; on: boolean }
 type Inbound =
   | ({ t: "state" } & RemoteSnapshot)
   | { t: "open"; id: string; harness: Session["harness"] }
   | { t: "data"; data: string }
   | { t: "reset" }
   | { t: "error"; message: string }
+  | { t: "board"; cards: RemoteBoardCard[] }
 
 const PALETTES = {
   opencode: {
@@ -37,6 +39,7 @@ const PALETTES = {
 const FONT = { min: 8, max: 20, default: 12 }
 
 let snapshot: RemoteSnapshot = { dark: true, spaces: [], sessions: [] }
+let board: RemoteBoardCard[] | null = null
 let connected = false
 let ws: WebSocket | undefined
 let retry = 0
@@ -66,6 +69,7 @@ function connect() {
     // Back on the session we were looking at.
     const id = routeSession()
     if (id && term) openOnServer(id)
+    if (onBoard()) send({ t: "board", on: true })
   }
   socket.onmessage = (event) => {
     let msg: Inbound
@@ -101,6 +105,9 @@ function receive(msg: Inbound) {
     term?.reset()
   } else if (msg.t === "data") {
     term?.write(msg.data)
+  } else if (msg.t === "board") {
+    board = msg.cards
+    if (onBoard()) render()
   } else if (msg.t === "error") {
     notice = msg.message
     render()
@@ -122,10 +129,13 @@ const routeSession = () => {
   return m ? decodeURIComponent(m[1]) : null
 }
 
+const onBoard = () => location.hash === "#/board"
+
 window.addEventListener("hashchange", () => route())
 
 function route() {
   const id = routeSession()
+  send({ t: "board", on: onBoard() })
   if (id) showSession(id)
   else showList()
 }
@@ -166,6 +176,17 @@ function row(s: Session) {
   return a
 }
 
+function homeHeader() {
+  const tab = (label: string, href: string, on: boolean) => h("a", { className: `tab${on ? " on" : ""}`, href }, label)
+  return h(
+    "header",
+    {},
+    h("span", { className: "brand" }, "ctrl"),
+    h("nav", { className: "tabs" }, tab("Sessions", "#/", !onBoard()), tab("Board", "#/board", onBoard())),
+    h("span", { className: `conn ${connected ? "on" : ""}` }),
+  )
+}
+
 function renderList() {
   const groups: [string, Session[]][] = snapshot.spaces.map((sp) => [sp.name, snapshot.sessions.filter((s) => s.spaceID === sp.id)])
   groups.push(["Recents", snapshot.sessions.filter((s) => !s.spaceID)])
@@ -175,9 +196,125 @@ function renderList() {
   return h(
     "div",
     { className: "list" },
-    h("header", {}, h("span", { className: "brand" }, "ctrl"), h("span", { className: `conn ${connected ? "on" : ""}` })),
+    homeHeader(),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     ...(sections.length ? sections : [h("p", { className: "empty" }, connected ? "No sessions" : "Connecting…")]),
+  )
+}
+
+// ---------- board ----------
+
+const COLUMNS: { id: RemoteBoardCard["stage"]; label: string }[] = [
+  { id: "you", label: "Needs you" },
+  { id: "waiting", label: "Waiting on others" },
+  { id: "moving", label: "In progress" },
+  { id: "done", label: "Done" },
+]
+const DONE_PAGE = 10
+let doneShown = DONE_PAGE
+/** One space at a time (or all), saved on the phone. "none": sessions outside spaces. */
+const boardSpace = () => localStorage.getItem("boardSpace") ?? ""
+
+function boardCard(c: RemoteBoardCard, showSpaces: boolean) {
+  const spaces = c.spaces.map((s) => s.name).filter(Boolean)
+  return h(
+    "div",
+    { className: `card stage-${c.stage}` },
+    h(
+      "a",
+      { className: "card-main", href: c.url, target: "_blank", rel: "noreferrer" },
+      h(
+        "div",
+        { className: "card-top" },
+        h("span", { className: `tone ${c.tone ?? "muted"}` }),
+        h("span", { className: "card-title" }, c.title),
+        h("span", { className: "time" }, ago(c.last)),
+      ),
+      h(
+        "div",
+        { className: "card-reason" },
+        h("span", {}, c.reason),
+        h("span", { className: "card-source" }, [c.source, ...(showSpaces && spaces.length ? [spaces[0] + (spaces.length > 1 ? ` +${spaces.length - 1}` : "")] : [])].join(" · ")),
+      ),
+      ...(c.subtitle || c.chips.length
+        ? [
+            h(
+              "div",
+              { className: "card-sub" },
+              ...(c.subtitle ? [h("span", { className: "card-subtitle" }, c.subtitle)] : []),
+              ...c.chips.map((chip) => h("span", { className: `chip ${chip.tone}` }, chip.text)),
+            ),
+          ]
+        : []),
+    ),
+    ...(c.sessions.length
+      ? [
+          h(
+            "div",
+            { className: "card-sessions" },
+            ...c.sessions.map((x) => h("a", { className: "card-session", href: `#/s/${encodeURIComponent(x.id)}` }, "▸ " + (x.title || "Session"))),
+          ),
+        ]
+      : []),
+  )
+}
+
+function renderBoard() {
+  const space = boardSpace()
+  const cards = (board ?? []).filter((c) => !space || c.spaces.some((s) => (s.id ?? "none") === space))
+  const spaceChip = (id: string, name: string) =>
+    h(
+      "button",
+      {
+        className: `filter${space === id ? " on" : ""}`,
+        onclick: () => {
+          localStorage.setItem("boardSpace", id)
+          doneShown = DONE_PAGE
+          render()
+        },
+      },
+      name,
+    )
+  const hasNoSpace = (board ?? []).some((c) => c.spaces.some((s) => s.id === null))
+  const filters = h(
+    "div",
+    { className: "filters" },
+    spaceChip("", "All spaces"),
+    ...snapshot.spaces.map((sp) => spaceChip(sp.id, sp.name)),
+    ...(hasNoSpace ? [spaceChip("none", "No space")] : []),
+  )
+  const sections = COLUMNS.map((col) => {
+    const all = cards.filter((c) => c.stage === col.id)
+    const list = col.id === "done" ? all.slice(0, doneShown) : all
+    return h(
+      "section",
+      { className: `board-col stage-${col.id}` },
+      h("h2", {}, col.label, h("span", { className: "count" }, String(all.length))),
+      ...(all.length ? list.map((c) => boardCard(c, !space)) : [h("p", { className: "col-empty" }, "Nothing here")]),
+      ...(all.length > list.length
+        ? [
+            h(
+              "button",
+              {
+                className: "more",
+                onclick: () => {
+                  doneShown += DONE_PAGE
+                  render()
+                },
+              },
+              "Show more",
+            ),
+          ]
+        : []),
+    )
+  })
+  return h(
+    "div",
+    { className: "list board" },
+    homeHeader(),
+    ...(notice ? [h("div", { className: "notice" }, notice)] : []),
+    filters,
+    ...(board ? sections : [h("p", { className: "empty" }, connected ? "Loading…" : "Connecting…")]),
   )
 }
 
@@ -321,9 +458,12 @@ function render() {
   if (!id) {
     sessionEl?.remove()
     sessionEl = undefined
-    const next = renderList()
+    const next = onBoard() ? renderBoard() : renderList()
+    next.dataset.screen = location.hash
     if (listEl) listEl.replaceWith(next)
     else app.append(next)
+    // Same screen re-rendered (a push came in): stay where you scrolled to.
+    if (listEl?.dataset.screen === next.dataset.screen) next.scrollTop = listEl.scrollTop
     listEl = next
     return
   }

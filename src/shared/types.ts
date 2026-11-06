@@ -113,10 +113,16 @@ export type UiState = {
   resourcesWidth: number
   /** Resources of the current session, or of every session in its space */
   resourcesScope: "session" | "space"
+  /** Resources panel folded to its header, so it stops covering the terminal */
+  resourcesCollapsed: boolean
+  /** Resources panel docked as a column on the right (resizable, the terminal narrows) instead of floating over it */
+  resourcesDocked: boolean
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
   /** The "set up agents" toast (skills + ctrl command) was shown once already */
   agentsPrompted?: boolean
+  /** Sessions whose children are folded in the sidebar */
+  collapsedSessions?: string[]
   /** The welcome screen (pick a harness) was completed; Settings → About can show it again */
   onboarded?: boolean
 }
@@ -141,6 +147,10 @@ export type Settings = {
   fontSize: number
   /** Harness for new sessions; spaces can override */
   defaultHarness: Harness
+  /** Folder new sessions start in when their space doesn't set one; null = ~ */
+  defaultDirectory: string | null
+  /** Space new chats (⌘N, New chat) land in; null = no space. A deleted space falls back to none. */
+  defaultSpace: string | null
   /** opencode model for new sessions (spaces can override), used when defaultModelEnabled */
   defaultModel: ModelRef | null
   /** fx model for new sessions, same rules */
@@ -153,6 +163,8 @@ export type Settings = {
   shortcuts: ShortcutOverrides
   /** Per resource adapter id; adapters not listed use defaultAdapterMode */
   adapterModes: Record<string, AdapterMode>
+  /** ctrl Companion: always-on-top window with the sessions that mentioned what's on screen (src/companion), macOS only */
+  companion: boolean
   /** Remote control: a web page on your Tailscale network to use ctrl from your phone (src/main/remote.ts) */
   remoteControl: boolean
 }
@@ -202,7 +214,13 @@ export const OPENCODE_UPGRADE = "opencode upgrade"
 /** Whether a usable opencode CLI is installed; ctrl only starts the TUI once it's "ok". */
 export type OpencodeCheck =
   | { state: "checking" }
-  | { state: "ok"; version: string; bin: string }
+  | {
+      state: "ok"
+      version: string
+      bin: string
+      /** The TUI opens clicked links itself (incl. wrapped ones), so ctrl must not open them too */
+      opensLinks: boolean
+    }
   | { state: "missing"; detail?: string }
   | { state: "outdated"; version: string; min: string; bin: string }
 
@@ -237,10 +255,20 @@ export type UpdateStatus =
   | { state: "available" | "downloading"; version: string }
   | { state: "error"; detail: string }
 
+/**
+ * Whether the running opencode service still works. A service that outlived its macOS login
+ * session keeps serving ctrl, but every command it runs loses DNS, user lookups, TLS and the keychain.
+ */
+export type OpencodeServer =
+  | { state: "checking" | "restarting" }
+  | { state: "ok"; version: string; pid: number }
+  | { state: "broken"; version: string; pid: number }
+
 export type AppState = {
   /** ctrl's own version */
   version: string
   opencode: OpencodeCheck
+  opencodeServer: OpencodeServer
   fx: FxCheck
   skill: SkillStatus
   /** The `ctrl` CLI: its PATH symlink and the ctrl skill that teaches agents about it */
@@ -256,6 +284,8 @@ export type AppState = {
   archived: Record<string, number>
   /** sessionID → the agent that created it */
   createdByAgent: Record<string, AgentOrigin>
+  /** sessionID → parent sessionID (child sessions) */
+  parents: Record<string, string>
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
@@ -301,6 +331,8 @@ export type ResourceItem = {
   last: number
   /** You pasted it in a prompt (vs only the assistant mentioning it) */
   sharedByYou: boolean
+  /** Which of the queried sessions mention it (board only) */
+  sessionIDs?: string[]
   /** Live details from its adapter, when that adapter has a live part (src/shared/adapters) */
   meta?: ResourceMeta
 }
@@ -448,6 +480,8 @@ export type CtrlApi = {
   onUiPalette(cb: (query: string) => void): () => void
   updateSpace(id: string, patch: SpacePatch): Promise<void>
   pickSpaceFolder(id: string): Promise<void>
+  /** Settings → Sessions → Folder */
+  pickDefaultFolder(): Promise<void>
   listModels(harness: Harness, directory?: string): Promise<ModelChoices>
   moveSpace(id: string, index: number): Promise<void>
   renameSession(sessionID: string, title: string): Promise<void>
@@ -463,11 +497,19 @@ export type CtrlApi = {
   showSessionMenu(sessionID: string): Promise<void>
   moveSession(sessionID: string, spaceID: string | null): Promise<void>
   newSession(spaceID: string | null): Promise<void>
+  /** Makes it a child of parentID (and moves it into the parent's space); null detaches it */
+  setParent(sessionID: string, parentID: string | null): Promise<void>
+  /** New session under this one: same space, folder and harness */
+  newChildSession(parentID: string): Promise<void>
   openSession(sessionID: string): Promise<void>
   /** Full-text search over session messages */
   search(query: string): Promise<SearchResult>
   /** Resources mentioned in these sessions, most recently mentioned first */
   listResources(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** listResources() plus the sessions mentioning each one, for the board */
+  listBoard(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** Open the board on this space (space ⋯ menu) */
+  onBoardOpen(cb: (spaceID: string) => void): () => void
   /** Resources changed in these sessions; null = possibly all */
   onResourcesChanged(cb: (sessionIDs: string[] | null) => void): () => void
   /** Keep live details of these sessions' resources fresh while shown; [] when the panel is hidden */
@@ -479,6 +521,8 @@ export type CtrlApi = {
   checkAdapters(): Promise<void>
   /** Looks for opencode again (after installing or upgrading it) */
   recheckOpencode(): Promise<void>
+  /** Replaces the running opencode service with a fresh one (stops runs in progress) */
+  restartOpencode(): Promise<void>
   installSkill(): Promise<void>
   uninstallSkill(): Promise<void>
   /** Puts `ctrl` on PATH (~/.local/bin) and installs the ctrl skill */

@@ -167,7 +167,12 @@ export class Terminal {
   setCliOverrides(overrides: Record<string, unknown>, currentSessionID: string | null) {
     const changed = JSON.stringify(overrides) !== JSON.stringify(this.cliOverrides)
     this.cliOverrides = overrides
-    if (!changed || !this.proc) return
+    if (changed) this.restart(currentSessionID)
+  }
+
+  /** Respawns the TUI on the same session, e.g. after the opencode service it attached to was replaced. */
+  restart(currentSessionID: string | null) {
+    if (!this.proc) return
     const proc = this.proc
     this.proc = undefined
     this.bridge?.close()
