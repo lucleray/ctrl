@@ -235,6 +235,11 @@ phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: sn
   (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
   (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
   phones on the board and only when it changed.
+- **Chat view (opencode):** `src/main/remote-chat.ts` reads one page of `message.list` (newest 40, older ones
+  by cursor) and flattens it (text, thinking markers, tool one-liners). Any event about a session someone is
+  chatting in re-reads the newest page, at most every 300ms, and the phone patches messages by id. Sending is
+  `session.prompt`, stop is `session.interrupt`, permissions go through `permission.reply`. Markdown renders
+  on the phone with markdown-it, raw HTML off and unsafe link schemes refused.
 - **Cheap for main:** the list is sent only when it changed, and bounded (sessions in spaces + the newest 30
   others). Viewers that fall 8 MB behind are dropped and reconnect.
 

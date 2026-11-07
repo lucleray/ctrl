@@ -44,6 +44,7 @@ import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
 import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
+import { chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -458,6 +459,12 @@ const remoteBoard = (): RemoteBoardCard[] => {
 // Dev runs get their own port so they can run next to the installed app.
 const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
 
+const openCodeClient = () => {
+  if (!opencode.client) throw new Error("The opencode service isn't connected")
+  return opencode.client
+}
+opencode.onSessionEvent = (sessionID) => remote.sessionEvent(sessionID)
+
 const remote: RemoteServer = new RemoteServer({
   port: REMOTE_PORT,
   staticDir: join(root, "dist/remote"),
@@ -477,6 +484,14 @@ const remote: RemoteServer = new RemoteServer({
     backlog: (termID) => fxTerms.backlog(termID),
     write: (termID, data) => fxTerms.write(termID, data),
     resize: (termID, size) => fxTerms.resizeTerm(termID, size),
+  },
+  chat: {
+    page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
+    send: async (sessionID, text) => void (await openCodeClient().session.prompt({ sessionID, text })),
+    stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
+    reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
+    pending: (sessionID) => opencode.pendingFor(sessionID),
+    title: (sessionID) => sessionByID(sessionID)?.title,
   },
   // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
   create: async (spaceID) => {

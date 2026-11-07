@@ -3,11 +3,14 @@ import "./style.css"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
-import type { RemoteBoardCard, RemoteSnapshot } from "../main/remote"
+import MarkdownIt from "markdown-it"
+import type { ChatPending, RemoteBoardCard, RemoteSnapshot } from "../main/remote"
+import type { ChatItem } from "../main/remote-chat"
 
 /**
  * Remote control's web app, served by src/main/remote.ts. Screens are routed by the URL hash so the
- * phone's back gesture works: the session list (#/), the Board (#/board) and one session's terminal (#/s/<id>).
+ * phone's back gesture works: the session list (#/), the Board (#/board), an opencode session as a chat
+ * (#/s/<id>) and any session's terminal (#/t/<id>; fx sessions only have that one).
  */
 
 type Session = RemoteSnapshot["sessions"][number]
@@ -18,6 +21,11 @@ type Outbound =
   | { t: "leave" }
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
+  | { t: "chat"; id: string }
+  | { t: "chat-more"; cursor: string }
+  | { t: "chat-send"; text: string }
+  | { t: "chat-stop" }
+  | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
 type Inbound =
   | ({ t: "state" } & RemoteSnapshot)
   | { t: "open"; id: string; harness: Session["harness"] }
@@ -26,6 +34,10 @@ type Inbound =
   | { t: "error"; message: string }
   | { t: "board"; cards: RemoteBoardCard[] }
   | { t: "created"; id: string }
+  | { t: "chat"; id: string; title?: string; items: ChatItem[]; cursor: string | null; pending: ChatPending[] }
+  | { t: "chat-more"; id: string; items: ChatItem[]; cursor: string | null }
+  | { t: "chat-update"; id: string; items: ChatItem[] }
+  | { t: "chat-pending"; id: string; pending: ChatPending[] }
 
 const PALETTES = {
   opencode: {
@@ -75,6 +87,8 @@ function connect() {
     // Back on the session we were looking at.
     const id = routeSession()
     if (id && term) openOnServer(id)
+    const chatID = routeChat()
+    if (chatID) send({ t: "chat", id: chatID })
     if (onBoard()) send({ t: "board", on: true })
   }
   socket.onmessage = (event) => {
@@ -114,9 +128,11 @@ function receive(msg: Inbound) {
   } else if (msg.t === "board") {
     board = msg.cards
     if (onBoard()) render()
+  } else if (msg.t.startsWith("chat")) {
+    chatReceive(msg as ChatInbound)
   } else if (msg.t === "created") {
     creating = null
-    location.hash = `#/s/${encodeURIComponent(msg.id)}`
+    location.hash = sessionHref(msg.id)
   } else if (msg.t === "error") {
     creating = null
     notice = msg.message
@@ -134,19 +150,36 @@ document.addEventListener("visibilitychange", () => {
 
 // ---------- routing ----------
 
+/** Terminal screen's session */
 const routeSession = () => {
+  const m = location.hash.match(/^#\/t\/(.+)$/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+/** Chat screen's session */
+const routeChat = () => {
   const m = location.hash.match(/^#\/s\/(.+)$/)
   return m ? decodeURIComponent(m[1]) : null
 }
+
+const isFx = (id: string) => id.startsWith("fx:")
+/** Where tapping a session goes: the chat for opencode, the terminal for fx (no chat for it yet). */
+const sessionHref = (id: string) => `#/${isFx(id) ? "t" : "s"}/${encodeURIComponent(id)}`
 
 const onBoard = () => location.hash === "#/board"
 
 window.addEventListener("hashchange", () => route())
 
 function route() {
+  const chatID = routeChat()
+  if (chatID && isFx(chatID)) {
+    location.replace(`#/t/${encodeURIComponent(chatID)}`)
+    return
+  }
   const id = routeSession()
   send({ t: "board", on: onBoard() })
-  if (id) showSession(id)
+  if (chatID) showChat(chatID)
+  else if (id) showSession(id)
   else showList()
 }
 
@@ -156,6 +189,7 @@ let listEl: HTMLElement | undefined
 
 function showList() {
   if (term) closeTerm()
+  chat = undefined
   send({ t: "leave" })
   render()
 }
@@ -177,7 +211,7 @@ function statusEl(s: Session) {
 function row(s: Session) {
   const a = h(
     "a",
-    { className: "row", href: `#/s/${encodeURIComponent(s.id)}` },
+    { className: "row", href: sessionHref(s.id) },
     h("span", { className: "title" }, s.title || "Untitled"),
     ...(s.harness === "fx" ? [h("span", { className: "tag" }, "fx")] : []),
     statusEl(s),
@@ -286,7 +320,7 @@ function boardCard(c: RemoteBoardCard, showSpaces: boolean) {
           h(
             "div",
             { className: "card-sessions" },
-            ...c.sessions.map((x) => h("a", { className: "card-session", href: `#/s/${encodeURIComponent(x.id)}` }, "▸ " + (x.title || "Session"))),
+            ...c.sessions.map((x) => h("a", { className: "card-session", href: sessionHref(x.id) }, "▸ " + (x.title || "Session"))),
           ),
         ]
       : []),
@@ -369,6 +403,7 @@ function openOnServer(id: string) {
 }
 
 function showSession(id: string) {
+  chat = undefined
   const session = snapshot.sessions.find((s) => s.id === id)
   harness = session?.harness ?? (id.startsWith("fx:") ? "fx" : "opencode")
   if (term) closeTerm()
@@ -477,10 +512,11 @@ function renderSession(id: string) {
   const back = h("a", { className: "back", href: "#/" }, "‹")
   const minus = h("button", { className: "icon", onclick: () => setFont(-1) }, "A−")
   const plus = h("button", { className: "icon", onclick: () => setFont(1) }, "A+")
+  const toChat = isFx(id) ? [] : [h("a", { className: "icon", href: `#/s/${encodeURIComponent(id)}` }, "Chat")]
   return h(
     "div",
     { className: "session" },
-    h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus),
+    h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus, ...toChat),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     h("div", { className: "term" }),
     h(
@@ -497,6 +533,223 @@ function renderSession(id: string) {
   )
 }
 
+// ---------- chat ----------
+
+type ChatInbound = Extract<Inbound, { t: "chat" | "chat-more" | "chat-update" | "chat-pending" }>
+
+/** The chat on screen: messages by id (live updates replace them in place), oldest first. */
+let chat:
+  | {
+      id: string
+      title?: string
+      items: Map<string, ChatItem>
+      cursor: string | null
+      pending: ChatPending[]
+      loaded: boolean
+      loadingMore: boolean
+    }
+  | undefined
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
+// Links leave the app (and never replace it) when tapped.
+const defaultLink = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  tokens[idx].attrSet("target", "_blank")
+  tokens[idx].attrSet("rel", "noreferrer")
+  return defaultLink(tokens, idx, options, env, self)
+}
+
+const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
+
+function showChat(id: string) {
+  if (term) closeTerm()
+  if (chat?.id !== id) chat = { id, items: new Map(), cursor: null, pending: [], loaded: false, loadingMore: false }
+  notice = ""
+  render()
+  send({ t: "chat", id })
+}
+
+function chatReceive(msg: ChatInbound) {
+  if (!chat || msg.id !== chat.id) return
+  const list = sessionEl?.querySelector<HTMLElement>(".chat-list")
+  const nearBottom = !list || list.scrollHeight - list.scrollTop - list.clientHeight < 120
+  if (msg.t === "chat") {
+    chat.items = new Map(msg.items.map((i) => [i.id, i]))
+    chat.cursor = msg.cursor
+    chat.pending = msg.pending
+    chat.title = msg.title
+    chat.loaded = true
+    drawMessages()
+    scrollToBottom()
+  } else if (msg.t === "chat-update") {
+    for (const i of msg.items) chat.items.set(i.id, i)
+    drawMessages()
+    if (nearBottom) scrollToBottom()
+  } else if (msg.t === "chat-more") {
+    const before = list ? list.scrollHeight - list.scrollTop : 0
+    chat.items = new Map([...msg.items.map((i) => [i.id, i] as const), ...chat.items])
+    chat.cursor = msg.cursor
+    chat.loadingMore = false
+    drawMessages()
+    // Keep what you were reading in place while older messages land above it.
+    if (list) list.scrollTop = list.scrollHeight - before
+  } else if (msg.t === "chat-pending") {
+    chat.pending = msg.pending
+  }
+  updateChatChrome()
+}
+
+function scrollToBottom() {
+  const list = sessionEl?.querySelector<HTMLElement>(".chat-list")
+  if (list) list.scrollTop = list.scrollHeight
+}
+
+function itemEl(i: ChatItem) {
+  if (i.kind === "user") return h("div", { className: "msg user" }, h("div", { className: "bubble" }, i.text))
+  const parts = i.parts.map((p) => {
+    if (p.type === "text") {
+      const el = h("div", { className: "md" })
+      el.innerHTML = md.render(p.text)
+      return el
+    }
+    if (p.type === "reasoning") return h("div", { className: "thinking" }, "Thought")
+    return h(
+      "div",
+      { className: `tool ${p.status}` },
+      h("span", { className: "tool-icon" }, TOOL_ICONS[p.status]),
+      h("span", { className: "tool-name" }, p.name),
+      h("span", { className: "tool-summary" }, p.summary),
+    )
+  })
+  return h(
+    "div",
+    { className: "msg assistant" },
+    ...parts,
+    ...(i.error ? [h("div", { className: "msg-error" }, i.error)] : []),
+    ...(i.live && !i.parts.length ? [h("div", { className: "typing" }, h("span"), h("span"), h("span"))] : []),
+  )
+}
+
+/** Redraws only messages that changed (streaming updates one at a time), so long chats stay cheap. */
+function drawMessages() {
+  const list = sessionEl?.querySelector<HTMLElement>(".chat-list")
+  if (!list || !chat) return
+  const items = [...chat.items.values()].sort((a, b) => a.time - b.time)
+  const existing = new Map([...list.querySelectorAll<HTMLElement>("[data-key]")].map((el) => [el.dataset.key!, el]))
+  const top = list.querySelector(".chat-top")
+  let prev: Element | null = top
+  for (const i of items) {
+    const json = JSON.stringify(i)
+    let el = existing.get(i.id)
+    existing.delete(i.id)
+    if (!el || el.dataset.json !== json) {
+      const next = itemEl(i)
+      next.dataset.key = i.id
+      next.dataset.json = json
+      if (el) el.replaceWith(next)
+      el = next
+    }
+    if (prev ? prev.nextElementSibling !== el : list.firstElementChild !== el) {
+      if (prev) prev.after(el)
+      else list.prepend(el)
+    }
+    prev = el
+  }
+  for (const el of existing.values()) el.remove()
+}
+
+/** Top of the list (load earlier), pending asks and the stop button follow the latest state. */
+function updateChatChrome() {
+  if (!chat || !sessionEl) return
+  const id = chat.id
+  const top = sessionEl.querySelector<HTMLElement>(".chat-top")!
+  top.replaceChildren(
+    !chat.loaded
+      ? h("p", { className: "empty" }, connected ? "Loading…" : "Connecting…")
+      : chat.cursor
+        ? h(
+            "button",
+            {
+              className: "more",
+              disabled: chat.loadingMore,
+              onclick: () => {
+                if (!chat?.cursor) return
+                chat.loadingMore = true
+                send({ t: "chat-more", cursor: chat.cursor })
+                updateChatChrome()
+              },
+            },
+            chat.loadingMore ? "Loading…" : "Load earlier messages",
+          )
+        : h("span"),
+  )
+  const asks = sessionEl.querySelector<HTMLElement>(".chat-asks")!
+  asks.replaceChildren(
+    ...chat.pending.map((p) => {
+      const reply = (decision: "once" | "always" | "reject", label: string, cls = "") =>
+        h("button", { className: `ask-btn ${cls}`, onclick: () => send({ t: "chat-reply", requestID: p.id, decision }) }, label)
+      return h(
+        "div",
+        { className: "ask" },
+        h("div", { className: "ask-detail" }, p.detail),
+        p.kind === "permission"
+          ? h("div", { className: "ask-actions" }, reply("once", "Allow", "primary"), reply("always", "Always"), reply("reject", "Deny"))
+          : h("div", { className: "ask-actions" }, h("a", { className: "ask-btn primary", href: `#/t/${encodeURIComponent(id)}` }, "Answer in terminal")),
+      )
+    }),
+  )
+  const session = snapshot.sessions.find((s) => s.id === id)
+  sessionEl.querySelector(".title")!.textContent = session?.title || chat.title || "Session"
+  const running = session?.status === "running"
+  sessionEl.querySelector<HTMLElement>(".stop")!.hidden = !running
+}
+
+function renderChat(id: string) {
+  const session = snapshot.sessions.find((s) => s.id === id)
+  const input = h("textarea", { rows: 1, placeholder: "Message", enterKeyHint: "enter" }) as HTMLTextAreaElement
+  const grow = () => {
+    input.style.height = ""
+    input.style.height = `${Math.min(160, input.scrollHeight)}px`
+  }
+  // Return types a new line (the phone's keyboard); the button sends.
+  input.addEventListener("input", grow)
+  const submit = () => {
+    const text = input.value
+    if (!text.trim()) return
+    send({ t: "chat-send", text })
+    input.value = ""
+    grow()
+  }
+  const keepFocus = (e: PointerEvent) => e.preventDefault()
+  const el = h(
+    "div",
+    { className: "session chat" },
+    h(
+      "header",
+      {},
+      h("a", { className: "back", href: "#/" }, "‹"),
+      h("span", { className: "title" }, session?.title || "Session"),
+      h("span", { className: `conn ${connected ? "on" : ""}` }),
+      h("a", { className: "icon", href: `#/t/${encodeURIComponent(id)}` }, "Terminal"),
+    ),
+    ...(notice ? [h("div", { className: "notice" }, notice)] : []),
+    h("div", { className: "chat-list" }, h("div", { className: "chat-top" })),
+    h("div", { className: "chat-asks" }),
+    h(
+      "div",
+      { className: "composer" },
+      input,
+      h("button", { className: "stop", title: "Stop", hidden: true, onpointerdown: keepFocus, onclick: () => send({ t: "chat-stop" }) }, "■"),
+      h("button", { className: "send-btn", title: "Send", onpointerdown: keepFocus, onclick: submit }, "↑"),
+    ),
+  )
+  sessionEl = el
+  drawMessages()
+  updateChatChrome()
+  if (chat?.loaded) requestAnimationFrame(scrollToBottom)
+  return el
+}
+
 // ---------- render ----------
 
 /**
@@ -504,7 +757,9 @@ function renderSession(id: string) {
  * terminal and the half-typed message survive state pushes; only its header updates.
  */
 function render() {
-  const id = routeSession()
+  const chatID = routeChat()
+  const id = routeSession() ?? chatID
+  const screen = chatID ? `chat:${chatID}` : `term:${id}`
   if (!id) {
     sessionEl?.remove()
     sessionEl = undefined
@@ -519,15 +774,16 @@ function render() {
   }
   listEl?.remove()
   listEl = undefined
-  if (!sessionEl || sessionEl.dataset.id !== id) {
+  if (!sessionEl || sessionEl.dataset.id !== screen) {
     sessionEl?.remove()
-    sessionEl = renderSession(id)
-    sessionEl.dataset.id = id
+    sessionEl = chatID ? renderChat(chatID) : renderSession(id)
+    sessionEl.dataset.id = screen
     app.append(sessionEl)
     return
   }
+  if (chatID) updateChatChrome()
   const session = snapshot.sessions.find((s) => s.id === id)
-  sessionEl.querySelector(".title")!.textContent = session?.title || "Session"
+  sessionEl.querySelector(".title")!.textContent = session?.title || (chatID && chat?.title) || "Session"
   sessionEl.querySelector(".conn")!.className = `conn ${connected ? "on" : ""}`
   const old = sessionEl.querySelector(".notice")
   if (notice && !old) sessionEl.querySelector("header")!.after(h("div", { className: "notice" }, notice))
@@ -546,7 +802,7 @@ window.visualViewport?.addEventListener("resize", fitViewport)
 fitViewport()
 
 setInterval(() => {
-  if (!routeSession()) render()
+  if (!routeSession() && !routeChat()) render()
 }, 30_000)
 
 // The token is in a cookie now: keep it out of the address bar, history and screenshots.

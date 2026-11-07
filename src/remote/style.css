@@ -496,3 +496,315 @@ button {
 .new .spinner {
   margin: 0;
 }
+
+/* ---------- chat ---------- */
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.msg {
+  margin: 0 0 14px;
+}
+
+.msg.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 85%;
+  padding: 9px 13px;
+  border-radius: 18px 18px 4px 18px;
+  background: var(--accent);
+  color: white;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.assistant {
+  overflow-wrap: anywhere;
+}
+
+.md {
+  line-height: 1.5;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md pre,
+.md table,
+.md blockquote {
+  margin: 0 0 10px;
+}
+
+.md ul,
+.md ol {
+  padding-left: 20px;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 14px 0 6px;
+  font-size: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: inherit;
+}
+
+.md a {
+  color: var(--accent);
+}
+
+.md code {
+  font: 13px "SF Mono", ui-monospace, Menlo, monospace;
+  background: var(--key-bg);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.md pre {
+  background: var(--key-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.md pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.md blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  color: var(--muted);
+}
+
+.md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.thinking {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 4px 0;
+}
+
+.tool {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 3px 0;
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.tool + .md,
+.thinking + .md {
+  margin-top: 10px;
+}
+
+.md + .tool,
+.md + .thinking {
+  margin-top: 10px;
+}
+
+.tool-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.tool.done .tool-icon {
+  color: #22c55e;
+}
+
+.tool.error .tool-icon {
+  color: #ef4444;
+}
+
+.tool.running .tool-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.tool-name {
+  flex-shrink: 0;
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  color: var(--text);
+}
+
+.tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-error {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #ef4444;
+}
+
+.typing {
+  display: flex;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: blink 1.2s infinite;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.chat-top .empty {
+  margin: 30px 0;
+}
+
+.chat-asks:empty {
+  display: none;
+}
+
+.chat-asks {
+  padding: 8px 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.ask {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ask-detail {
+  font-size: 14px;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.ask-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ask-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: 9px;
+  background: var(--key-bg);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.ask-btn.primary {
+  background: var(--accent);
+  color: white;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  /* 16px or iOS zooms in on focus */
+  font: 16px/1.35 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: inherit;
+  background: var(--key-bg);
+  border: 0;
+  border-radius: 19px;
+  padding: 9px 14px;
+  outline: none;
+  max-height: 160px;
+}
+
+.send-btn,
+.stop {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.send-btn {
+  background: var(--accent);
+  color: white;
+}
+
+.stop {
+  background: var(--key-bg);
+  font-size: 14px;
+}
+
+.stop[hidden] {
+  display: none;
+}
+
+.session header a.icon {
+  text-decoration: none;
+}

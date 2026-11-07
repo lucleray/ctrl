@@ -7,7 +7,11 @@ import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { Stage } from "../shared/adapters/adapter"
 import type { Harness, RemoteStatus, SessionStatus, Tone } from "../shared/types"
+import type { ChatPage } from "./remote-chat"
 import type { Terminal } from "./terminal"
+
+/** A permission or question waiting on you, shown above the chat's composer */
+export type ChatPending = { id: string; kind: "permission" | "question"; detail: string }
 
 /** What the phone's list shows. Kept small: spaces, their sessions and the newest others. */
 export type RemoteSnapshot = {
@@ -65,13 +69,31 @@ type Deps = {
   }
   /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
   create(spaceID: string | null): Promise<string>
+  /** opencode sessions as a chat (src/main/remote-chat.ts) */
+  chat: {
+    page(sessionID: string, cursor?: string): Promise<ChatPage>
+    send(sessionID: string, text: string): Promise<void>
+    stop(sessionID: string): Promise<void>
+    reply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
+    pending(sessionID: string): ChatPending[]
+    title(sessionID: string): string | undefined
+  }
   /** Why a session can't be opened from the phone, if it can't */
   cantOpen(sessionID: string): string | null
   onStatus(): void
 }
 
 type View = { sessionID: string; harness: Harness; termID?: string; cols: number; rows: number }
-type Viewer = { ws: WebSocket; view?: View; seq: number; board?: boolean }
+type Viewer = {
+  ws: WebSocket
+  view?: View
+  seq: number
+  board?: boolean
+  /** opencode session open in the chat view */
+  chat?: string
+  /** Last pending list sent, to send only changes */
+  pendingJSON?: string
+}
 
 type Inbound =
   | { t: "open"; id: string; cols: number; rows: number }
@@ -80,12 +102,19 @@ type Inbound =
   | { t: "leave" }
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
+  | { t: "chat"; id: string }
+  | { t: "chat-more"; cursor: string }
+  | { t: "chat-send"; text: string }
+  | { t: "chat-stop" }
+  | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
 
 const COOKIE = "ctrl_remote"
 /** The phone's TUI quits after this long with nobody looking at it, and comes back on the next open. */
 const TUI_IDLE_MS = 10 * 60_000
 /** Interfaces are checked this often, so Tailscale connecting (or its address changing) is picked up. */
 const RECHECK_MS = 15_000
+/** While a turn streams, the chat view re-reads the newest messages at most this often. */
+const CHAT_THROTTLE_MS = 300
 /** Board updates (new mentions, live details landing) are batched this long. */
 const BOARD_DEBOUNCE_MS = 500
 /** A viewer this far behind (slow network) is dropped; it reconnects and repaints. */
@@ -167,6 +196,7 @@ export class RemoteServer {
   private lastSnapshot = ""
   private boardTimer?: ReturnType<typeof setTimeout>
   private lastBoard = ""
+  private chatTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(private deps: Deps) {}
 
@@ -321,6 +351,23 @@ export class RemoteServer {
   private async message(viewer: Viewer, msg: Inbound) {
     if (msg.t === "open") return this.open(viewer, msg.id, size(msg))
     if (msg.t === "leave") return this.leave(viewer)
+    if (msg.t === "chat") return this.openChat(viewer, msg.id)
+    if (typeof msg.t === "string" && msg.t.startsWith("chat-")) {
+      const id = viewer.chat
+      if (!id) return
+      if (msg.t === "chat-more" && typeof msg.cursor === "string") {
+        const page = await this.deps.chat.page(id, msg.cursor)
+        if (viewer.chat === id) this.send(viewer, { t: "chat-more", id, ...page })
+      } else if (msg.t === "chat-send" && typeof msg.text === "string" && msg.text.trim()) {
+        await this.deps.chat.send(id, msg.text)
+        this.sessionEvent(id)
+      } else if (msg.t === "chat-stop") {
+        await this.deps.chat.stop(id)
+      } else if (msg.t === "chat-reply" && ["once", "always", "reject"].includes(msg.decision)) {
+        await this.deps.chat.reply(id, String(msg.requestID), msg.decision)
+      }
+      return
+    }
     if (msg.t === "new") {
       const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
       this.send(viewer, { t: "created", id })
@@ -377,7 +424,42 @@ export class RemoteServer {
     this.deps.fx.resize(termID, { cols, rows })
   }
 
+  private async openChat(viewer: Viewer, sessionID: string) {
+    if (typeof sessionID !== "string") return
+    const problem = this.deps.cantOpen(sessionID)
+    if (problem) throw new Error(problem)
+    this.leave(viewer)
+    viewer.chat = sessionID
+    const seq = viewer.seq
+    const page = await this.deps.chat.page(sessionID)
+    if (viewer.seq !== seq || viewer.chat !== sessionID) return
+    const pending = this.deps.chat.pending(sessionID)
+    viewer.pendingJSON = JSON.stringify(pending)
+    this.send(viewer, { t: "chat", id: sessionID, title: this.deps.chat.title(sessionID), ...page, pending })
+  }
+
+  /** Something happened in a session (text streamed, a tool ran, a turn ended): refresh phones chatting in it. */
+  sessionEvent(sessionID: string) {
+    if (this.chatTimers.has(sessionID) || ![...this.viewers].some((v) => v.chat === sessionID)) return
+    this.chatTimers.set(
+      sessionID,
+      setTimeout(async () => {
+        this.chatTimers.delete(sessionID)
+        const watching = [...this.viewers].filter((v) => v.chat === sessionID)
+        if (!watching.length) return
+        try {
+          const { items } = await this.deps.chat.page(sessionID)
+          for (const v of watching) if (v.chat === sessionID) this.send(v, { t: "chat-update", id: sessionID, items })
+        } catch (err) {
+          console.error("[ctrl] remote chat refresh failed", err)
+        }
+      }, CHAT_THROTTLE_MS),
+    )
+  }
+
   private leave(viewer: Viewer) {
+    viewer.chat = undefined
+    viewer.pendingJSON = undefined
     const view = viewer.view
     viewer.view = undefined
     viewer.seq++
@@ -425,6 +507,15 @@ export class RemoteServer {
   changed() {
     if (!this.viewers.size) return
     const snapshot = this.deps.snapshot()
+    // Permissions and questions come and go with pushes: phones in a chat get theirs when they change.
+    for (const v of this.viewers) {
+      if (!v.chat) continue
+      const pending = this.deps.chat.pending(v.chat)
+      const pjson = JSON.stringify(pending)
+      if (pjson === v.pendingJSON) continue
+      v.pendingJSON = pjson
+      this.send(v, { t: "chat-pending", id: v.chat, pending })
+    }
     const json = JSON.stringify(snapshot)
     if (json === this.lastSnapshot) return
     this.lastSnapshot = json

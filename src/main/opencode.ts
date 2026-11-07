@@ -57,7 +57,7 @@ const FETCH_EVENTS = new Set([
 ])
 
 /** A pending permission or question, keyed by its request/form id. */
-type Pending = { sessionID: string; detail: string }
+type Pending = { sessionID: string; detail: string; kind: "permission" | "question" }
 
 /**
  * Keeps the sidebar's session list in sync with opencode.
@@ -311,8 +311,9 @@ export class OpenCodeService {
     for (const r of results) {
       if (r.status !== "fulfilled") continue
       for (const item of r.value.data) {
-        const detail = "action" in item ? describePermission(item) : `Question: ${item.title}`
-        out.set(item.id, { sessionID: item.sessionID, detail })
+        const permission = "action" in item
+        const detail = permission ? describePermission(item) : `Question: ${item.title}`
+        out.set(item.id, { sessionID: item.sessionID, detail, kind: permission ? "permission" : "question" })
       }
     }
     return out
@@ -354,11 +355,13 @@ export class OpenCodeService {
   private apply(event: Event) {
     const d = event.data ?? {}
     const id = typeof d.sessionID === "string" ? d.sessionID : undefined
+    if (id) this.onSessionEvent?.(id, event.type)
     switch (event.type) {
       case "permission.asked":
         this.pending.set(String(d.id), {
           sessionID: id!,
           detail: describePermission(d as unknown as PermissionRequest),
+          kind: "permission",
         })
         return this.rebuild()
       case "permission.replied":
@@ -366,7 +369,7 @@ export class OpenCodeService {
         return this.rebuild()
       case "form.created": {
         const form = d.form as { id: string; sessionID: string; title: string }
-        this.pending.set(form.id, { sessionID: form.sessionID, detail: `Question: ${form.title}` })
+        this.pending.set(form.id, { sessionID: form.sessionID, detail: `Question: ${form.title}`, kind: "question" })
         return this.rebuild()
       }
       case "form.replied":
@@ -470,6 +473,16 @@ export class OpenCodeService {
   currentSessionID: string | null = null
 
   /** Optimistically clears unread/failed for a session you just opened. */
+  /** Every event about a session (remote control's chat view refreshes on them). */
+  onSessionEvent?: (sessionID: string, type: string) => void
+
+  /** Permissions and questions waiting on you in this session, with their request/form ids. */
+  pendingFor(sessionID: string) {
+    return [...this.pending]
+      .filter(([, p]) => p.sessionID === sessionID)
+      .map(([id, p]) => ({ id, kind: p.kind, detail: p.detail }))
+  }
+
   setCurrent(sessionID: string | null) {
     this.currentSessionID = sessionID
     if (!sessionID) return
