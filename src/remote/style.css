@@ -54,6 +54,9 @@ header {
 .brand {
   font: 600 17px "SF Mono", ui-monospace, Menlo, monospace;
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .conn {

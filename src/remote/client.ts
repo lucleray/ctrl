@@ -658,9 +658,8 @@ function homeHeader() {
   return h(
     "header",
     {},
-    h("span", { className: "brand" }, "ctrl"),
+    h("span", { className: "brand" }, "ctrl", h("span", { className: `conn ${connected ? "on" : ""}` })),
     h("nav", { className: "tabs" }, tab("Sessions", "#/", !onBoard()), tab("Board", "#/board", onBoard())),
-    h("span", { className: `conn ${connected ? "on" : ""}` }),
   )
 }
 
