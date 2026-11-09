@@ -245,9 +245,9 @@ const icon = (name: string) => {
 
 // ---------- folding (saved on the phone) ----------
 
-/** Spaces, Recents and Archived start folded (open the one you want). Keys: space:<id>, recents, archived, s:<id> (children). */
+/** Spaces, Recents, Archived and child sessions start folded (open the one you want). Keys: space:<id>, recents, archived, s:<id> (children). */
 const FOLD_DEFAULTS: Record<string, boolean> = { recents: true, archived: true }
-const foldDefault = (key: string) => FOLD_DEFAULTS[key] ?? key.startsWith("space:")
+const foldDefault = (key: string) => FOLD_DEFAULTS[key] ?? (key.startsWith("space:") || key.startsWith("s:"))
 const folds: Record<string, boolean> = (() => {
   try {
     return JSON.parse(localStorage.getItem("folds") ?? "{}")

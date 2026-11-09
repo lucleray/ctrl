@@ -183,7 +183,7 @@ where it lives.
   when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
 - Sessions mirrors the sidebar: New chat, then Spaces (folders in the sidebar's order, child sessions nested
   under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
-  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents and Archived start folded;
+  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents, Archived and child sessions start folded;
   what you fold is saved on the phone. An empty space shows "No sessions yet" followed by a small inline New session button to start
   one. New sessions start with the space's folder, harness and model, and
   open on the phone without changing the desktop
