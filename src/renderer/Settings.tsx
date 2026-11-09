@@ -67,7 +67,8 @@ function QrCode({ text, size = 168 }: { text: string; size?: number }) {
 }
 
 function RemoteRows({ remote }: { remote: RemoteStatus }) {
-  const [copied, setCopied] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [showLink, setShowLink] = useState(false)
   if (remote.state === "off") return null
   if (remote.state === "error")
     return (
@@ -78,6 +79,8 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
         </div>
       </div>
     )
+  // The MagicDNS name when there is one, else the tailnet IP.
+  const url = remote.urls[0]
   return (
     <>
       {remote.state === "local" && (
@@ -93,18 +96,23 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
       )}
       {remote.state === "on" && (
         <div className="setting setting-indent remote-qr">
-          <QrCode text={remote.urls[0]} />
+          <QrCode text={url} />
           <div>
             <div className="setting-title">Scan with your phone</div>
             <div className="setting-desc">
               Point your phone's camera at the code and open the link. Your phone needs Tailscale on. After the first
               visit, the phone stays signed in.
             </div>
+            {!showLink && (
+              <button className="text-btn" onClick={() => setShowLink(true)}>
+                Can't scan? Show the link
+              </button>
+            )}
           </div>
         </div>
       )}
-      {remote.urls.map((url) => (
-        <div className="setting setting-indent" key={url}>
+      {(showLink || remote.state === "local") && (
+        <div className="setting setting-indent">
           <div style={{ minWidth: 0 }}>
             <div className="setting-title">{new URL(url).host}</div>
             <div className="setting-desc">Open this link on your phone. It holds a secret, so keep it private.</div>
@@ -113,16 +121,16 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
             className="btn"
             onClick={() =>
               void navigator.clipboard.writeText(url).then(() => {
-                setCopied(url)
-                setTimeout(() => setCopied(null), 1500)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
               })
             }
           >
-            <Icon name={copied === url ? "check" : "copy"} />
-            {copied === url ? "Copied" : "Copy link"}
+            <Icon name={copied ? "check" : "copy"} />
+            {copied ? "Copied" : "Copy link"}
           </button>
         </div>
-      ))}
+      )}
     </>
   )
 }
