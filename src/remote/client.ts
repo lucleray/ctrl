@@ -1352,9 +1352,8 @@ function renderChat(id: string) {
     )
   }
   const picker = h("input", { type: "file", accept: "image/*", multiple: true, hidden: true }) as HTMLInputElement
-  picker.addEventListener("change", async () => {
-    const files = [...(picker.files ?? [])].slice(0, MAX_PHOTOS - photos.length)
-    picker.value = ""
+  const addPhotos = async (picked: File[]) => {
+    const files = picked.filter((f) => f.type.startsWith("image/")).slice(0, MAX_PHOTOS - photos.length)
     for (const file of files) {
       try {
         photos = [...photos, await shrinkPhoto(file)]
@@ -1366,6 +1365,18 @@ function renderChat(id: string) {
       }
       drawTray()
     }
+  }
+  picker.addEventListener("change", () => {
+    const files = [...(picker.files ?? [])]
+    picker.value = ""
+    void addPhotos(files)
+  })
+  // Pasting an image (copied from Photos, a screenshot, a web page) attaches it; pasted text goes in as usual.
+  input.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"))
+    if (!files.length) return
+    e.preventDefault()
+    void addPhotos(files)
   })
   const submit = () => {
     const text = input.value
