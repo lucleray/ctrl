@@ -773,6 +773,13 @@ const searchInput = h("input", {
 }) as HTMLInputElement
 const searchClear = h("button", { className: "search-clear", title: "Clear", hidden: true }, "×")
 const searchBar = h("div", { className: "search" }, searchInput, searchClear)
+const newChatButton = h("button", { className: "new-chat", title: "New chat", onclick: () => startNew(null) }) as HTMLButtonElement
+/** Search + New chat, built once like the search bar */
+const searchRow = h("div", { className: "search-row" }, searchBar, newChatButton)
+const syncNewChat = () => {
+  newChatButton.disabled = creating !== null
+  newChatButton.replaceChildren(creating === "" ? h("span", { className: "spinner" }) : icon("compose"), "New")
+}
 searchInput.addEventListener("input", () => {
   query = searchInput.value
   searchClear.hidden = !query
@@ -917,16 +924,9 @@ function listBody() {
   // Recents is a view over every live session, spaces are a grouping on top (like the sidebar).
   const recents = [...live].sort((a, b) => b.updated - a.updated)
   const archived = snapshot.sessions.filter((s) => s.archived).sort((a, b) => b.archived! - a.archived!)
-  const newChat = h(
-    "button",
-    { className: "row action", disabled: creating !== null, onclick: () => startNew(null) },
-    creating === "" ? h("span", { className: "spinner" }) : icon("compose"),
-    h("span", { className: "title" }, "New chat"),
-  )
   return h(
     "div",
     { className: "list-body" },
-    newChat,
     h(
       "section",
       { className: "spaces" },
@@ -940,12 +940,14 @@ function listBody() {
 }
 
 function renderList() {
-  return h("div", { className: "list" }, homeHeader(), searchBar, ...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
+  syncNewChat()
+  return h("div", { className: "list" }, homeHeader(), searchRow, ...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
 }
 
-/** Sessions screen already up: swap everything but the search bar. */
+/** Sessions screen already up: swap everything but the search row. */
 function updateList(el: HTMLElement) {
-  for (const child of [...el.children]) if (child !== searchBar) child.remove()
+  syncNewChat()
+  for (const child of [...el.children]) if (child !== searchRow) child.remove()
   el.prepend(homeHeader())
   el.append(...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
 }

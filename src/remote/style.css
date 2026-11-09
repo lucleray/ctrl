@@ -489,9 +489,49 @@ button {
 
 /* ---------- search ---------- */
 
+.search-row {
+  display: flex;
+  gap: 8px;
+  margin: 10px 12px 0;
+}
+
 .search {
   position: relative;
-  margin: 10px 12px 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.new-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  border-radius: 10px;
+  background: var(--key-bg);
+  font-size: 15px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.new-chat:active {
+  background: var(--row-active);
+}
+
+.new-chat:disabled {
+  opacity: 0.6;
+}
+
+.new-chat .ico {
+  color: inherit;
+}
+
+.new-chat .spinner {
+  margin: 0 2px;
+}
+
+/* Right under the search row: no extra gap before Spaces */
+.list-body > .spaces:first-child > .section-header:first-child {
+  margin-top: 4px;
 }
 
 .search input {

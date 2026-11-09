@@ -181,7 +181,7 @@ where it lives.
 - Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
   phone; tap a card for its link, a session chip to open it). The top bar shows the connection dot (green
   when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
-- Sessions mirrors the sidebar: New chat, then Spaces (folders in the sidebar's order, child sessions nested
+- Sessions mirrors the sidebar: search with a New chat button next to it, then Spaces (folders in the sidebar's order, child sessions nested
   under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
   session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents, Archived and child sessions start folded;
   what you fold is saved on the phone. An empty space shows "No sessions yet" followed by a small inline New session button to start
