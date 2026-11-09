@@ -266,99 +266,6 @@ const PAGE_SIZE = 10
 /** Rows shown in Recents / Archived (Show more adds a page) */
 const shown: Record<string, number> = {}
 
-// ---------- swipe to archive ----------
-
-/** Row swiped open to show its Archive button */
-let swiped: string | null = null
-/** A swipe in progress holds back list re-renders (state pushes), which would drop the row under your finger */
-let swiping = false
-let renderHeld = false
-const ACTION_W = 88
-
-function closeSwiped(except?: HTMLElement) {
-  swiped = null
-  for (const el of document.querySelectorAll<HTMLElement>(".swipe .row")) {
-    if (el === except) continue
-    el.style.transition = "transform 0.18s ease-out"
-    el.style.transform = ""
-    setTimeout(() => el.parentElement?.classList.remove("revealed"), 180)
-  }
-}
-
-function swipeable(s: Session, link: HTMLElement) {
-  const archived = !!s.archived
-  const action = h(
-    "button",
-    {
-      className: `swipe-action${archived ? " unarchive" : ""}`,
-      onclick: () => {
-        swiped = null
-        // Shown right away; the next state push confirms it (children come along on the Mac).
-        const target = snapshot.sessions.find((x) => x.id === s.id)
-        if (target) target.archived = archived ? undefined : Date.now()
-        send({ t: "archive", id: s.id, on: !archived })
-        render()
-      },
-    },
-    archived ? "Unarchive" : "Archive",
-  )
-  const wrap = h("div", { className: "swipe" }, action, link)
-  const set = (x: number, animate: boolean) => {
-    link.style.transition = animate ? "transform 0.18s ease-out" : "none"
-    link.style.transform = x ? `translateX(${x}px)` : ""
-    // Hidden at rest: its color would bleed through the row's rounded corners.
-    wrap.classList.toggle("revealed", x !== 0)
-  }
-  if (swiped === s.id) set(-ACTION_W, false)
-  let start: { x: number; y: number; base: number } | null = null
-  let dragging = false
-  link.addEventListener("pointerdown", (e) => {
-    start = { x: e.clientX, y: e.clientY, base: swiped === s.id ? -ACTION_W : 0 }
-    dragging = false
-  })
-  link.addEventListener("pointermove", (e) => {
-    if (!start) return
-    if (sheetEl) return void (start = null)
-    const dx = e.clientX - start.x
-    const dy = e.clientY - start.y
-    if (!dragging) {
-      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return void (start = null)
-      if (Math.abs(dx) < 10) return
-      dragging = true
-      swiping = true
-      link.setPointerCapture(e.pointerId)
-      // Only one row open at a time.
-      if (swiped && swiped !== s.id) closeSwiped(link)
-    }
-    set(Math.max(-ACTION_W - 30, Math.min(0, start.base + dx)), false)
-  })
-  const end = (e: PointerEvent) => {
-    if (!start) return
-    const open = dragging && start.base + (e.clientX - start.x) < -ACTION_W / 2
-    if (dragging) {
-      swiped = open ? s.id : swiped === s.id ? null : swiped
-      set(open ? -ACTION_W : 0, true)
-    }
-    start = null
-    swiping = false
-    if (renderHeld) {
-      renderHeld = false
-      setTimeout(render, 200)
-    }
-  }
-  link.addEventListener("pointerup", end)
-  link.addEventListener("pointercancel", end)
-  link.addEventListener("click", (e) => {
-    // A swipe (or tapping an open row) isn't an open.
-    if (dragging || swiped) {
-      e.preventDefault()
-      if (!dragging) closeSwiped()
-    }
-    dragging = false
-  })
-  return wrap
-}
-
 // ---------- long press menu ----------
 
 const LONG_PRESS_MS = 450
@@ -650,7 +557,7 @@ function row(s: Session, tree?: TreeRow) {
   }
   if (s.statusDetail) a.title = s.statusDetail
   longPress(a, () => sessionMenu(s))
-  return swipeable(s, a)
+  return a
 }
 
 function homeHeader() {
@@ -1445,7 +1352,6 @@ function render() {
   const id = routeSession() ?? chatID
   const screen = chatID ? `chat:${chatID}` : `term:${id}`
   if (!id) {
-    if (swiping) return void (renderHeld = true)
     sessionEl?.remove()
     sessionEl = undefined
     if (!onBoard() && listEl?.dataset.screen === location.hash) return void updateList(listEl)

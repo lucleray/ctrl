@@ -189,9 +189,8 @@ where it lives.
   open on the phone without changing the desktop
 - Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
   a snippet, and spaces (tap one to jump to it, unfolded)
-- Swipe a row left to Archive (Unarchive in Archived; children come along, like the sidebar)
 - Long press a session (or ⋯ in its chat / terminal header) for its menu: open as chat or terminal, new child
-  session, rename, move to a space, open parent, detach from parent, archive. Long press a space (or the ⋯ on an open one)
+  session, rename, move to a space, open parent, detach from parent, archive (unarchive in Archived). Long press a space (or the ⋯ on an open one)
   for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a

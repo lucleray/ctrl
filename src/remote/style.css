@@ -683,6 +683,10 @@ button {
 
 .row.item {
   position: relative;
+  /* held for the long-press menu: no text selection or iOS callout */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .tree-toggle {
@@ -703,43 +707,6 @@ button {
 
 .list section.fold .more {
   margin: 0;
-}
-
-/* swipe left on a row: Archive behind it */
-.swipe {
-  position: relative;
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.swipe .row {
-  background: var(--bg);
-  touch-action: pan-y;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-
-.swipe .row:active {
-  background: color-mix(in srgb, var(--bg), var(--text) 6%);
-}
-
-.swipe-action {
-  position: absolute;
-  inset: 0 0 0 auto;
-  width: 88px;
-  background: #f59e0b;
-  color: white;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.swipe:not(.revealed) .swipe-action {
-  visibility: hidden;
-}
-
-.swipe-action.unarchive {
-  background: var(--accent);
 }
 
 .archived .row.item .title {
