@@ -463,6 +463,62 @@ button {
   opacity: 0.7;
 }
 
+/* ---------- search ---------- */
+
+.search {
+  position: relative;
+  margin: 10px 12px 0;
+}
+
+.search input {
+  width: 100%;
+  /* 16px or iOS zooms in on focus */
+  font: 16px/1.3 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: inherit;
+  background: var(--key-bg);
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 36px 9px 12px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  color: var(--muted);
+}
+
+.search-clear[hidden] {
+  display: none;
+}
+
+.list-body.results {
+  padding: 8px 6px 0;
+}
+
+.results .empty {
+  margin-top: 30px;
+}
+
+.where {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- sidebar-like list ---------- */
 
 .ico {

@@ -237,8 +237,9 @@ const icon = (name: string) => {
 
 // ---------- folding (saved on the phone) ----------
 
-/** Spaces start open, Recents and Archived folded, like a fresh sidebar. Keys: space:<id>, recents, archived, s:<id> (children). */
+/** Spaces, Recents and Archived start folded (open the one you want). Keys: space:<id>, recents, archived, s:<id> (children). */
 const FOLD_DEFAULTS: Record<string, boolean> = { recents: true, archived: true }
+const foldDefault = (key: string) => FOLD_DEFAULTS[key] ?? key.startsWith("space:")
 const folds: Record<string, boolean> = (() => {
   try {
     return JSON.parse(localStorage.getItem("folds") ?? "{}")
@@ -246,7 +247,7 @@ const folds: Record<string, boolean> = (() => {
     return {}
   }
 })()
-const isFolded = (key: string) => folds[key] ?? FOLD_DEFAULTS[key] ?? false
+const isFolded = (key: string) => folds[key] ?? foldDefault(key)
 const toggleFold = (key: string) => {
   folds[key] = !isFolded(key)
   localStorage.setItem("folds", JSON.stringify(folds))
@@ -520,7 +521,67 @@ function foldSection(key: string, title: string, list: Session[]) {
   )
 }
 
-function renderList() {
+// ---------- search ----------
+
+let query = ""
+const SEARCH_LIMIT = 50
+
+/** Built once: the list re-renders around it, so typing keeps focus and the keyboard stays up. */
+const searchInput = h("input", {
+  type: "search",
+  placeholder: "Search sessions",
+  enterKeyHint: "search",
+  autocomplete: "off",
+  spellcheck: false,
+}) as HTMLInputElement
+const searchClear = h("button", { className: "search-clear", title: "Clear", hidden: true }, "×")
+const searchBar = h("div", { className: "search" }, searchInput, searchClear)
+searchInput.addEventListener("input", () => {
+  query = searchInput.value
+  searchClear.hidden = !query
+  render()
+})
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") searchInput.blur()
+  if (e.key === "Escape") clearSearch()
+})
+searchClear.addEventListener("pointerdown", (e) => e.preventDefault())
+searchClear.addEventListener("click", () => clearSearch())
+const clearSearch = () => {
+  searchInput.value = query = ""
+  searchClear.hidden = true
+  render()
+}
+
+/** Every word in the title or space name; live sessions first, newest first. */
+function searchResults() {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const spaceName = new Map(snapshot.spaces.map((sp) => [sp.id, sp.name]))
+  return snapshot.sessions
+    .filter((s) => {
+      const hay = `${s.title} ${s.spaceID ? (spaceName.get(s.spaceID) ?? "") : ""}`.toLowerCase()
+      return words.every((w) => hay.includes(w))
+    })
+    .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.updated - a.updated)
+    .slice(0, SEARCH_LIMIT)
+    .map((s) => {
+      const el = row(s)
+      const where = s.archived ? "Archived" : s.spaceID ? spaceName.get(s.spaceID) : "No space"
+      el.querySelector(".title")!.append(h("span", { className: "where" }, where ?? ""))
+      return el
+    })
+}
+
+function listBody() {
+  if (!connected && !snapshot.sessions.length) return h("div", { className: "list-body" }, h("p", { className: "empty" }, "Connecting…"))
+  if (query.trim()) {
+    const results = searchResults()
+    return h(
+      "div",
+      { className: "list-body results" },
+      ...(results.length ? results : [h("p", { className: "empty" }, "No matching sessions")]),
+    )
+  }
   const live = snapshot.sessions.filter((s) => !s.archived)
   // Recents is a view over every live session, spaces are a grouping on top (like the sidebar).
   const recents = [...live].sort((a, b) => b.updated - a.updated)
@@ -531,21 +592,31 @@ function renderList() {
     creating === "" ? h("span", { className: "spinner" }) : icon("compose"),
     h("span", { className: "title" }, "New chat"),
   )
-  const body = connected || snapshot.sessions.length
-    ? [
-        newChat,
-        h(
-          "section",
-          { className: "spaces" },
-          h("div", { className: "section-header" }, h("span", {}, "Spaces")),
-          ...snapshot.spaces.map((sp) => spaceGroup(sp, live.filter((s) => s.spaceID === sp.id))),
-          ...(snapshot.spaces.length ? [] : [h("div", { className: "row hint" }, "No spaces yet, create one in ctrl")]),
-        ),
-        foldSection("recents", "Recents", recents),
-        ...(archived.length ? [foldSection("archived", "Archived", archived)] : []),
-      ]
-    : [h("p", { className: "empty" }, "Connecting…")]
-  return h("div", { className: "list" }, homeHeader(), ...(notice ? [h("div", { className: "notice" }, notice)] : []), ...body)
+  return h(
+    "div",
+    { className: "list-body" },
+    newChat,
+    h(
+      "section",
+      { className: "spaces" },
+      h("div", { className: "section-header" }, h("span", {}, "Spaces")),
+      ...snapshot.spaces.map((sp) => spaceGroup(sp, live.filter((s) => s.spaceID === sp.id))),
+      ...(snapshot.spaces.length ? [] : [h("div", { className: "row hint" }, "No spaces yet, create one in ctrl")]),
+    ),
+    foldSection("recents", "Recents", recents),
+    ...(archived.length ? [foldSection("archived", "Archived", archived)] : []),
+  )
+}
+
+function renderList() {
+  return h("div", { className: "list" }, homeHeader(), searchBar, ...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
+}
+
+/** Sessions screen already up: swap everything but the search bar. */
+function updateList(el: HTMLElement) {
+  for (const child of [...el.children]) if (child !== searchBar) child.remove()
+  el.prepend(homeHeader())
+  el.append(...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
 }
 
 // ---------- board ----------
@@ -1042,6 +1113,7 @@ function render() {
     if (swiping) return void (renderHeld = true)
     sessionEl?.remove()
     sessionEl = undefined
+    if (!onBoard() && listEl?.dataset.screen === location.hash) return void updateList(listEl)
     const next = onBoard() ? renderBoard() : renderList()
     next.dataset.screen = location.hash
     if (listEl) listEl.replaceWith(next)
