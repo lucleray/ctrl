@@ -74,8 +74,13 @@ type Deps = {
     write(termID: string, data: string): void
     resize(termID: string, size: { cols: number; rows: number } | null): void
   }
-  /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
-  create(spaceID: string | null): Promise<string>
+  /** New session in a space (null: none), with that space's folder, harness and model; returns its id.
+   *  With parentID: a child of that session instead (its space, folder and harness). */
+  create(spaceID: string | null, parentID?: string): Promise<string>
+  rename(sessionID: string, title: string): Promise<void>
+  /** Into a space (null: none), children along; unarchives it, like the sidebar's Move to */
+  move(sessionID: string, spaceID: string | null): void
+  detach(sessionID: string): void
   /** Message search, the same index as the palette (⌘K) */
   search(query: string): { hits: RemoteSearchHit[]; status: IndexStatus }
   /** Archive (children come along, like the sidebar) or unarchive a session */
@@ -112,8 +117,11 @@ type Inbound =
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
-  | { t: "new"; spaceID: string | null }
+  | { t: "new"; spaceID: string | null; parentID?: string }
   | { t: "archive"; id: string; on: boolean }
+  | { t: "rename"; id: string; title: string }
+  | { t: "move"; id: string; spaceID: string | null }
+  | { t: "detach"; id: string }
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
@@ -382,13 +390,27 @@ export class RemoteServer {
       return
     }
     if (msg.t === "new") {
-      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
+      const parentID = typeof msg.parentID === "string" ? msg.parentID : undefined
+      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null, parentID)
       this.send(viewer, { t: "created", id })
       return
     }
     if (msg.t === "search") {
       if (typeof msg.q !== "string") return
       this.send(viewer, { t: "search", seq: msg.seq, q: msg.q, ...this.deps.search(msg.q.slice(0, 200)) })
+      return
+    }
+    if (msg.t === "rename") {
+      if (typeof msg.id === "string" && typeof msg.title === "string" && msg.title.trim())
+        await this.deps.rename(msg.id, msg.title.trim().slice(0, 300))
+      return
+    }
+    if (msg.t === "move") {
+      if (typeof msg.id === "string") this.deps.move(msg.id, typeof msg.spaceID === "string" ? msg.spaceID : null)
+      return
+    }
+    if (msg.t === "detach") {
+      if (typeof msg.id === "string") this.deps.detach(msg.id)
       return
     }
     if (msg.t === "archive") {

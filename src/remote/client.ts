@@ -20,8 +20,11 @@ type Outbound =
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
-  | { t: "new"; spaceID: string | null }
+  | { t: "new"; spaceID: string | null; parentID?: string }
   | { t: "archive"; id: string; on: boolean }
+  | { t: "rename"; id: string; title: string }
+  | { t: "move"; id: string; spaceID: string | null }
+  | { t: "detach"; id: string }
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
@@ -314,6 +317,7 @@ function swipeable(s: Session, link: HTMLElement) {
   })
   link.addEventListener("pointermove", (e) => {
     if (!start) return
+    if (sheetEl) return void (start = null)
     const dx = e.clientX - start.x
     const dy = e.clientY - start.y
     if (!dragging) {
@@ -352,6 +356,194 @@ function swipeable(s: Session, link: HTMLElement) {
     dragging = false
   })
   return wrap
+}
+
+// ---------- long press menu ----------
+
+const LONG_PRESS_MS = 450
+
+/** Hold still on el for a moment (or right-click it) to call fire; the tap that follows is swallowed. */
+function longPress(el: HTMLElement, fire: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let start = { x: 0, y: 0 }
+  let fired = false
+  const cancel = () => {
+    clearTimeout(timer)
+    timer = undefined
+  }
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return
+    fired = false
+    start = { x: e.clientX, y: e.clientY }
+    cancel()
+    timer = setTimeout(() => {
+      timer = undefined
+      fired = true
+      fire()
+    }, LONG_PRESS_MS)
+  })
+  // Moving means scrolling or swiping, not holding.
+  el.addEventListener("pointermove", (e) => {
+    if (timer && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel()
+  })
+  el.addEventListener("pointerup", cancel)
+  el.addEventListener("pointercancel", cancel)
+  el.addEventListener(
+    "click",
+    (e) => {
+      if (!fired) return
+      fired = false
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    },
+    { capture: true },
+  )
+  // Right-click in a desktop browser, and Android's own long press (which comes after ours).
+  el.addEventListener("contextmenu", (e) => {
+    e.preventDefault()
+    if (fired || sheetEl) return
+    cancel()
+    fire()
+  })
+}
+
+/** The open bottom sheet, outside #app so list re-renders leave it alone */
+let sheetEl: HTMLElement | undefined
+let sheetOpened = 0
+
+function closeSheet() {
+  const el = sheetEl
+  sheetEl = undefined
+  if (!el) return
+  el.classList.remove("open")
+  setTimeout(() => el.remove(), 200)
+}
+
+function openSheet(title: string, subtitle: string | undefined, content: HTMLElement[]) {
+  sheetEl?.remove()
+  const el = h(
+    "div",
+    { className: "sheet" },
+    h("div", {
+      className: "sheet-backdrop",
+      // The finger lifting off the long press lands here: ignore that one.
+      onclick: () => Date.now() - sheetOpened > 400 && closeSheet(),
+    }),
+    h(
+      "div",
+      { className: "sheet-panel" },
+      h("div", { className: "sheet-head" }, h("div", { className: "sheet-title" }, title), ...(subtitle ? [h("div", { className: "sheet-sub" }, subtitle)] : [])),
+      h("div", { className: "sheet-body" }, ...content),
+      h("button", { className: "sheet-cancel", onclick: closeSheet }, "Cancel"),
+    ),
+  )
+  document.body.append(el)
+  sheetEl = el
+  sheetOpened = Date.now()
+  requestAnimationFrame(() => el.classList.add("open"))
+}
+
+function sheetAction(label: string, run: () => void, opts: { danger?: boolean; checked?: boolean; keepOpen?: boolean } = {}) {
+  return h(
+    "button",
+    {
+      className: `sheet-action${opts.danger ? " danger" : ""}`,
+      onclick: () => {
+        if (Date.now() - sheetOpened < 400) return
+        if (!opts.keepOpen) closeSheet()
+        run()
+      },
+    },
+    h("span", {}, label),
+    ...(opts.checked ? [h("span", { className: "check" }, "✓")] : []),
+  )
+}
+
+const spaceLabel = (id: string | null) => (id ? (snapshot.spaces.find((sp) => sp.id === id)?.name ?? "") : "No space")
+
+function sessionMenu(s: Session) {
+  const fx = isFx(s.id)
+  const parent = s.parentID ? snapshot.sessions.find((x) => x.id === s.parentID) : undefined
+  const sub = [s.archived ? "Archived" : spaceLabel(s.spaceID), fx ? "fx" : "opencode"].join(" · ")
+  openSheet(s.title || "Untitled", sub, [
+    ...(fx
+      ? [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]
+      : [
+          sheetAction("Open as chat", () => (location.hash = `#/s/${encodeURIComponent(s.id)}`)),
+          sheetAction("Open in terminal", () => (location.hash = `#/t/${encodeURIComponent(s.id)}`)),
+        ]),
+    sheetAction("New child session", () => {
+      creating = `child:${s.id}`
+      notice = ""
+      send({ t: "new", spaceID: s.spaceID, parentID: s.id })
+      render()
+    }),
+    sheetAction("Rename…", () => renameSheet(s), { keepOpen: true }),
+    sheetAction("Move to…", () => moveSheet(s), { keepOpen: true }),
+    ...(parent ? [sheetAction(`Open parent “${parent.title || "Untitled"}”`, () => (location.hash = sessionHref(parent.id)))] : []),
+    ...(s.parentID
+      ? [
+          sheetAction("Detach from parent", () => {
+            s.parentID = undefined
+            send({ t: "detach", id: s.id })
+            render()
+          }),
+        ]
+      : []),
+    sheetAction(
+      s.archived ? "Unarchive" : "Archive",
+      () => {
+        s.archived = s.archived ? undefined : Date.now()
+        send({ t: "archive", id: s.id, on: !!s.archived })
+        render()
+      },
+      { danger: !s.archived },
+    ),
+  ])
+}
+
+function renameSheet(s: Session) {
+  const input = h("input", { className: "sheet-input", value: s.title, enterKeyHint: "done", autocomplete: "off" }) as HTMLInputElement
+  const save = () => {
+    const title = input.value.trim()
+    closeSheet()
+    if (!title || title === s.title) return
+    s.title = title
+    send({ t: "rename", id: s.id, title })
+    render()
+  }
+  input.addEventListener("keydown", (e) => e.key === "Enter" && save())
+  openSheet("Rename session", undefined, [input, h("button", { className: "sheet-save", onclick: save }, "Save")])
+  sheetOpened = 0
+  input.focus()
+  input.select()
+}
+
+function moveSheet(s: Session) {
+  const move = (spaceID: string | null) => () => {
+    s.spaceID = spaceID
+    s.archived = undefined
+    send({ t: "move", id: s.id, spaceID })
+    render()
+  }
+  openSheet("Move to", s.title || "Untitled", [
+    sheetAction("No space", move(null), { checked: !s.spaceID }),
+    ...snapshot.spaces.map((sp) => sheetAction(sp.name, move(sp.id), { checked: s.spaceID === sp.id })),
+  ])
+  sheetOpened = 0
+}
+
+function spaceMenu(space: RemoteSnapshot["spaces"][number]) {
+  const key = `space:${space.id}`
+  const count = snapshot.sessions.filter((s) => s.spaceID === space.id && !s.archived).length
+  openSheet(space.name, `${count} session${count === 1 ? "" : "s"}`, [
+    sheetAction("New session", () => startNew(space.id)),
+    sheetAction(isFolded(key) ? "Unfold" : "Fold", () => toggleFold(key)),
+    sheetAction("Open its board", () => {
+      localStorage.setItem("boardSpace", space.id)
+      location.hash = "#/board"
+    }),
+  ])
 }
 
 // ---------- rows ----------
@@ -433,6 +625,7 @@ function row(s: Session, tree?: TreeRow) {
     a.prepend(toggle)
   }
   if (s.statusDetail) a.title = s.statusDetail
+  longPress(a, () => sessionMenu(s))
   return swipeable(s, a)
 }
 
@@ -482,6 +675,7 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
     newButton(space.id),
   )
+  longPress(header, () => spaceMenu(space))
   const el = h(
     "div",
     { className: "space" },
