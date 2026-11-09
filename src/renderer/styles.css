@@ -2203,6 +2203,35 @@ body.resizing .terminal-pane.active {
   border-top-color: transparent;
 }
 
+.setting.remote-qr {
+  justify-content: flex-start;
+  gap: 18px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.qr {
+  flex: none;
+  border-radius: 8px;
+}
+
+.text-btn {
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.text-btn:hover {
+  color: var(--text);
+}
+
 .setting-path-desc {
   overflow: hidden;
   text-overflow: ellipsis;

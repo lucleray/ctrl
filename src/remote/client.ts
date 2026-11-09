@@ -21,7 +21,7 @@ type Outbound =
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
-  | { t: "chat-send"; text: string }
+  | { t: "chat-send"; text: string; images?: string[] }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
   | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
@@ -1017,7 +1017,18 @@ function scrollToBottom() {
 }
 
 function itemEl(i: ChatItem) {
-  if (i.kind === "user") return h("div", { className: "msg user" }, h("div", { className: "bubble" }, i.text))
+  if (i.kind === "user") {
+    const photos = Array.from({ length: i.images ?? 0 }, (_, n) => {
+      const src = `/file/${chat!.id}/${i.id}/${n}`
+      return h("a", { href: src, target: "_blank" }, h("img", { src, alt: "Photo", loading: "lazy" }))
+    })
+    return h(
+      "div",
+      { className: "msg user" },
+      ...(photos.length ? [h("div", { className: "photos" }, ...photos)] : []),
+      ...(i.text.trim() ? [h("div", { className: "bubble" }, i.text)] : []),
+    )
+  }
   const parts = i.parts.map((p) => {
     if (p.type === "text") {
       const el = h("div", { className: "md" })
@@ -1284,21 +1295,104 @@ function questionEl(p: Extract<ChatPending, { kind: "question" }>) {
   return el
 }
 
+/** Longest side of a photo once shrunk on the phone: plenty for a model, a fraction of a camera's size. */
+const PHOTO_MAX = 2000
+const MAX_PHOTOS = 6
+
+/** A picked photo as a JPEG data: URL, shrunk to PHOTO_MAX (Safari decodes HEIC for the canvas). */
+async function shrinkPhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const scale = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight))
+    const canvas = document.createElement("canvas")
+    canvas.width = Math.round(img.naturalWidth * scale)
+    canvas.height = Math.round(img.naturalHeight * scale)
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL("image/jpeg", 0.85)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function renderChat(id: string) {
   const session = snapshot.sessions.find((s) => s.id === id)
-  const input = h("textarea", { rows: 1, placeholder: "Message", enterKeyHint: "enter" }) as HTMLTextAreaElement
-  const grow = () => {
-    input.style.height = ""
-    input.style.height = `${Math.min(160, input.scrollHeight)}px`
+  // Editable div, not a textarea: iOS Safari only hands pasted images to rich editable fields. Kept plain
+  // text by the paste handler below. Return types a new line (the phone's keyboard); the button sends.
+  const input = h("div", { className: "composer-input", contentEditable: "true", role: "textbox", enterKeyHint: "enter" })
+  input.dataset.placeholder = "Message"
+  const text = () => input.innerText.replace(/\n$/, "")
+  // Deleting everything can leave a <br> behind, which hides the placeholder.
+  input.addEventListener("input", () => {
+    if (!text().trim() && input.childNodes.length && !input.querySelector("img")) input.replaceChildren()
+  })
+  let photos: string[] = []
+  const tray = h("div", { className: "photo-tray", hidden: true })
+  const drawTray = () => {
+    tray.hidden = !photos.length
+    tray.replaceChildren(
+      ...photos.map((src, n) =>
+        h(
+          "div",
+          { className: "photo-thumb" },
+          h("img", { src, alt: "Photo" }),
+          h(
+            "button",
+            {
+              title: "Remove",
+              onclick: () => {
+                photos = photos.filter((_, k) => k !== n)
+                drawTray()
+              },
+            },
+            "×",
+          ),
+        ),
+      ),
+    )
   }
-  // Return types a new line (the phone's keyboard); the button sends.
-  input.addEventListener("input", grow)
+  const picker = h("input", { type: "file", accept: "image/*", multiple: true, hidden: true }) as HTMLInputElement
+  const addPhotos = async (picked: File[]) => {
+    const files = picked.filter((f) => f.type.startsWith("image/")).slice(0, MAX_PHOTOS - photos.length)
+    for (const file of files) {
+      try {
+        photos = [...photos, await shrinkPhoto(file)]
+      } catch {
+        const msg = `Couldn't read ${file.name || "that photo"}`
+        notice = msg
+        render()
+        setTimeout(() => notice === msg && ((notice = ""), render()), 3000)
+      }
+      drawTray()
+    }
+  }
+  picker.addEventListener("change", () => {
+    const files = [...(picker.files ?? [])]
+    picker.value = ""
+    void addPhotos(files)
+  })
+  // Pasting an image (copied from Photos, a screenshot, a web page) attaches it; pasted text goes in as usual.
+  input.addEventListener("paste", (e) => {
+    e.preventDefault()
+    const data = e.clipboardData
+    if (!data) return
+    const files = data.files.length
+      ? [...data.files]
+      : [...data.items].map((i) => (i.kind === "file" ? i.getAsFile() : null)).filter((f): f is File => !!f)
+    if (files.some((f) => f.type.startsWith("image/"))) return void addPhotos(files)
+    // Plain text only, never the copied formatting.
+    document.execCommand("insertText", false, data.getData("text/plain"))
+  })
+  input.addEventListener("drop", (e) => e.preventDefault())
   const submit = () => {
-    const text = input.value
-    if (!text.trim()) return
-    send({ t: "chat-send", text })
-    input.value = ""
-    grow()
+    const message = text()
+    if (!message.trim() && !photos.length) return
+    send({ t: "chat-send", text: message, ...(photos.length ? { images: photos } : {}) })
+    input.replaceChildren()
+    photos = []
+    drawTray()
   }
   const keepFocus = (e: PointerEvent) => e.preventDefault()
   const el = h(
@@ -1314,9 +1408,21 @@ function renderChat(id: string) {
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     h("div", { className: "chat-list" }, h("div", { className: "chat-top" })),
     h("div", { className: "chat-asks" }),
+    tray,
     h(
       "div",
       { className: "composer" },
+      picker,
+      h(
+        "button",
+        {
+          className: "attach-btn",
+          title: "Add photos",
+          onpointerdown: keepFocus,
+          onclick: () => photos.length < MAX_PHOTOS && picker.click(),
+        },
+        "+",
+      ),
       input,
       h("button", { className: "stop", title: "Stop", hidden: true, onpointerdown: keepFocus, onclick: () => send({ t: "chat-stop" }) }, "■"),
       h("button", { className: "send-btn", title: "Send", onpointerdown: keepFocus, onclick: submit }, "↑"),

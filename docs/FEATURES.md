@@ -174,6 +174,8 @@ where it lives.
 - Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
   7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and shows the Board
   (`src/main/remote.ts`, `src/remote/`)
+- Settings shows a QR code of the link to scan with the phone's camera ("Can't scan? Show the link" reveals
+  it with a Copy button), the MagicDNS name when there is one
 - The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
 - fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping one
@@ -195,7 +197,9 @@ where it lives.
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
   composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
-  view above it); permissions as Allow / Always / Deny
+  view above it); permissions as Allow / Always / Deny; photos: + in the composer (camera or library) or
+  paste an image, up to 6 per message, shrunk to 2000px JPEG on the phone and sent to opencode inline, shown
+  in your bubble (served from `/file/<session>/<message>/<n>`)
   (`src/main/remote-chat.ts`)
 - Questions the agent asks are answered in the chat, one at a time like the TUI ("1 of 3"): tap an option
   (it moves on to the next question), tick several for multi-select, or type your own answer when the question
