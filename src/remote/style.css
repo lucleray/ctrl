@@ -1158,7 +1158,7 @@ button {
   flex-shrink: 0;
 }
 
-.composer textarea {
+.composer-input {
   flex: 1;
   resize: none;
   /* 16px or iOS zooms in on focus */
@@ -1170,6 +1170,24 @@ button {
   padding: 9px 14px;
   outline: none;
   max-height: 160px;
+  min-height: 38px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* Pasted or dropped markup never stays: the paste handler inserts plain text. */
+.composer-input img {
+  display: none;
 }
 
 .attach-btn {

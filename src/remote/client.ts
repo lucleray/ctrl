@@ -1319,13 +1319,15 @@ async function shrinkPhoto(file: File): Promise<string> {
 
 function renderChat(id: string) {
   const session = snapshot.sessions.find((s) => s.id === id)
-  const input = h("textarea", { rows: 1, placeholder: "Message", enterKeyHint: "enter" }) as HTMLTextAreaElement
-  const grow = () => {
-    input.style.height = ""
-    input.style.height = `${Math.min(160, input.scrollHeight)}px`
-  }
-  // Return types a new line (the phone's keyboard); the button sends.
-  input.addEventListener("input", grow)
+  // Editable div, not a textarea: iOS Safari only hands pasted images to rich editable fields. Kept plain
+  // text by the paste handler below. Return types a new line (the phone's keyboard); the button sends.
+  const input = h("div", { className: "composer-input", contentEditable: "true", role: "textbox", enterKeyHint: "enter" })
+  input.dataset.placeholder = "Message"
+  const text = () => input.innerText.replace(/\n$/, "")
+  // Deleting everything can leave a <br> behind, which hides the placeholder.
+  input.addEventListener("input", () => {
+    if (!text().trim() && input.childNodes.length && !input.querySelector("img")) input.replaceChildren()
+  })
   let photos: string[] = []
   const tray = h("div", { className: "photo-tray", hidden: true })
   const drawTray = () => {
@@ -1373,19 +1375,24 @@ function renderChat(id: string) {
   })
   // Pasting an image (copied from Photos, a screenshot, a web page) attaches it; pasted text goes in as usual.
   input.addEventListener("paste", (e) => {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"))
-    if (!files.length) return
     e.preventDefault()
-    void addPhotos(files)
+    const data = e.clipboardData
+    if (!data) return
+    const files = data.files.length
+      ? [...data.files]
+      : [...data.items].map((i) => (i.kind === "file" ? i.getAsFile() : null)).filter((f): f is File => !!f)
+    if (files.some((f) => f.type.startsWith("image/"))) return void addPhotos(files)
+    // Plain text only, never the copied formatting.
+    document.execCommand("insertText", false, data.getData("text/plain"))
   })
+  input.addEventListener("drop", (e) => e.preventDefault())
   const submit = () => {
-    const text = input.value
-    if (!text.trim() && !photos.length) return
-    send({ t: "chat-send", text, ...(photos.length ? { images: photos } : {}) })
-    input.value = ""
+    const message = text()
+    if (!message.trim() && !photos.length) return
+    send({ t: "chat-send", text: message, ...(photos.length ? { images: photos } : {}) })
+    input.replaceChildren()
     photos = []
     drawTray()
-    grow()
   }
   const keepFocus = (e: PointerEvent) => e.preventDefault()
   const el = h(
