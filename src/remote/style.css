@@ -88,6 +88,14 @@ header {
   padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
+/* The home header scrolls with the list but stays pinned, like the session screen's */
+.list > header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+}
+
 .list section {
   padding: 6px 6px 0;
 }
