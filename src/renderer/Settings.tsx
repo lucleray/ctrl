@@ -1,3 +1,4 @@
+import QRCode from "qrcode"
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import {
@@ -49,6 +50,22 @@ const MCP_LABELS: Record<McpStatus, string> = {
   needs_auth: "Needs sign-in",
 }
 
+/** Dark modules on white with a quiet zone, so phone cameras read it in dark mode too. */
+function QrCode({ text, size = 168 }: { text: string; size?: number }) {
+  const { modules } = QRCode.create(text, { errorCorrectionLevel: "M" })
+  const n = modules.size
+  const pad = 2
+  let d = ""
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) if (modules.get(y, x)) d += `M${x + pad} ${y + pad}h1v1h-1z`
+  return (
+    <svg className="qr" width={size} height={size} viewBox={`0 0 ${n + pad * 2} ${n + pad * 2}`} shapeRendering="crispEdges">
+      <rect width="100%" height="100%" fill="#fff" />
+      <path d={d} fill="#000" />
+    </svg>
+  )
+}
+
 function RemoteRows({ remote }: { remote: RemoteStatus }) {
   const [copied, setCopied] = useState<string | null>(null)
   if (remote.state === "off") return null
@@ -70,6 +87,18 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
             <div className="setting-desc">
               Only this Mac can open the page for now. Connect Tailscale on this Mac and your phone, and the link
               below switches to your tailnet address.
+            </div>
+          </div>
+        </div>
+      )}
+      {remote.state === "on" && (
+        <div className="setting setting-indent remote-qr">
+          <QrCode text={remote.urls[0]} />
+          <div>
+            <div className="setting-title">Scan with your phone</div>
+            <div className="setting-desc">
+              Point your phone's camera at the code and open the link. Your phone needs Tailscale on. After the first
+              visit, the phone stays signed in.
             </div>
           </div>
         </div>
