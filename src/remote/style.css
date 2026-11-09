@@ -714,16 +714,24 @@ button {
 .hint-new {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: -6px 0;
-  padding: 6px 12px 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  gap: 3px;
+  margin: -2px 0;
+  padding: 1px 8px 1px 5px;
+  border-radius: 6px;
   background: var(--key-bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 18px;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Small to look like part of the sentence, but still an easy tap */
+.hint-new::after {
+  content: "";
+  position: absolute;
+  inset: -10px -6px;
 }
 
 .hint-new:active {
@@ -739,8 +747,8 @@ button {
 }
 
 .hint-new svg {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
 }
 
 .hint-new .spinner {

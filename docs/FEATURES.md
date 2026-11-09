@@ -184,7 +184,7 @@ where it lives.
 - Sessions mirrors the sidebar: New chat, then Spaces (folders in the sidebar's order, child sessions nested
   under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
   session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents and Archived start folded;
-  what you fold is saved on the phone. An empty space shows "No sessions yet" with a New session button on the right to start
+  what you fold is saved on the phone. An empty space shows "No sessions yet" followed by a small inline New session button to start
   one. New sessions start with the space's folder, harness and model, and
   open on the phone without changing the desktop
 - Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
