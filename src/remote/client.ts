@@ -21,6 +21,7 @@ type Outbound =
   | { t: "leave" }
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
+  | { t: "archive"; id: string; on: boolean }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
   | { t: "chat-send"; text: string }
@@ -202,22 +203,232 @@ const ago = (t: number) => {
   return `${Math.floor(s / 86400)}d`
 }
 
-function statusEl(s: Session) {
-  if (s.status === "running") return h("span", { className: "spinner" })
-  if (s.status === "idle") return h("span", { className: "time" }, ago(s.updated))
-  return h("span", { className: `dot ${s.status}` })
+const STATUS_RANK: Record<Session["status"], number> = { "needs-input": 4, running: 3, failed: 2, unread: 1, idle: 0 }
+
+/** Most urgent status among sessions, rolled up into a folded space or parent (like the sidebar). */
+const topStatus = (list: Session[]) => {
+  let top: Session | undefined
+  for (const s of list) if (s.status !== "idle" && (!top || STATUS_RANK[s.status] > STATUS_RANK[top.status])) top = s
+  return top
 }
 
-function row(s: Session) {
+function statusEl(s: Session, status = s.status) {
+  // Archived sessions only flag what's live (running, needs you), like the sidebar.
+  const quiet = status === "idle" || (s.archived && (status === "unread" || status === "failed"))
+  if (status === "running") return h("span", { className: "spinner" })
+  if (quiet) return h("span", { className: "time" }, ago(s.updated))
+  return h("span", { className: `dot ${status}` })
+}
+
+const ICONS: Record<string, string> = {
+  folder: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
+  "folder-open": '<path d="M2.5 12.5v-8a1 1 0 0 1 1-1h3l1.5 1.5h4a1 1 0 0 1 1 1v1"/><path d="M2.5 12.5l1.6-4.3a1 1 0 0 1 .9-.7h8.6a.6.6 0 0 1 .6.8l-1.4 3.6a1 1 0 0 1-.9.6z"/>',
+  "chevron-right": '<path d="M6 4l4 4-4 4"/>',
+  "chevron-down": '<path d="M4 6l4 4 4-4"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  compose: '<path d="M7.5 3.5h-3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-3"/><path d="M11.3 2.9a1.3 1.3 0 0 1 1.8 1.8L8.5 9.3l-2.3.5.5-2.3z"/>',
+}
+
+const icon = (name: string) => {
+  const el = h("span", { className: "ico" })
+  el.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
+  return el
+}
+
+// ---------- folding (saved on the phone) ----------
+
+/** Spaces start open, Recents and Archived folded, like a fresh sidebar. Keys: space:<id>, recents, archived, s:<id> (children). */
+const FOLD_DEFAULTS: Record<string, boolean> = { recents: true, archived: true }
+const folds: Record<string, boolean> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("folds") ?? "{}")
+  } catch {
+    return {}
+  }
+})()
+const isFolded = (key: string) => folds[key] ?? FOLD_DEFAULTS[key] ?? false
+const toggleFold = (key: string) => {
+  folds[key] = !isFolded(key)
+  localStorage.setItem("folds", JSON.stringify(folds))
+  render()
+}
+
+const PAGE_SIZE = 10
+/** Rows shown in Recents / Archived (Show more adds a page) */
+const shown: Record<string, number> = {}
+
+// ---------- swipe to archive ----------
+
+/** Row swiped open to show its Archive button */
+let swiped: string | null = null
+/** A swipe in progress holds back list re-renders (state pushes), which would drop the row under your finger */
+let swiping = false
+let renderHeld = false
+const ACTION_W = 88
+
+function closeSwiped(except?: HTMLElement) {
+  swiped = null
+  for (const el of document.querySelectorAll<HTMLElement>(".swipe .row")) {
+    if (el === except) continue
+    el.style.transition = "transform 0.18s ease-out"
+    el.style.transform = ""
+    setTimeout(() => el.parentElement?.classList.remove("revealed"), 180)
+  }
+}
+
+function swipeable(s: Session, link: HTMLElement) {
+  const archived = !!s.archived
+  const action = h(
+    "button",
+    {
+      className: `swipe-action${archived ? " unarchive" : ""}`,
+      onclick: () => {
+        swiped = null
+        // Shown right away; the next state push confirms it (children come along on the Mac).
+        const target = snapshot.sessions.find((x) => x.id === s.id)
+        if (target) target.archived = archived ? undefined : Date.now()
+        send({ t: "archive", id: s.id, on: !archived })
+        render()
+      },
+    },
+    archived ? "Unarchive" : "Archive",
+  )
+  const wrap = h("div", { className: "swipe" }, action, link)
+  const set = (x: number, animate: boolean) => {
+    link.style.transition = animate ? "transform 0.18s ease-out" : "none"
+    link.style.transform = x ? `translateX(${x}px)` : ""
+    // Hidden at rest: its color would bleed through the row's rounded corners.
+    wrap.classList.toggle("revealed", x !== 0)
+  }
+  if (swiped === s.id) set(-ACTION_W, false)
+  let start: { x: number; y: number; base: number } | null = null
+  let dragging = false
+  link.addEventListener("pointerdown", (e) => {
+    start = { x: e.clientX, y: e.clientY, base: swiped === s.id ? -ACTION_W : 0 }
+    dragging = false
+  })
+  link.addEventListener("pointermove", (e) => {
+    if (!start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (!dragging) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return void (start = null)
+      if (Math.abs(dx) < 10) return
+      dragging = true
+      swiping = true
+      link.setPointerCapture(e.pointerId)
+      // Only one row open at a time.
+      if (swiped && swiped !== s.id) closeSwiped(link)
+    }
+    set(Math.max(-ACTION_W - 30, Math.min(0, start.base + dx)), false)
+  })
+  const end = (e: PointerEvent) => {
+    if (!start) return
+    const open = dragging && start.base + (e.clientX - start.x) < -ACTION_W / 2
+    if (dragging) {
+      swiped = open ? s.id : swiped === s.id ? null : swiped
+      set(open ? -ACTION_W : 0, true)
+    }
+    start = null
+    swiping = false
+    if (renderHeld) {
+      renderHeld = false
+      setTimeout(render, 200)
+    }
+  }
+  link.addEventListener("pointerup", end)
+  link.addEventListener("pointercancel", end)
+  link.addEventListener("click", (e) => {
+    // A swipe (or tapping an open row) isn't an open.
+    if (dragging || swiped) {
+      e.preventDefault()
+      if (!dragging) closeSwiped()
+    }
+    dragging = false
+  })
+  return wrap
+}
+
+// ---------- rows ----------
+
+/** A row in a space's session tree */
+type TreeRow = { session: Session; depth: number; children: number; folded: boolean; rollup?: Session }
+
+/**
+ * Nests sessions under their parent when the parent is in the same list (src/renderer/Sidebar.tsx's
+ * sessionTree). Siblings are ordered by their subtree's latest activity, so an active child lifts its parent.
+ */
+function sessionTree(list: Session[]): TreeRow[] {
+  const ids = new Set(list.map((s) => s.id))
+  const kids = new Map<string, Session[]>()
+  const roots: Session[] = []
+  for (const s of list) {
+    const parent = s.parentID
+    if (parent && parent !== s.id && ids.has(parent)) kids.set(parent, [...(kids.get(parent) ?? []), s])
+    else roots.push(s)
+  }
+  const latest = new Map<string, number>()
+  const descendants = new Map<string, Session[]>()
+  const walk = (s: Session, seen: Set<string>): void => {
+    seen.add(s.id)
+    let max = s.updated
+    const all: Session[] = []
+    for (const c of kids.get(s.id) ?? []) {
+      if (seen.has(c.id)) continue
+      walk(c, seen)
+      max = Math.max(max, latest.get(c.id)!)
+      all.push(c, ...descendants.get(c.id)!)
+    }
+    latest.set(s.id, max)
+    descendants.set(s.id, all)
+  }
+  const seen = new Set<string>()
+  for (const r of roots) walk(r, seen)
+  const byLatest = (a: Session, b: Session) => latest.get(b.id)! - latest.get(a.id)!
+  const rows: TreeRow[] = []
+  const emit = (s: Session, depth: number) => {
+    const children = (kids.get(s.id) ?? []).filter((c) => latest.has(c.id)).sort(byLatest)
+    const folded = children.length > 0 && isFolded(`s:${s.id}`)
+    rows.push({ session: s, depth, children: children.length, folded, rollup: folded ? topStatus(descendants.get(s.id)!) : undefined })
+    if (!folded) for (const c of children) emit(c, depth + 1)
+  }
+  for (const r of roots.sort(byLatest)) emit(r, 0)
+  return rows
+}
+
+/** px per tree level */
+const CHILD_INDENT = 16
+
+function row(s: Session, tree?: TreeRow) {
+  const depth = tree?.depth ?? 0
+  const status = tree?.rollup && STATUS_RANK[tree.rollup.status] > STATUS_RANK[s.status] ? tree.rollup.status : s.status
   const a = h(
     "a",
-    { className: "row", href: sessionHref(s.id) },
+    { className: `row item${tree ? " in-space" : ""}`, href: sessionHref(s.id) },
     h("span", { className: "title" }, s.title || "Untitled"),
     ...(s.harness === "fx" ? [h("span", { className: "tag" }, "fx")] : []),
-    statusEl(s),
+    statusEl(s, status),
   )
+  if (tree) a.style.paddingLeft = `${40 + depth * CHILD_INDENT}px`
+  if (tree && tree.children > 0) {
+    const toggle = h(
+      "button",
+      {
+        className: "tree-toggle",
+        title: tree.folded ? `Show ${tree.children} child session${tree.children > 1 ? "s" : ""}` : "Hide child sessions",
+        onclick: (e: MouseEvent) => {
+          e.preventDefault()
+          e.stopPropagation()
+          toggleFold(`s:${s.id}`)
+        },
+      },
+      icon(tree.folded ? "chevron-right" : "chevron-down"),
+    )
+    toggle.style.left = `${40 + depth * CHILD_INDENT - 30}px`
+    a.prepend(toggle)
+  }
   if (s.statusDetail) a.title = s.statusDetail
-  return a
+  return swipeable(s, a)
 }
 
 function homeHeader() {
@@ -231,43 +442,110 @@ function homeHeader() {
   )
 }
 
-function newButton(spaceID: string | null) {
-  const key = spaceID ?? ""
+const startNew = (spaceID: string | null) => {
+  creating = spaceID ?? ""
+  notice = ""
+  send({ t: "new", spaceID })
+  render()
+}
+
+function newButton(spaceID: string) {
   return h(
     "button",
     {
       className: "new",
-      title: "New session",
+      title: "New session in space",
       disabled: creating !== null,
-      onclick: () => {
-        creating = key
-        notice = ""
-        send({ t: "new", spaceID })
-        render()
+      onclick: (e: MouseEvent) => {
+        e.stopPropagation()
+        startNew(spaceID)
       },
     },
-    creating === key ? h("span", { className: "spinner" }) : "+",
+    creating === spaceID ? h("span", { className: "spinner" }) : icon("plus"),
+  )
+}
+
+function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
+  const key = `space:${space.id}`
+  const open = !isFolded(key)
+  const rollup = open ? undefined : topStatus(list)
+  const header = h(
+    "div",
+    { className: "row space-header", onclick: () => toggleFold(key) },
+    icon(open ? "folder-open" : "folder"),
+    h("span", { className: "title" }, space.name),
+    ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
+    newButton(space.id),
+  )
+  return h(
+    "div",
+    { className: "space" },
+    header,
+    ...(open
+      ? list.length
+        ? sessionTree(list).map((r) => row(r.session, r))
+        : [h("div", { className: "row hint" }, "No sessions yet, tap + to start one")]
+      : []),
+  )
+}
+
+function foldSection(key: string, title: string, list: Session[]) {
+  const folded = isFolded(key)
+  const n = shown[key] ?? PAGE_SIZE
+  return h(
+    "section",
+    { className: `fold ${key}` },
+    h("button", { className: "section-header toggle", onclick: () => toggleFold(key) }, h("span", {}, title), icon(folded ? "chevron-right" : "chevron-down")),
+    ...(folded
+      ? []
+      : [
+          ...list.slice(0, n).map((s) => row(s)),
+          ...(list.length > n
+            ? [
+                h(
+                  "button",
+                  {
+                    className: "more",
+                    onclick: () => {
+                      shown[key] = n + PAGE_SIZE
+                      render()
+                    },
+                  },
+                  "Show more",
+                ),
+              ]
+            : []),
+          ...(list.length ? [] : [h("div", { className: "row hint" }, "No sessions")]),
+        ]),
   )
 }
 
 function renderList() {
-  const groups: [string, string | null, Session[]][] = snapshot.spaces.map((sp) => [
-    sp.name,
-    sp.id,
-    snapshot.sessions.filter((s) => s.spaceID === sp.id),
-  ])
-  groups.push(["Recents", null, snapshot.sessions.filter((s) => !s.spaceID)])
-  // Empty spaces stay listed: their + is how you start one there.
-  const sections = groups.map(([name, spaceID, list]) =>
-    h("section", {}, h("h2", {}, h("span", {}, name), newButton(spaceID)), ...list.map(row)),
+  const live = snapshot.sessions.filter((s) => !s.archived)
+  // Recents is a view over every live session, spaces are a grouping on top (like the sidebar).
+  const recents = [...live].sort((a, b) => b.updated - a.updated)
+  const archived = snapshot.sessions.filter((s) => s.archived).sort((a, b) => b.archived! - a.archived!)
+  const newChat = h(
+    "button",
+    { className: "row action", disabled: creating !== null, onclick: () => startNew(null) },
+    creating === "" ? h("span", { className: "spinner" }) : icon("compose"),
+    h("span", { className: "title" }, "New chat"),
   )
-  return h(
-    "div",
-    { className: "list" },
-    homeHeader(),
-    ...(notice ? [h("div", { className: "notice" }, notice)] : []),
-    ...(sections.length ? sections : [h("p", { className: "empty" }, connected ? "No sessions" : "Connecting…")]),
-  )
+  const body = connected || snapshot.sessions.length
+    ? [
+        newChat,
+        h(
+          "section",
+          { className: "spaces" },
+          h("div", { className: "section-header" }, h("span", {}, "Spaces")),
+          ...snapshot.spaces.map((sp) => spaceGroup(sp, live.filter((s) => s.spaceID === sp.id))),
+          ...(snapshot.spaces.length ? [] : [h("div", { className: "row hint" }, "No spaces yet, create one in ctrl")]),
+        ),
+        foldSection("recents", "Recents", recents),
+        ...(archived.length ? [foldSection("archived", "Archived", archived)] : []),
+      ]
+    : [h("p", { className: "empty" }, "Connecting…")]
+  return h("div", { className: "list" }, homeHeader(), ...(notice ? [h("div", { className: "notice" }, notice)] : []), ...body)
 }
 
 // ---------- board ----------
@@ -761,6 +1039,7 @@ function render() {
   const id = routeSession() ?? chatID
   const screen = chatID ? `chat:${chatID}` : `term:${id}`
   if (!id) {
+    if (swiping) return void (renderHeld = true)
     sessionEl?.remove()
     sessionEl = undefined
     const next = onBoard() ? renderBoard() : renderList()

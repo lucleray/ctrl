@@ -27,6 +27,10 @@ export type RemoteSnapshot = {
     updated: number
     spaceID: string | null
     directory: string
+    /** Session it nests under, like the sidebar's tree */
+    parentID?: string
+    /** When it was archived (archived sessions only) */
+    archived?: number
   }[]
 }
 
@@ -69,6 +73,8 @@ type Deps = {
   }
   /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
   create(spaceID: string | null): Promise<string>
+  /** Archive (children come along, like the sidebar) or unarchive a session */
+  setArchived(sessionID: string, on: boolean): void
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
@@ -102,6 +108,7 @@ type Inbound =
   | { t: "leave" }
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
+  | { t: "archive"; id: string; on: boolean }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
   | { t: "chat-send"; text: string }
@@ -371,6 +378,10 @@ export class RemoteServer {
     if (msg.t === "new") {
       const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
       this.send(viewer, { t: "created", id })
+      return
+    }
+    if (msg.t === "archive") {
+      if (typeof msg.id === "string") this.deps.setArchived(msg.id, !!msg.on)
       return
     }
     if (msg.t === "board") {

@@ -463,18 +463,142 @@ button {
   opacity: 0.7;
 }
 
-/* ---------- new session ---------- */
+/* ---------- sidebar-like list ---------- */
 
-.list:not(.board) section > h2 {
+.ico {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  margin: 14px 0 2px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.section-header.toggle:active {
+  background: var(--row-active);
+  border-radius: 8px;
+}
+
+.row.action {
+  width: calc(100% - 12px);
+  margin: 8px 6px 0;
+  text-align: left;
+}
+
+.row.action:disabled {
+  opacity: 0.6;
+}
+
+.row.action .ico {
+  color: var(--text);
+}
+
+.space-header {
+  font-weight: 500;
+  cursor: pointer;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.space-header .title {
+  flex: 1;
+}
+
+.rollup {
+  display: inline-flex;
+}
+
+.row.hint {
+  padding-left: 40px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.fold .row.hint {
+  padding-left: 10px;
+}
+
+.row.item {
+  position: relative;
+}
+
+.tree-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-toggle .ico {
+  transform: scale(0.85);
+}
+
+.list section.fold .more {
+  margin: 0;
+}
+
+/* swipe left on a row: Archive behind it */
+.swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.swipe .row {
+  background: var(--bg);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.swipe .row:active {
+  background: color-mix(in srgb, var(--bg), var(--text) 6%);
+}
+
+.swipe-action {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 88px;
+  background: #f59e0b;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.swipe:not(.revealed) .swipe-action {
+  visibility: hidden;
+}
+
+.swipe-action.unarchive {
+  background: var(--accent);
+}
+
+.archived .row.item .title {
+  color: var(--muted);
 }
 
 .new {
   min-width: 32px;
-  height: 26px;
-  margin: -4px -4px -4px 0;
+  height: 28px;
+  margin: -6px -6px -6px 0;
   border-radius: 7px;
   font-size: 20px;
   font-weight: 400;

@@ -382,6 +382,8 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
 
 /** Unassigned sessions the phone lists besides the spaces' (bounded, like the sidebar's Recents pages). */
 const REMOTE_RECENTS = 30
+/** Newest archived sessions the phone lists in its Archived section */
+const REMOTE_ARCHIVED = 30
 
 /** Session the phone's TUI shows, so a theme change restarts it on the same one. */
 let remoteRoute: string | null = null
@@ -393,14 +395,19 @@ const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bri
 })
 
 const remoteSnapshot = (): RemoteSnapshot => {
-  const { spaces, assignments, archived } = store.data
+  const { spaces, assignments, archived, parents } = store.data
   const spaceIDs = new Set(spaces.map((s) => s.id))
   let others = 0
-  const list = sessions.filter((s) => {
+  const live = sessions.filter((s) => {
     if (archived[s.id] || pendingDeletes.has(s.id)) return false
     if (spaceIDs.has(assignments[s.id])) return true
     return others++ < REMOTE_RECENTS
   })
+  const gone = sessions
+    .filter((s) => archived[s.id] && !pendingDeletes.has(s.id))
+    .sort((a, b) => archived[b.id] - archived[a.id])
+    .slice(0, REMOTE_ARCHIVED)
+  const list = [...live, ...gone]
   return {
     dark: nativeTheme.shouldUseDarkColors,
     spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
@@ -413,6 +420,8 @@ const remoteSnapshot = (): RemoteSnapshot => {
       updated: s.updated,
       spaceID: spaceIDs.has(assignments[s.id]) ? assignments[s.id] : null,
       directory: s.directory,
+      ...(parents[s.id] ? { parentID: parents[s.id] } : {}),
+      ...(archived[s.id] ? { archived: archived[s.id] } : {}),
     })),
   }
 }
@@ -505,6 +514,12 @@ const remote: RemoteServer = new RemoteServer({
     }
     if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
     return id
+  },
+  setArchived: (sessionID, on) => {
+    if (!sessionByID(sessionID)) return
+    if (on) return archive([sessionID])
+    store.setArchived([sessionID], false)
+    push()
   },
   cantOpen: (sessionID) => {
     const session = sessionByID(sessionID)
