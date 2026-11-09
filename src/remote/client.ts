@@ -1,23 +1,16 @@
-import "@xterm/xterm/css/xterm.css"
 import "./style.css"
-import { Terminal } from "@xterm/xterm"
-import { FitAddon } from "@xterm/addon-fit"
-import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
 import MarkdownIt from "markdown-it"
-import type { ChatPending, RemoteBoardCard, RemoteSearchHit, RemoteSnapshot } from "../main/remote"
+import type { ChatPending, FormAnswer, FormField, RemoteBoardCard, RemoteSearchHit, RemoteSnapshot } from "../main/remote"
 import type { ChatItem } from "../main/remote-chat"
 
 /**
  * Remote control's web app, served by src/main/remote.ts. Screens are routed by the URL hash so the
- * phone's back gesture works: the session list (#/), the Board (#/board), an opencode session as a chat
- * (#/s/<id>) and any session's terminal (#/t/<id>; fx sessions only have that one).
+ * phone's back gesture works: the session list (#/), the Board (#/board) and an opencode session as a chat
+ * (#/s/<id>). fx sessions are listed but open on the Mac only.
  */
 
 type Session = RemoteSnapshot["sessions"][number]
 type Outbound =
-  | { t: "open"; id: string; cols: number; rows: number }
-  | { t: "input"; data: string }
-  | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null; parentID?: string }
@@ -31,11 +24,9 @@ type Outbound =
   | { t: "chat-send"; text: string }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
+  | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
 type Inbound =
   | ({ t: "state" } & RemoteSnapshot)
-  | { t: "open"; id: string; harness: Session["harness"] }
-  | { t: "data"; data: string }
-  | { t: "reset" }
   | { t: "error"; message: string }
   | { t: "board"; cards: RemoteBoardCard[] }
   | { t: "created"; id: string }
@@ -44,21 +35,6 @@ type Inbound =
   | { t: "chat-more"; id: string; items: ChatItem[]; cursor: string | null }
   | { t: "chat-update"; id: string; items: ChatItem[] }
   | { t: "chat-pending"; id: string; pending: ChatPending[] }
-
-const PALETTES = {
-  opencode: {
-    light: { background: "#eff1f5", foreground: "#4c4f69", cursor: "#4c4f69" },
-    dark: { background: "#1e1e2e", foreground: "#cdd6f4", cursor: "#cdd6f4" },
-  },
-  fx: {
-    light: { background: "#ffffff", foreground: "#1f1f1f", cursor: "#1f1f1f" },
-    dark: { background: "#1c1c1b", foreground: "#e9e9e7", cursor: "#e9e9e7" },
-  },
-}
-
-const FONT = { min: 8, max: 20, default: 12 }
-/** CSI-u shift+enter, the same sequence the desktop sends for ⇧⏎ */
-const NEWLINE = "\x1b[13;2u"
 
 let snapshot: RemoteSnapshot = { dark: true, spaces: [], sessions: [] }
 let board: RemoteBoardCard[] | null = null
@@ -90,9 +66,7 @@ function connect() {
     connected = true
     notice = ""
     render()
-    // Back on the session we were looking at.
-    const id = routeSession()
-    if (id && term) openOnServer(id)
+    // Back on the chat we were looking at.
     const chatID = routeChat()
     if (chatID) send({ t: "chat", id: chatID })
     if (onBoard()) send({ t: "board", on: true })
@@ -119,18 +93,7 @@ function receive(msg: Inbound) {
     const { t: _, ...rest } = msg
     snapshot = rest
     document.documentElement.classList.toggle("dark", snapshot.dark)
-    if (term) {
-      term.options.theme = palette()
-      const host = sessionEl?.querySelector<HTMLElement>(".term")
-      if (host) host.style.background = palette().background
-    }
     render()
-  } else if (msg.t === "open") {
-    term?.reset()
-  } else if (msg.t === "reset") {
-    term?.reset()
-  } else if (msg.t === "data") {
-    term?.write(msg.data)
   } else if (msg.t === "board") {
     board = msg.cards
     if (onBoard()) render()
@@ -158,12 +121,6 @@ document.addEventListener("visibilitychange", () => {
 
 // ---------- routing ----------
 
-/** Terminal screen's session */
-const routeSession = () => {
-  const m = location.hash.match(/^#\/t\/(.+)$/)
-  return m ? decodeURIComponent(m[1]) : null
-}
-
 /** Chat screen's session */
 const routeChat = () => {
   const m = location.hash.match(/^#\/s\/(.+)$/)
@@ -171,8 +128,8 @@ const routeChat = () => {
 }
 
 const isFx = (id: string) => id.startsWith("fx:")
-/** Where tapping a session goes: the chat for opencode, the terminal for fx (no chat for it yet). */
-const sessionHref = (id: string) => `#/${isFx(id) ? "t" : "s"}/${encodeURIComponent(id)}`
+/** Where tapping a session goes: its chat (fx ones bounce back to the list with a notice, see route()). */
+const sessionHref = (id: string) => `#/s/${encodeURIComponent(id)}`
 
 const onBoard = () => location.hash === "#/board"
 
@@ -181,13 +138,14 @@ window.addEventListener("hashchange", () => route())
 function route() {
   const chatID = routeChat()
   if (chatID && isFx(chatID)) {
-    location.replace(`#/t/${encodeURIComponent(chatID)}`)
+    const msg = "fx sessions open on your Mac"
+    notice = msg
+    setTimeout(() => notice === msg && ((notice = ""), render()), 3000)
+    location.replace("#/")
     return
   }
-  const id = routeSession()
   send({ t: "board", on: onBoard() })
   if (chatID) showChat(chatID)
-  else if (id) showSession(id)
   else showList()
 }
 
@@ -196,7 +154,6 @@ function route() {
 let listEl: HTMLElement | undefined
 
 function showList() {
-  if (term) closeTerm()
   chat = undefined
   send({ t: "leave" })
   render()
@@ -245,9 +202,9 @@ const icon = (name: string) => {
 
 // ---------- folding (saved on the phone) ----------
 
-/** Spaces, Recents and Archived start folded (open the one you want). Keys: space:<id>, recents, archived, s:<id> (children). */
+/** Spaces, Recents, Archived and child sessions start folded (open the one you want). Keys: space:<id>, recents, archived, s:<id> (children). */
 const FOLD_DEFAULTS: Record<string, boolean> = { recents: true, archived: true }
-const foldDefault = (key: string) => FOLD_DEFAULTS[key] ?? key.startsWith("space:")
+const foldDefault = (key: string) => FOLD_DEFAULTS[key] ?? (key.startsWith("space:") || key.startsWith("s:"))
 const folds: Record<string, boolean> = (() => {
   try {
     return JSON.parse(localStorage.getItem("folds") ?? "{}")
@@ -265,99 +222,6 @@ const toggleFold = (key: string) => {
 const PAGE_SIZE = 10
 /** Rows shown in Recents / Archived (Show more adds a page) */
 const shown: Record<string, number> = {}
-
-// ---------- swipe to archive ----------
-
-/** Row swiped open to show its Archive button */
-let swiped: string | null = null
-/** A swipe in progress holds back list re-renders (state pushes), which would drop the row under your finger */
-let swiping = false
-let renderHeld = false
-const ACTION_W = 88
-
-function closeSwiped(except?: HTMLElement) {
-  swiped = null
-  for (const el of document.querySelectorAll<HTMLElement>(".swipe .row")) {
-    if (el === except) continue
-    el.style.transition = "transform 0.18s ease-out"
-    el.style.transform = ""
-    setTimeout(() => el.parentElement?.classList.remove("revealed"), 180)
-  }
-}
-
-function swipeable(s: Session, link: HTMLElement) {
-  const archived = !!s.archived
-  const action = h(
-    "button",
-    {
-      className: `swipe-action${archived ? " unarchive" : ""}`,
-      onclick: () => {
-        swiped = null
-        // Shown right away; the next state push confirms it (children come along on the Mac).
-        const target = snapshot.sessions.find((x) => x.id === s.id)
-        if (target) target.archived = archived ? undefined : Date.now()
-        send({ t: "archive", id: s.id, on: !archived })
-        render()
-      },
-    },
-    archived ? "Unarchive" : "Archive",
-  )
-  const wrap = h("div", { className: "swipe" }, action, link)
-  const set = (x: number, animate: boolean) => {
-    link.style.transition = animate ? "transform 0.18s ease-out" : "none"
-    link.style.transform = x ? `translateX(${x}px)` : ""
-    // Hidden at rest: its color would bleed through the row's rounded corners.
-    wrap.classList.toggle("revealed", x !== 0)
-  }
-  if (swiped === s.id) set(-ACTION_W, false)
-  let start: { x: number; y: number; base: number } | null = null
-  let dragging = false
-  link.addEventListener("pointerdown", (e) => {
-    start = { x: e.clientX, y: e.clientY, base: swiped === s.id ? -ACTION_W : 0 }
-    dragging = false
-  })
-  link.addEventListener("pointermove", (e) => {
-    if (!start) return
-    if (sheetEl) return void (start = null)
-    const dx = e.clientX - start.x
-    const dy = e.clientY - start.y
-    if (!dragging) {
-      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) return void (start = null)
-      if (Math.abs(dx) < 10) return
-      dragging = true
-      swiping = true
-      link.setPointerCapture(e.pointerId)
-      // Only one row open at a time.
-      if (swiped && swiped !== s.id) closeSwiped(link)
-    }
-    set(Math.max(-ACTION_W - 30, Math.min(0, start.base + dx)), false)
-  })
-  const end = (e: PointerEvent) => {
-    if (!start) return
-    const open = dragging && start.base + (e.clientX - start.x) < -ACTION_W / 2
-    if (dragging) {
-      swiped = open ? s.id : swiped === s.id ? null : swiped
-      set(open ? -ACTION_W : 0, true)
-    }
-    start = null
-    swiping = false
-    if (renderHeld) {
-      renderHeld = false
-      setTimeout(render, 200)
-    }
-  }
-  link.addEventListener("pointerup", end)
-  link.addEventListener("pointercancel", end)
-  link.addEventListener("click", (e) => {
-    // A swipe (or tapping an open row) isn't an open.
-    if (dragging || swiped) {
-      e.preventDefault()
-      if (!dragging) closeSwiped()
-    }
-    dragging = false
-  })
-  return wrap
-}
 
 // ---------- long press menu ----------
 
@@ -462,20 +326,13 @@ function sheetAction(label: string, run: () => void, opts: { danger?: boolean; c
 
 const spaceLabel = (id: string | null) => (id ? (snapshot.spaces.find((sp) => sp.id === id)?.name ?? "") : "No space")
 
-/** from: the session screen it's opened on (its own "Open as…" is left out, archiving goes back to the list) */
-function sessionMenu(s: Session, from?: "chat" | "term") {
+/** from: opened on the session's own chat (no "Open", archiving goes back to the list) */
+function sessionMenu(s: Session, from?: "chat") {
   const fx = isFx(s.id)
   const parent = s.parentID ? snapshot.sessions.find((x) => x.id === s.parentID) : undefined
   const sub = [s.archived ? "Archived" : spaceLabel(s.spaceID), fx ? "fx" : "opencode"].join(" · ")
   openSheet(s.title || "Untitled", sub, [
-    ...(fx
-      ? from
-        ? []
-        : [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]
-      : [
-          ...(from === "chat" ? [] : [sheetAction("Open as chat", () => (location.hash = `#/s/${encodeURIComponent(s.id)}`))]),
-          ...(from === "term" ? [] : [sheetAction("Open in terminal", () => (location.hash = `#/t/${encodeURIComponent(s.id)}`))]),
-        ]),
+    ...(fx || from ? [] : [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]),
     sheetAction("New child session", () => {
       creating = `child:${s.id}`
       notice = ""
@@ -553,7 +410,7 @@ function spaceMenu(space: RemoteSnapshot["spaces"][number]) {
 }
 
 /** ⋯ in a session screen's header: the same menu as a long press in the list */
-function sessionMenuButton(id: string, from: "chat" | "term") {
+function sessionMenuButton(id: string, from: "chat") {
   return h(
     "button",
     {
@@ -650,7 +507,7 @@ function row(s: Session, tree?: TreeRow) {
   }
   if (s.statusDetail) a.title = s.statusDetail
   longPress(a, () => sessionMenu(s))
-  return swipeable(s, a)
+  return a
 }
 
 function homeHeader() {
@@ -658,9 +515,8 @@ function homeHeader() {
   return h(
     "header",
     {},
-    h("span", { className: "brand" }, "ctrl"),
+    h("span", { className: "brand" }, "ctrl", h("span", { className: `conn ${connected ? "on" : ""}` })),
     h("nav", { className: "tabs" }, tab("Sessions", "#/", !onBoard()), tab("Board", "#/board", onBoard())),
-    h("span", { className: `conn ${connected ? "on" : ""}` }),
   )
 }
 
@@ -699,7 +555,8 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     icon(open ? "folder-open" : "folder"),
     h("span", { className: "title" }, space.name),
     ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
-    menuButton(space),
+    // ⋯ only on open spaces; a folded one still shows a spinner while a session starts there.
+    ...(open ? [menuButton(space)] : creating === space.id ? [h("span", { className: "spinner" })] : []),
   )
   longPress(header, () => spaceMenu(space))
   const el = h(
@@ -709,7 +566,19 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     ...(open
       ? list.length
         ? sessionTree(list).map((r) => row(r.session, r))
-        : [h("div", { className: "row hint" }, "No sessions yet, tap + to start one")]
+        : [
+            h(
+              "div",
+              { className: "row hint" },
+              "No sessions yet",
+              h(
+                "button",
+                { className: "hint-new", disabled: creating === space.id, onclick: () => startNew(space.id) },
+                creating === space.id ? h("span", { className: "spinner" }) : icon("plus"),
+                "New session",
+              ),
+            ),
+          ]
       : []),
   )
   el.dataset.spaceId = space.id
@@ -762,6 +631,13 @@ const searchInput = h("input", {
 }) as HTMLInputElement
 const searchClear = h("button", { className: "search-clear", title: "Clear", hidden: true }, "×")
 const searchBar = h("div", { className: "search" }, searchInput, searchClear)
+const newChatButton = h("button", { className: "new-chat", title: "New chat", onclick: () => startNew(null) }) as HTMLButtonElement
+/** Search + New chat, built once like the search bar */
+const searchRow = h("div", { className: "search-row" }, searchBar, newChatButton)
+const syncNewChat = () => {
+  newChatButton.disabled = creating !== null
+  newChatButton.replaceChildren(creating === "" ? h("span", { className: "spinner" }) : icon("compose"), "New")
+}
 searchInput.addEventListener("input", () => {
   query = searchInput.value
   searchClear.hidden = !query
@@ -906,16 +782,9 @@ function listBody() {
   // Recents is a view over every live session, spaces are a grouping on top (like the sidebar).
   const recents = [...live].sort((a, b) => b.updated - a.updated)
   const archived = snapshot.sessions.filter((s) => s.archived).sort((a, b) => b.archived! - a.archived!)
-  const newChat = h(
-    "button",
-    { className: "row action", disabled: creating !== null, onclick: () => startNew(null) },
-    creating === "" ? h("span", { className: "spinner" }) : icon("compose"),
-    h("span", { className: "title" }, "New chat"),
-  )
   return h(
     "div",
     { className: "list-body" },
-    newChat,
     h(
       "section",
       { className: "spaces" },
@@ -929,12 +798,14 @@ function listBody() {
 }
 
 function renderList() {
-  return h("div", { className: "list" }, homeHeader(), searchBar, ...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
+  syncNewChat()
+  return h("div", { className: "list" }, homeHeader(), searchRow, ...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
 }
 
-/** Sessions screen already up: swap everything but the search bar. */
+/** Sessions screen already up: swap everything but the search row. */
 function updateList(el: HTMLElement) {
-  for (const child of [...el.children]) if (child !== searchBar) child.remove()
+  syncNewChat()
+  for (const child of [...el.children]) if (child !== searchRow) child.remove()
   el.prepend(homeHeader())
   el.append(...(notice ? [h("div", { className: "notice" }, notice)] : []), listBody())
 }
@@ -1055,158 +926,13 @@ function renderBoard() {
   )
 }
 
-// ---------- session ----------
-
-let term: Terminal | undefined
-let fit: FitAddon | undefined
-let sessionEl: HTMLElement | undefined
-let resizeObs: ResizeObserver | undefined
-let harness: Session["harness"] = "opencode"
-
-const fontSize = () => Number(localStorage.getItem("fontSize")) || FONT.default
-const palette = () => PALETTES[harness][snapshot.dark ? "dark" : "light"]
-
-function openOnServer(id: string) {
-  if (!term) return
-  send({ t: "open", id, cols: term.cols, rows: term.rows })
-}
-
-function showSession(id: string) {
-  chat = undefined
-  const session = snapshot.sessions.find((s) => s.id === id)
-  harness = session?.harness ?? (id.startsWith("fx:") ? "fx" : "opencode")
-  if (term) closeTerm()
-  notice = ""
-  render()
-  const host = sessionEl!.querySelector<HTMLElement>(".term")!
-  host.style.background = palette().background
-  term = new Terminal({
-    fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-    fontSize: fontSize(),
-    lineHeight: 1.1,
-    allowProposedApi: true,
-    cursorBlink: false,
-    scrollback: harness === "fx" ? 5000 : 0,
-    theme: palette(),
-  })
-  fit = new FitAddon()
-  term.loadAddon(fit)
-  term.loadAddon(new UnicodeGraphemesAddon())
-  term.open(host)
-  fit.fit()
-  // Return types a new line (shift+enter, what both TUIs read as "newline"); the send button submits.
-  term.onData((data) => send({ t: "input", data: data === "\r" ? NEWLINE : data }))
-  // The send button only shows while the keyboard is up (the terminal has focus).
-  const screen = sessionEl!
-  term.textarea?.addEventListener("focus", () => screen.classList.add("typing"))
-  term.textarea?.addEventListener("blur", () => screen.classList.remove("typing"))
-  term.onResize(({ cols, rows }) => send({ t: "resize", cols, rows }))
-  resizeObs = new ResizeObserver(() => fit?.fit())
-  resizeObs.observe(host)
-  touchScroll(host, term)
-  openOnServer(id)
-}
-
-function closeTerm() {
-  resizeObs?.disconnect()
-  term?.dispose()
-  term = undefined
-  fit = undefined
-}
-
-/**
- * Touch: a tap focuses the terminal (soft keyboard up). Full-screen TUIs track the mouse, so xterm doesn't
- * scroll them on touch: vertical swipes become wheel events (SGR mouse) the TUI understands. Inline output
- * (fx) keeps xterm's own scrollback.
- */
-function touchScroll(host: HTMLElement, t: Terminal) {
-  let lastY: number | null = null
-  let startY = 0
-  let acc = 0
-  let moved = false
-  host.addEventListener(
-    "touchstart",
-    (e) => {
-      lastY = startY = e.touches[0].clientY
-      acc = 0
-      moved = false
-    },
-    { passive: true },
-  )
-  host.addEventListener(
-    "touchmove",
-    (e) => {
-      if (lastY === null) return
-      const y = e.touches[0].clientY
-      if (Math.abs(y - startY) > 8) moved = true
-      if (t.modes.mouseTrackingMode === "none") return
-      e.preventDefault()
-      e.stopPropagation()
-      acc += y - lastY
-      lastY = y
-      const step = 18
-      const col = Math.floor(t.cols / 2)
-      const line = Math.floor(t.rows / 2)
-      while (Math.abs(acc) >= step) {
-        const up = acc > 0
-        send({ t: "input", data: `\x1b[<${up ? 64 : 65};${col};${line}M` })
-        acc += up ? -step : step
-      }
-    },
-    { passive: false, capture: true },
-  )
-  // A tap (not a swipe) puts you in the terminal: the soft keyboard comes up and typing goes to the TUI.
-  host.addEventListener(
-    "touchend",
-    () => {
-      lastY = null
-      if (!moved) t.focus()
-    },
-    { passive: true },
-  )
-}
-
-function setFont(delta: number) {
-  const size = Math.min(FONT.max, Math.max(FONT.min, fontSize() + delta))
-  localStorage.setItem("fontSize", String(size))
-  if (term) {
-    term.options.fontSize = size
-    fit?.fit()
-  }
-}
-
-function renderSession(id: string) {
-  const session = snapshot.sessions.find((s) => s.id === id)
-  const title = h("span", { className: "title" }, session?.title || "Session")
-  const back = h("a", { className: "back", href: "#/" }, "‹")
-  const minus = h("button", { className: "icon", onclick: () => setFont(-1) }, "A−")
-  const plus = h("button", { className: "icon", onclick: () => setFont(1) }, "A+")
-  const toChat = isFx(id) ? [] : [h("a", { className: "icon", href: `#/s/${encodeURIComponent(id)}` }, "Chat")]
-  return h(
-    "div",
-    { className: "session" },
-    h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus, ...toChat, sessionMenuButton(id, "term")),
-    ...(notice ? [h("div", { className: "notice" }, notice)] : []),
-    h("div", { className: "term" }),
-    h(
-      "button",
-      {
-        className: "send",
-        title: "Send",
-        // Keep focus in the terminal, so the keyboard stays up.
-        onpointerdown: (e: PointerEvent) => e.preventDefault(),
-        onclick: () => send({ t: "input", data: "\r" }),
-      },
-      "↑",
-    ),
-  )
-}
-
 // ---------- chat ----------
 
 type ChatInbound = Extract<Inbound, { t: "chat" | "chat-more" | "chat-update" | "chat-pending" }>
 
 /** The chat on screen: messages by id (live updates replace them in place), oldest first. */
+let sessionEl: HTMLElement | undefined
+
 let chat:
   | {
       id: string
@@ -1231,7 +957,6 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
 
 function showChat(id: string) {
-  if (term) closeTerm()
   if (chat?.id !== id) chat = { id, items: new Map(), cursor: null, pending: [], loaded: false, loadingMore: false }
   notice = ""
   render()
@@ -1266,6 +991,24 @@ function chatReceive(msg: ChatInbound) {
     chat.pending = msg.pending
   }
   updateChatChrome()
+}
+
+/**
+ * The keyboard coming up (or the composer growing, a question showing) shrinks the list from the bottom:
+ * keep what was at the bottom in view instead of letting it slide behind the composer.
+ */
+function anchorBottom(list: HTMLElement) {
+  let fromBottom = 0
+  list.addEventListener("scroll", () => (fromBottom = list.scrollHeight - list.scrollTop - list.clientHeight), { passive: true })
+  let height = 0
+  const ro = new ResizeObserver(() => {
+    // Left the chat: removal reports a last resize.
+    if (!list.isConnected) return ro.disconnect()
+    if (list.clientHeight === height) return
+    height = list.clientHeight
+    list.scrollTop = list.scrollHeight - list.clientHeight - fromBottom
+  })
+  ro.observe(list)
 }
 
 function scrollToBottom() {
@@ -1352,25 +1095,193 @@ function updateChatChrome() {
           )
         : h("span"),
   )
+  // Kept while still pending, so a half-filled question survives pushes.
   const asks = sessionEl.querySelector<HTMLElement>(".chat-asks")!
+  const existing = new Map([...asks.children].map((el) => [(el as HTMLElement).dataset.key!, el as HTMLElement]))
   asks.replaceChildren(
     ...chat.pending.map((p) => {
-      const reply = (decision: "once" | "always" | "reject", label: string, cls = "") =>
-        h("button", { className: `ask-btn ${cls}`, onclick: () => send({ t: "chat-reply", requestID: p.id, decision }) }, label)
-      return h(
-        "div",
-        { className: "ask" },
-        h("div", { className: "ask-detail" }, p.detail),
-        p.kind === "permission"
-          ? h("div", { className: "ask-actions" }, reply("once", "Allow", "primary"), reply("always", "Always"), reply("reject", "Deny"))
-          : h("div", { className: "ask-actions" }, h("a", { className: "ask-btn primary", href: `#/t/${encodeURIComponent(id)}` }, "Answer in terminal")),
-      )
+      const json = JSON.stringify(p)
+      const old = existing.get(p.id)
+      if (old?.dataset.json === json) return old
+      const el = p.kind === "permission" ? permissionEl(p) : questionEl(p)
+      el.dataset.key = p.id
+      el.dataset.json = json
+      return el
     }),
   )
   const session = snapshot.sessions.find((s) => s.id === id)
   sessionEl.querySelector(".title")!.textContent = session?.title || chat.title || "Session"
   const running = session?.status === "running"
   sessionEl.querySelector<HTMLElement>(".stop")!.hidden = !running
+}
+
+function permissionEl(p: Extract<ChatPending, { kind: "permission" }>) {
+  const reply = (decision: "once" | "always" | "reject", label: string, cls = "") =>
+    h("button", { className: `ask-btn ${cls}`, onclick: () => send({ t: "chat-reply", requestID: p.id, decision }) }, label)
+  return h(
+    "div",
+    { className: "ask" },
+    h("div", { className: "ask-detail" }, p.detail),
+    h("div", { className: "ask-actions" }, reply("once", "Allow", "primary"), reply("always", "Always"), reply("reject", "Deny")),
+  )
+}
+
+/** A field shows when it isn't hidden and its `when` conditions hold for the answers so far. */
+const fieldShown = (f: FormField, answers: FormAnswer) =>
+  !f.hidden && (f.when ?? []).every((w) => (answers[w.key] === w.value) === (w.op === "eq"))
+
+const hasValue = (v: FormAnswer[string] | undefined) => v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)
+
+const answerLabel = (f: FormField, v: FormAnswer[string] | undefined) => {
+  if (!hasValue(v)) return "—"
+  const label = (x: string | number | boolean) =>
+    typeof x === "boolean" ? (x ? "Yes" : "No") : (f.options?.find((o) => o.value === x)?.label ?? String(x))
+  return Array.isArray(v) ? v.map(label).join(", ") : label(v!)
+}
+
+/**
+ * An opencode question form, one question at a time like the TUI: pick an option (or several), or type your
+ * own answer, then Next. Several questions end on a review step (tap one to change it) with Submit.
+ */
+function questionEl(p: Extract<ChatPending, { kind: "question" }>) {
+  const answers: FormAnswer = {}
+  /** Typed answers, kept apart from picked options so going back shows both */
+  const own: Record<string, string> = {}
+  for (const f of p.fields) {
+    const d = f.default
+    if (typeof d === "string" || typeof d === "number" || typeof d === "boolean") answers[f.key] = d
+    else if (Array.isArray(d)) answers[f.key] = d.filter((x): x is string => typeof x === "string")
+  }
+  let step = 0
+  const el = h("div", { className: "ask question" })
+  const steps = () => p.fields.filter((f) => fieldShown(f, answers))
+  const multiStep = () => steps().length > 1
+
+  const finish = () => {
+    const answer: FormAnswer = {}
+    for (const f of steps()) if (hasValue(answers[f.key])) answer[f.key] = answers[f.key]
+    el.classList.add("sent")
+    send({ t: "chat-answer", formID: p.id, answer })
+  }
+  const go = (n: number) => {
+    step = n
+    draw()
+  }
+  const next = () => (step < steps().length - 1 || multiStep() ? go(step + 1) : finish())
+
+  function draw() {
+    const list = steps()
+    const review = multiStep() && step >= list.length
+    const top = h(
+      "div",
+      { className: "q-top" },
+      h("span", { className: "q-progress" }, review ? "Review" : multiStep() ? `${step + 1} of ${list.length}` : "Question"),
+      h("button", { className: "q-dismiss", onclick: () => send({ t: "chat-answer", formID: p.id, answer: null }) }, "Dismiss"),
+    )
+    if (review) {
+      el.replaceChildren(
+        top,
+        h("div", { className: "q-heading" }, p.title),
+        ...list.map((f, i) =>
+          h(
+            "button",
+            { className: "q-review", onclick: () => go(i) },
+            h("span", { className: "q-desc" }, f.title || f.key),
+            h("span", { className: "q-label" }, answerLabel(f, answers[f.key])),
+          ),
+        ),
+        h(
+          "div",
+          { className: "ask-actions" },
+          h("button", { className: "ask-btn", onclick: () => go(list.length - 1) }, "Back"),
+          h(
+            "button",
+            { className: "ask-btn primary", disabled: list.some((f) => f.required && f.type !== "external" && !hasValue(answers[f.key])), onclick: finish },
+            "Submit",
+          ),
+        ),
+      )
+      return
+    }
+    const f = list[Math.min(step, list.length - 1)]
+    const picks = f.type === "multiselect" ? (f.options ?? []) : f.type === "boolean" ? [{ value: true, label: "Yes" }, { value: false, label: "No" }] : (f.options ?? [])
+    const multi = f.type === "multiselect"
+    const ownAllowed = f.type !== "boolean" && f.type !== "external" && (!picks.length || f.custom === true)
+    const last = step >= list.length - 1 && !multiStep()
+    const nextBtn = h("button", { className: "ask-btn primary", onclick: next }, last ? "Submit" : "Next") as HTMLButtonElement
+    const syncNext = () => {
+      const empty = !hasValue(answers[f.key])
+      nextBtn.disabled = !!f.required && f.type !== "external" && empty
+      if (!last) nextBtn.textContent = empty && !f.required ? "Skip" : "Next"
+    }
+    const options = picks.map((o) => {
+      const cur = answers[f.key]
+      const on = multi ? Array.isArray(cur) && cur.includes(o.value as string) : cur === o.value
+      return h(
+        "button",
+        {
+          className: `q-option${on ? " on" : ""}${multi ? " multi" : ""}`,
+          onclick: () => {
+            if (multi) {
+              const list = Array.isArray(cur) ? cur : []
+              answers[f.key] = on ? list.filter((x) => x !== o.value) : [...list, o.value as string]
+              draw()
+              return
+            }
+            answers[f.key] = o.value
+            own[f.key] = ""
+            draw()
+            // One pick answers it: on to the next question, like the TUI.
+            if (!last) setTimeout(next, 150)
+          },
+        },
+        h("span", { className: "q-label" }, o.label),
+        ...("description" in o && o.description ? [h("span", { className: "q-desc" }, o.description)] : []),
+      )
+    })
+    const numeric = f.type === "number" || f.type === "integer"
+    const input = ownAllowed
+      ? (h("input", {
+          className: "q-input",
+          type: numeric ? "number" : "text",
+          placeholder: f.placeholder ?? (picks.length ? "Type your own answer…" : "Your answer"),
+          value: own[f.key] ?? (!picks.length && answers[f.key] !== undefined ? String(answers[f.key]) : ""),
+          inputMode: f.type === "integer" ? "numeric" : f.type === "number" ? "decimal" : undefined,
+          enterKeyHint: last ? "send" : "next",
+        }) as HTMLInputElement)
+      : null
+    input?.addEventListener("input", () => {
+      const v = input.value
+      own[f.key] = v
+      if (numeric) answers[f.key] = v === "" ? "" : Number(v)
+      else if (multi) {
+        const picked = (Array.isArray(answers[f.key]) ? (answers[f.key] as string[]) : []).filter((x) => f.options?.some((o) => o.value === x))
+        answers[f.key] = v.trim() ? [...picked, v.trim()] : picked
+      } else answers[f.key] = v
+      // Typing your own answer replaces a picked option.
+      if (!multi) for (const b of el.querySelectorAll(".q-option.on")) b.classList.remove("on")
+      syncNext()
+    })
+    input?.addEventListener("keydown", (e) => e.key === "Enter" && !nextBtn.disabled && next())
+    el.replaceChildren(
+      top,
+      h("div", { className: "q-heading" }, f.title || p.title),
+      ...(f.description ? [h("div", { className: "q-desc q-help" }, f.description)] : []),
+      ...(multi ? [h("div", { className: "q-desc q-help" }, "Pick any")] : []),
+      ...(picks.length ? [h("div", { className: "q-options" }, ...options)] : []),
+      ...(f.type === "external" && f.url ? [h("a", { className: "ask-btn q-link", href: f.url, target: "_blank", rel: "noreferrer" }, "Open link")] : []),
+      ...(input ? [input] : []),
+      h(
+        "div",
+        { className: "ask-actions" },
+        ...(step > 0 ? [h("button", { className: "ask-btn", onclick: () => go(step - 1) }, "Back")] : []),
+        nextBtn,
+      ),
+    )
+    syncNext()
+  }
+  draw()
+  return el
 }
 
 function renderChat(id: string) {
@@ -1398,8 +1309,6 @@ function renderChat(id: string) {
       {},
       h("a", { className: "back", href: "#/" }, "‹"),
       h("span", { className: "title" }, session?.title || "Session"),
-      h("span", { className: `conn ${connected ? "on" : ""}` }),
-      h("a", { className: "icon", href: `#/t/${encodeURIComponent(id)}` }, "Terminal"),
       sessionMenuButton(id, "chat"),
     ),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
@@ -1414,6 +1323,7 @@ function renderChat(id: string) {
     ),
   )
   sessionEl = el
+  anchorBottom(el.querySelector<HTMLElement>(".chat-list")!)
   drawMessages()
   updateChatChrome()
   if (chat?.loaded) requestAnimationFrame(scrollToBottom)
@@ -1423,15 +1333,12 @@ function renderChat(id: string) {
 // ---------- render ----------
 
 /**
- * The list re-renders from scratch (it's small). The session screen is built once per session so the
- * terminal and the half-typed message survive state pushes; only its header updates.
+ * The list re-renders from scratch (it's small). The chat screen is built once per session so the
+ * half-typed message survives state pushes; only its header updates.
  */
 function render() {
-  const chatID = routeChat()
-  const id = routeSession() ?? chatID
-  const screen = chatID ? `chat:${chatID}` : `term:${id}`
+  const id = routeChat()
   if (!id) {
-    if (swiping) return void (renderHeld = true)
     sessionEl?.remove()
     sessionEl = undefined
     if (!onBoard() && listEl?.dataset.screen === location.hash) return void updateList(listEl)
@@ -1446,17 +1353,16 @@ function render() {
   }
   listEl?.remove()
   listEl = undefined
-  if (!sessionEl || sessionEl.dataset.id !== screen) {
+  if (!sessionEl || sessionEl.dataset.id !== id) {
     sessionEl?.remove()
-    sessionEl = chatID ? renderChat(chatID) : renderSession(id)
-    sessionEl.dataset.id = screen
+    sessionEl = renderChat(id)
+    sessionEl.dataset.id = id
     app.append(sessionEl)
     return
   }
-  if (chatID) updateChatChrome()
+  updateChatChrome()
   const session = snapshot.sessions.find((s) => s.id === id)
-  sessionEl.querySelector(".title")!.textContent = session?.title || (chatID && chat?.title) || "Session"
-  sessionEl.querySelector(".conn")!.className = `conn ${connected ? "on" : ""}`
+  sessionEl.querySelector(".title")!.textContent = session?.title || chat?.title || "Session"
   const old = sessionEl.querySelector(".notice")
   if (notice && !old) sessionEl.querySelector("header")!.after(h("div", { className: "notice" }, notice))
   else if (old && !notice) old.remove()
@@ -1474,7 +1380,7 @@ window.visualViewport?.addEventListener("resize", fitViewport)
 fitViewport()
 
 setInterval(() => {
-  if (!routeSession() && !routeChat()) render()
+  if (!routeChat()) render()
 }, 30_000)
 
 // The token is in a cookie now: keep it out of the address bar, history and screenshots.

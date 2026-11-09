@@ -172,31 +172,35 @@ where it lives.
 ## Remote control (experimental)
 
 - Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
-  7338 for dev runs), so your phone lists spaces and sessions, drives their terminals and shows the Board
+  7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and shows the Board
   (`src/main/remote.ts`, `src/remote/`)
 - The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
-- opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
-  quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
+- fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping one
+  says so. There's no terminal view on the phone
 - Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
-  phone; tap a card for its link, a session chip to open it).
-- Sessions mirrors the sidebar: New chat, then Spaces (folders in the sidebar's order, child sessions nested
+  phone; tap a card for its link, a session chip to open it). The top bar shows the connection dot (green
+  when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
+- Sessions mirrors the sidebar: search with a New chat button next to it, then Spaces (folders in the sidebar's order, child sessions nested
   under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
-  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents and Archived start folded;
-  what you fold is saved on the phone. New sessions start with the space's folder, harness and model, and
+  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents, Archived and child sessions start folded;
+  what you fold is saved on the phone. An empty space shows "No sessions yet" followed by a small inline New session button to start
+  one. New sessions start with the space's folder, harness and model, and
   open on the phone without changing the desktop
 - Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
   a snippet, and spaces (tap one to jump to it, unfolded)
-- Swipe a row left to Archive (Unarchive in Archived; children come along, like the sidebar)
-- Long press a session (or ⋯ in its chat / terminal header) for its menu: open as chat or terminal, new child
-  session, rename, move to a space, open parent, detach from parent, archive. Long press a space (or its ⋯)
+- Long press a session (or ⋯ in its chat header) for its menu: open, new child
+  session, rename, move to a space, open parent, detach from parent, archive (unarchive in Archived). Long press a space (or the ⋯ on an open one)
   for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
-  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny, questions
-  link to the terminal (`src/main/remote-chat.ts`). **Terminal** in the header switches to the TUI, **Chat** back
-- fx sessions (and the Terminal view) are a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
-  button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size
+  composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
+  view above it); permissions as Allow / Always / Deny
+  (`src/main/remote-chat.ts`)
+- Questions the agent asks are answered in the chat, one at a time like the TUI ("1 of 3"): tap an option
+  (it moves on to the next question), tick several for multi-select, or type your own answer when the question
+  allows it; Back / Next / Skip, then a Review step (tap an answer to change it) with Submit. Dismiss cancels
+  it. A half-answered question survives live updates
 
 ## Terminal
 

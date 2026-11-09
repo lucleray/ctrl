@@ -264,7 +264,6 @@ const fx: FxSessions = new FxSessions({
 const fxTerms: FxTerminals = new FxTerminals({
   onData: (termID, data, end) => {
     send("pty:data", termID, data, end)
-    remote.fxData(termID, data)
   },
   onChange: () => {
     fx.rebuild()
@@ -385,15 +384,6 @@ const REMOTE_RECENTS = 30
 /** Newest archived sessions the phone lists in its Archived section */
 const REMOTE_ARCHIVED = 30
 
-/** Session the phone's TUI shows, so a theme change restarts it on the same one. */
-let remoteRoute: string | null = null
-const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
-  onData: (data) => remote.tuiData(data),
-  onReset: () => remote.tuiReset(),
-  onRoute: (id) => (remoteRoute = id),
-  onBridge: () => {},
-})
-
 const remoteSnapshot = (): RemoteSnapshot => {
   const { spaces, assignments, archived, parents } = store.data
   const spaceIDs = new Set(spaces.map((s) => s.id))
@@ -487,18 +477,15 @@ const remote: RemoteServer = new RemoteServer({
       .filter((r) => cards.has(r.id))
     void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
   },
-  tui: remoteTui,
-  fx: {
-    open: (sessionID) => fxTermFor(sessionID),
-    backlog: (termID) => fxTerms.backlog(termID),
-    write: (termID, data) => fxTerms.write(termID, data),
-    resize: (termID, size) => fxTerms.resizeTerm(termID, size),
-  },
   chat: {
     page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
     send: async (sessionID, text) => void (await openCodeClient().session.prompt({ sessionID, text })),
     stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
     reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
+    answer: (sessionID, formID, answer) =>
+      answer
+        ? openCodeClient().session.form.reply({ sessionID, formID, answer })
+        : openCodeClient().session.form.cancel({ sessionID, formID }),
     pending: (sessionID) => opencode.pendingFor(sessionID),
     title: (sessionID) => sessionByID(sessionID)?.title,
   },
@@ -720,7 +707,6 @@ const applyTheme = () => {
   // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
   const overrides = { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } }
   terminal.setCliOverrides(overrides, opencodeRoute)
-  remoteTui.setCliOverrides(overrides, remoteRoute)
   fxTerms.colorScheme(dark)
   push()
 }
@@ -1872,7 +1858,6 @@ app.whenReady().then(async () => {
   registerIpc()
   cliServer.start().catch((err) => console.error("[ctrl] cli socket failed", err))
   await terminal.init()
-  await remoteTui.init()
   if (store.data.settings.remoteControl) void remote.setEnabled(true)
   watchBridge()
   loadThemes()
@@ -1925,7 +1910,6 @@ app.on("window-all-closed", () => app.quit())
 app.on("will-quit", () => {
   cliServer.stop()
   remote.stop()
-  remoteTui.dispose()
   terminal.dispose()
   fxTerms.dispose()
   fx.stop()

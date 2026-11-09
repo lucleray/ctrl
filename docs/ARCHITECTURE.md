@@ -220,17 +220,13 @@ Settings → Remote control serves `dist/remote` (built from `src/remote/`) to y
 ```text
 phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: snapshot of spaces + sessions
       ◄──ws /ws─┤                                     ├─► board: cards built like Board.tsx
-                │                                     ├─► opencode: its own TUI (Terminal #2)
-                └ token → HttpOnly cookie, Origin check└─► fx: the desktop's pty (fx-terminals.ts)
+                └ token → HttpOnly cookie, Origin check└─► chat: opencode client (remote-chat.ts)
 ```
 
 - **Listens only on the Tailscale interface** (100.64.0.0/10), or localhost without one, rechecked every 15s.
   The MagicDNS name comes from `tailscale status --json` when the CLI is around.
-- **Separate opencode TUI:** sharing the desktop one would navigate and resize it under you. A second
-  `Terminal` with its own bridge runs at the phone's size, started on first open and stopped after 10 idle
-  minutes. Both TUIs use the same service, so a turn started on one shows up on the other.
-- **fx** can only have one process per session, so the phone mirrors ctrl's: backlog on open, then live output.
-  That pty is resized to the phone while it's viewed and back to the shared size after.
+- **Chat only, no terminal:** the phone never runs or mirrors a TUI. fx has no chat API, so fx sessions are
+  listed but open on the Mac only.
 - **Board:** main places cards with the same `boardPlacement()` as the desktop and sends them flattened
   (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
   (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
@@ -238,7 +234,9 @@ phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: sn
 - **Chat view (opencode):** `src/main/remote-chat.ts` reads one page of `message.list` (newest 40, older ones
   by cursor) and flattens it (text, thinking markers, tool one-liners). Any event about a session someone is
   chatting in re-reads the newest page, at most every 300ms, and the phone patches messages by id. Sending is
-  `session.prompt`, stop is `session.interrupt`, permissions go through `permission.reply`. Markdown renders
+  `session.prompt`, stop is `session.interrupt`, permissions go through `permission.reply`. Questions are opencode
+  forms: `opencode.ts` keeps each pending form's fields, the phone draws them and answers with `session.form.reply`
+  (Dismiss: `session.form.cancel`). Markdown renders
   on the phone with markdown-it, raw HTML off and unsafe link schemes refused.
 - **Cheap for main:** the list is sent only when it changed, and bounded (sessions in spaces + the newest 30
   others). Viewers that fall 8 MB behind are dropped and reconnect.
