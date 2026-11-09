@@ -178,9 +178,19 @@ where it lives.
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
 - opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
   quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
-- Phone screens: Sessions (spaces, then Recents, with status dots; + on a section starts a session there,
-  with the space's folder, harness and model, and opens it on the phone without changing the desktop) and Board (the four columns stacked, one
-  space at a time or all, saved on the phone; tap a card for its link, a session chip to open it).
+- Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
+  phone; tap a card for its link, a session chip to open it).
+- Sessions mirrors the sidebar: New chat, then Spaces (folders in the sidebar's order, child sessions nested
+  under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
+  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents and Archived start folded;
+  what you fold is saved on the phone. New sessions start with the space's folder, harness and model, and
+  open on the phone without changing the desktop
+- Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
+  a snippet, and spaces (tap one to jump to it, unfolded)
+- Swipe a row left to Archive (Unarchive in Archived; children come along, like the sidebar)
+- Long press a session (or ⋯ in its chat / terminal header) for its menu: open as chat or terminal, new child
+  session, rename, move to a space, open parent, detach from parent, archive. Long press a space (or its ⋯)
+  for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
   composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny, questions
