@@ -711,6 +711,42 @@ button {
   margin: 0;
 }
 
+.hint-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0;
+  padding: 6px 12px 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--key-bg);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.hint-new:active {
+  background: var(--row-active);
+}
+
+.hint-new:disabled {
+  opacity: 0.6;
+}
+
+.hint-new .ico {
+  color: inherit;
+}
+
+.hint-new svg {
+  width: 13px;
+  height: 13px;
+}
+
+.hint-new .spinner {
+  margin: 0;
+}
+
 /* ---------- chat ---------- */
 
 .chat-list {

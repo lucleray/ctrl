@@ -713,7 +713,12 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
               "div",
               { className: "row hint" },
               h("span", { className: "title" }, "No sessions yet"),
-              h("button", { className: "new", title: "New session", disabled: creating === space.id, onclick: () => startNew(space.id) }, icon("plus")),
+              h(
+                "button",
+                { className: "hint-new", disabled: creating === space.id, onclick: () => startNew(space.id) },
+                creating === space.id ? h("span", { className: "spinner" }) : icon("plus"),
+                "New session",
+              ),
             ),
           ]
       : []),
