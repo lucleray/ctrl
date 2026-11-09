@@ -4,7 +4,14 @@ type Client = ReturnType<typeof OpenCode.make>
 
 /** One message as the phone's chat view draws it (src/remote/client.ts). */
 export type ChatItem =
-  | { id: string; kind: "user"; time: number; text: string }
+  | {
+      id: string
+      kind: "user"
+      time: number
+      text: string
+      /** Images attached to it, fetched one by one from /file/<session>/<message>/<index> (src/main/remote.ts) */
+      images?: number
+    }
   | {
       id: string
       kind: "assistant"
@@ -49,8 +56,18 @@ function summarize(input: unknown) {
 
 type Message = { id: string; type: string; time: { created: number; completed?: number }; [k: string]: any }
 
+type Attachment = { data: string; mime: string }
+
+function imagesOf(m: Message): Attachment[] {
+  return ((m.files ?? []) as Attachment[]).filter((f) => typeof f.data === "string" && f.mime?.startsWith("image/"))
+}
+
 function toItem(m: Message): ChatItem | null {
-  if (m.type === "user") return m.text?.trim() ? { id: m.id, kind: "user", time: m.time.created, text: m.text } : null
+  if (m.type === "user") {
+    const images = imagesOf(m).length
+    if (!m.text?.trim() && !images) return null
+    return { id: m.id, kind: "user", time: m.time.created, text: m.text ?? "", ...(images ? { images } : {}) }
+  }
   if (m.type !== "assistant") return null
   const parts: ChatPart[] = []
   for (const c of m.content ?? []) {
@@ -80,4 +97,12 @@ export async function chatPage(client: Client, sessionID: string, cursor?: strin
   const items = (res.data as unknown as Message[]).map(toItem).filter((i): i is ChatItem => !!i)
   items.sort((a, b) => a.time - b.time)
   return { items, cursor: res.cursor.next ?? null }
+}
+
+/** The index-th image attached to a message you sent, for the phone's <img> (null when there's none). */
+export async function chatImage(client: Client, sessionID: string, messageID: string, index: number) {
+  const res = (await client.session.message.get({ sessionID, messageID })) as unknown as Message & { data?: Message }
+  const m = res.data ?? res
+  const file = m.type === "user" ? imagesOf(m)[index] : undefined
+  return file ? { mime: file.mime, body: Buffer.from(file.data, "base64") } : null
 }

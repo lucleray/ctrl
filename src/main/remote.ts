@@ -101,7 +101,10 @@ type Deps = {
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
-    send(sessionID: string, text: string): Promise<void>
+    /** images: data: URLs (see cleanImages) */
+    send(sessionID: string, text: string, images: string[]): Promise<void>
+    /** An image attached to a message you sent */
+    image(sessionID: string, messageID: string, index: number): Promise<{ mime: string; body: Buffer } | null>
     stop(sessionID: string): Promise<void>
     reply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
     /** Answer a question form (answer null: dismiss it) */
@@ -135,12 +138,24 @@ type Inbound =
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
-  | { t: "chat-send"; text: string }
+  | { t: "chat-send"; text: string; images?: string[] }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
   | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
 
 const COOKIE = "ctrl_remote"
+/** Photos per message, and the size of each once base64'd (the phone shrinks them well below this). */
+const MAX_IMAGES = 6
+const MAX_IMAGE_CHARS = 12_000_000
+const IMAGE_URL = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+
+/** The images a phone attached to a message: data: URLs of formats models read, size-capped. */
+function cleanImages(images: unknown): string[] {
+  if (!Array.isArray(images)) return []
+  return images
+    .filter((i): i is string => typeof i === "string" && i.length <= MAX_IMAGE_CHARS && IMAGE_URL.test(i))
+    .slice(0, MAX_IMAGES)
+}
 /** Interfaces are checked this often, so Tailscale connecting (or its address changing) is picked up. */
 const RECHECK_MS = 15_000
 /** While a turn streams, the chat view re-reads the newest messages at most this often. */
@@ -316,6 +331,8 @@ export class RemoteServer {
       // Lax, not Strict, for the same reason (Strict cookies skip navigations coming from other apps).
       headers["Set-Cookie"] = `${COOKIE}=${given}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`
     } else if (!this.authorized(req)) return this.deny(res)
+    const image = url.pathname.match(/^\/file\/([\w-]+)\/([\w-]+)\/(\d{1,2})$/)
+    if (image) return this.image(res, image[1], image[2], Number(image[3]))
     const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1)
     if (!/^[\w.-]+$/.test(file)) return this.notFound(res)
     try {
@@ -329,6 +346,14 @@ export class RemoteServer {
     } catch {
       this.notFound(res)
     }
+  }
+
+  private async image(res: ServerResponse, sessionID: string, messageID: string, index: number) {
+    const found = await this.deps.chat.image(sessionID, messageID, index).catch(() => null)
+    if (!found) return this.notFound(res)
+    // A sent message never changes: the phone keeps it.
+    res.writeHead(200, { "Content-Type": found.mime, "Cache-Control": "private, max-age=31536000, immutable" })
+    res.end(found.body)
   }
 
   private deny(res: ServerResponse) {
@@ -382,8 +407,10 @@ export class RemoteServer {
       if (msg.t === "chat-more" && typeof msg.cursor === "string") {
         const page = await this.deps.chat.page(id, msg.cursor)
         if (viewer.chat === id) this.send(viewer, { t: "chat-more", id, ...page })
-      } else if (msg.t === "chat-send" && typeof msg.text === "string" && msg.text.trim()) {
-        await this.deps.chat.send(id, msg.text)
+      } else if (msg.t === "chat-send" && typeof msg.text === "string") {
+        const images = cleanImages(msg.images)
+        if (!msg.text.trim() && !images.length) return
+        await this.deps.chat.send(id, msg.text, images)
         this.sessionEvent(id)
       } else if (msg.t === "chat-stop") {
         await this.deps.chat.stop(id)

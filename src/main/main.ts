@@ -44,7 +44,7 @@ import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
 import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
-import { chatPage } from "./remote-chat"
+import { chatImage, chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -479,7 +479,11 @@ const remote: RemoteServer = new RemoteServer({
   },
   chat: {
     page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
-    send: async (sessionID, text) => void (await openCodeClient().session.prompt({ sessionID, text })),
+    send: async (sessionID, text, images) => {
+      const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
+      await openCodeClient().session.prompt({ sessionID, text, ...(files.length ? { files } : {}) })
+    },
+    image: (sessionID, messageID, index) => chatImage(openCodeClient(), sessionID, messageID, index),
     stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
     reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
     answer: (sessionID, formID, answer) =>
