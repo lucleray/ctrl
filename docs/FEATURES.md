@@ -169,6 +169,25 @@ where it lives.
   browser tabs, the Accessibility tree for Slack, Notion and Linear. Without Accessibility access the window
   offers a button to grant it (`src/companion/native/context.swift`)
 
+## Remote control (experimental)
+
+- Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
+  7338 for dev runs), so your phone lists spaces and sessions, drives their terminals and shows the Board
+  (`src/main/remote.ts`, `src/remote/`)
+- The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
+  listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
+- opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
+  quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
+- Phone screens: Sessions (spaces, then Recents, with status dots; + on a section starts a session there,
+  with the space's folder, harness and model, and opens it on the phone without changing the desktop) and Board (the four columns stacked, one
+  space at a time or all, saved on the phone; tap a card for its link, a session chip to open it).
+- opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
+  tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
+  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny, questions
+  link to the terminal (`src/main/remote-chat.ts`). **Terminal** in the header switches to the TUI, **Chat** back
+- fx sessions (and the Terminal view) are a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
+  button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size
+
 ## Terminal
 
 - Key fixes: ⇧↩ new line, ⌘← / ⌘→ line start / end, ⌘⌫ delete to line start (`translateKey()` in

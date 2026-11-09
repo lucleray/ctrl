@@ -1,6 +1,6 @@
 {
   "name": "ctrl",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -26,6 +26,7 @@
     "@opencode/client": "^2.0.25",
     "@opencode/plugin": "^2.0.25",
     "@resvg/resvg-js": "^2.6.2",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -38,6 +39,7 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "markdown-it": "^15.0.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^5.9.3",

@@ -47,6 +47,31 @@ export const configs = [
   },
 ]
 
+// Remote control's web app (src/main/remote.ts serves dist/remote to the phone).
+configs.push({
+  ...common,
+  platform: "browser",
+  target: "safari16",
+  entryPoints: ["src/remote/client.ts"],
+  outdir: "dist/remote",
+  entryNames: "client",
+  format: "esm",
+  sourcemap: false,
+  minify: true,
+  plugins: [
+    {
+      name: "remote-html",
+      setup(build) {
+        build.onEnd(() => {
+          mkdirSync("dist/remote", { recursive: true })
+          copyFileSync("src/remote/index.html", "dist/remote/index.html")
+          copyFileSync("build/icon.png", "dist/remote/icon.png")
+        })
+      },
+    },
+  ],
+})
+
 // The companion's helper (src/companion/native): a universal binary, shipped outside app.asar
 // (Contents/Resources/companion). Rebuilt only when the source changed (~20s for both archs).
 const NATIVE_SRC = "src/companion/native/context.swift"

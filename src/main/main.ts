@@ -33,7 +33,7 @@ import { CliInstall } from "./cli-install"
 import { CliServer } from "./cli-server"
 import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
-import { ADAPTERS } from "../shared/adapters"
+import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
 import { checkFx, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
@@ -43,6 +43,8 @@ import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
+import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
+import { chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -170,6 +172,7 @@ const state = (): AppState => ({
       ? (opencode.problem ?? (bridgeProblem ? "The embedded opencode TUI isn't responding" : undefined))
       : undefined) ?? fx.problem ?? undefined,
   error,
+  remote: remote.status,
 })
 
 let pushQueued = false
@@ -195,6 +198,7 @@ const push = () => {
     attention.refreshBadge(sessions)
     send("state", state())
     companion.changed()
+    remote.changed()
     for (const cb of [...changeListeners]) {
       try {
         cb()
@@ -258,7 +262,10 @@ const fx: FxSessions = new FxSessions({
 })
 
 const fxTerms: FxTerminals = new FxTerminals({
-  onData: (termID, data, end) => send("pty:data", termID, data, end),
+  onData: (termID, data, end) => {
+    send("pty:data", termID, data, end)
+    remote.fxData(termID, data)
+  },
   onChange: () => {
     fx.rebuild()
     saveOpen()
@@ -294,6 +301,7 @@ const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("user
   send("resources:changed", ids)
   adapters.resourcesChanged(ids)
   companion.changed()
+  remote.boardChanged()
 })
 
 const adapters = new AdapterService(
@@ -302,7 +310,10 @@ const adapters = new AdapterService(
   store.data.settings.adapterModes,
   {
     list: (sessionIDs) => search.resources(sessionIDs),
-    onMeta: (metas) => send("resources:meta", metas),
+    onMeta: (metas) => {
+      send("resources:meta", metas)
+      remote.boardChanged()
+    },
     onStatus: push,
   },
 )
@@ -365,6 +376,144 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
     watchBridge()
     push()
   },
+})
+
+// ---------- remote control (src/main/remote.ts) ----------
+
+/** Unassigned sessions the phone lists besides the spaces' (bounded, like the sidebar's Recents pages). */
+const REMOTE_RECENTS = 30
+
+/** Session the phone's TUI shows, so a theme change restarts it on the same one. */
+let remoteRoute: string | null = null
+const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
+  onData: (data) => remote.tuiData(data),
+  onReset: () => remote.tuiReset(),
+  onRoute: (id) => (remoteRoute = id),
+  onBridge: () => {},
+})
+
+const remoteSnapshot = (): RemoteSnapshot => {
+  const { spaces, assignments, archived } = store.data
+  const spaceIDs = new Set(spaces.map((s) => s.id))
+  let others = 0
+  const list = sessions.filter((s) => {
+    if (archived[s.id] || pendingDeletes.has(s.id)) return false
+    if (spaceIDs.has(assignments[s.id])) return true
+    return others++ < REMOTE_RECENTS
+  })
+  return {
+    dark: nativeTheme.shouldUseDarkColors,
+    spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
+    sessions: list.map((s) => ({
+      id: s.id,
+      harness: s.harness,
+      title: s.title,
+      status: s.status,
+      statusDetail: s.statusDetail,
+      updated: s.updated,
+      spaceID: spaceIDs.has(assignments[s.id]) ? assignments[s.id] : null,
+      directory: s.directory,
+    })),
+  }
+}
+
+/** The Board for phones: same cards as src/renderer/Board.tsx, flattened to what the phone draws. */
+const remoteBoard = (): RemoteBoardCard[] => {
+  const ids = [...new Set([...sessions.map((s) => s.id), ...Object.keys(store.data.assignments)])]
+  const items = search.resourcesWithSessions(ids).filter((r) => adapters.shows(r.type))
+  const me = adapters.adapters.find((a) => a.id === "github")?.status?.account
+  const now = Date.now()
+  const spaceNames = new Map(store.data.spaces.map((s) => [s.id, s.name]))
+  const cards: RemoteBoardCard[] = []
+  for (const r of items) {
+    const meta = adapters.get(r)
+    const placement = boardPlacement({ ...r, meta }, { me, now })
+    if (!placement) continue
+    const live = meta?.missing ? undefined : meta
+    const parsed = resourceType(r.type)?.describe(r.data) ?? { title: r.url }
+    const mentioning = (r.sessionIDs ?? [])
+      .map((id) => sessionByID(id))
+      .filter((x): x is SessionItem => !!x)
+      .sort((a, b) => b.updated - a.updated)
+    cards.push({
+      id: r.id,
+      url: r.url,
+      source: adapterOf(r.type)?.name ?? "",
+      title: live?.title ?? parsed.title,
+      subtitle: live?.subtitle ?? parsed.subtitle,
+      tone: live?.tone,
+      chips: live?.chips?.map((c) => ({ text: c.text, tone: c.tone })) ?? [],
+      stage: placement.stage,
+      reason: placement.reason,
+      last: r.last,
+      spaces: [...new Set((r.sessionIDs ?? []).map((id) => store.data.assignments[id] ?? null))].map((id) => ({
+        id,
+        name: id ? (spaceNames.get(id) ?? "") : "No space",
+      })),
+      sessions: mentioning.slice(0, 2).map((x) => ({ id: x.id, title: x.title })),
+    })
+  }
+  return cards.sort((a, b) => b.last - a.last)
+}
+
+// Dev runs get their own port so they can run next to the installed app.
+const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
+
+const openCodeClient = () => {
+  if (!opencode.client) throw new Error("The opencode service isn't connected")
+  return opencode.client
+}
+opencode.onSessionEvent = (sessionID) => remote.sessionEvent(sessionID)
+
+const remote: RemoteServer = new RemoteServer({
+  port: REMOTE_PORT,
+  staticDir: join(root, "dist/remote"),
+  token: () => store.remoteToken(),
+  snapshot: remoteSnapshot,
+  board: remoteBoard,
+  // Freshen live details (PR states, CI) for what the phone is about to show, like the panel does on focus.
+  refreshBoard: (cards) => {
+    const items = search
+      .resourcesWithSessions([...new Set([...sessions.map((s) => s.id), ...Object.keys(store.data.assignments)])])
+      .filter((r) => cards.has(r.id))
+    void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
+  },
+  tui: remoteTui,
+  fx: {
+    open: (sessionID) => fxTermFor(sessionID),
+    backlog: (termID) => fxTerms.backlog(termID),
+    write: (termID, data) => fxTerms.write(termID, data),
+    resize: (termID, size) => fxTerms.resizeTerm(termID, size),
+  },
+  chat: {
+    page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
+    send: async (sessionID, text) => void (await openCodeClient().session.prompt({ sessionID, text })),
+    stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
+    reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
+    pending: (sessionID) => opencode.pendingFor(sessionID),
+    title: (sessionID) => sessionByID(sessionID)?.title,
+  },
+  // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
+  create: async (spaceID) => {
+    const space = spaceID && store.space(spaceID) ? spaceID : null
+    const created = await newSession(space, undefined, undefined, { focus: false })
+    let id = "id" in created ? created.id : null
+    for (let i = 0; i < 150 && !(id && sessionByID(id)); i++) {
+      // fx reports its session id once its process is up.
+      if (!id && "terminal" in created) id = fxTerms.sessionOf(created.terminal) ?? null
+      await sleep(100)
+    }
+    if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
+    return id
+  },
+  cantOpen: (sessionID) => {
+    const session = sessionByID(sessionID)
+    if (!session) return "This session doesn't exist anymore"
+    if (session.harness === "opencode" && !opencodeStarted) return "opencode isn't installed on this Mac"
+    if (session.elsewhere) return "This session is open in fx in another terminal"
+    return null
+  },
+  onStatus: push,
 })
 
 // ---------- opencode install, read-session skill, updates ----------
@@ -521,10 +670,9 @@ const applyTheme = () => {
   const dark = nativeTheme.shouldUseDarkColors
   win?.setBackgroundColor(dark ? DARK_BG : LIGHT_BG)
   // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
-  terminal.setCliOverrides(
-    { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } },
-    opencodeRoute,
-  )
+  const overrides = { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } }
+  terminal.setCliOverrides(overrides, opencodeRoute)
+  remoteTui.setCliOverrides(overrides, remoteRoute)
   fxTerms.colorScheme(dark)
   push()
 }
@@ -532,6 +680,7 @@ const applyTheme = () => {
 const applySettings = (patch: Partial<Settings>) => {
   if (patch.fontSize !== undefined) patch = { ...patch, fontSize: clampFontSize(patch.fontSize) }
   store.setSettings(patch)
+  if (patch.remoteControl !== undefined) void remote.setEnabled(patch.remoteControl)
   if (patch.adapterModes) {
     adapters.setModes(patch.adapterModes)
     // Panels re-read their resources: without an adapter that's off, with or without its details.
@@ -1675,6 +1824,8 @@ app.whenReady().then(async () => {
   registerIpc()
   cliServer.start().catch((err) => console.error("[ctrl] cli socket failed", err))
   await terminal.init()
+  await remoteTui.init()
+  if (store.data.settings.remoteControl) void remote.setEnabled(true)
   watchBridge()
   loadThemes()
   applyTheme()
@@ -1725,6 +1876,8 @@ app.on("window-all-closed", () => app.quit())
 
 app.on("will-quit", () => {
   cliServer.stop()
+  remote.stop()
+  remoteTui.dispose()
   terminal.dispose()
   fxTerms.dispose()
   fx.stop()

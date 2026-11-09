@@ -21,6 +21,7 @@ import {
   type SkillStatus,
   type CliStatus,
   type SoundEvent,
+  type RemoteStatus,
   type UpdateStatus,
   SOUND_EVENTS,
   SYSTEM_SOUNDS,
@@ -46,6 +47,55 @@ const MCP_LABELS: Record<McpStatus, string> = {
   disabled: "Disabled",
   failed: "Failed",
   needs_auth: "Needs sign-in",
+}
+
+function RemoteRows({ remote }: { remote: RemoteStatus }) {
+  const [copied, setCopied] = useState<string | null>(null)
+  if (remote.state === "off") return null
+  if (remote.state === "error")
+    return (
+      <div className="setting setting-indent">
+        <div>
+          <div className="setting-title">Not running</div>
+          <div className="setting-desc mcp-error">{remote.detail}</div>
+        </div>
+      </div>
+    )
+  return (
+    <>
+      {remote.state === "local" && (
+        <div className="setting setting-indent">
+          <div>
+            <div className="setting-title">Tailscale isn't connected</div>
+            <div className="setting-desc">
+              Only this Mac can open the page for now. Connect Tailscale on this Mac and your phone, and the link
+              below switches to your tailnet address.
+            </div>
+          </div>
+        </div>
+      )}
+      {remote.urls.map((url) => (
+        <div className="setting setting-indent" key={url}>
+          <div style={{ minWidth: 0 }}>
+            <div className="setting-title">{new URL(url).host}</div>
+            <div className="setting-desc">Open this link on your phone. It holds a secret, so keep it private.</div>
+          </div>
+          <button
+            className="btn"
+            onClick={() =>
+              void navigator.clipboard.writeText(url).then(() => {
+                setCopied(url)
+                setTimeout(() => setCopied(null), 1500)
+              })
+            }
+          >
+            <Icon name={copied === url ? "check" : "copy"} />
+            {copied === url ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      ))}
+    </>
+  )
 }
 
 function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
@@ -463,6 +513,7 @@ type SectionID =
   | "mcp"
   | "adapters"
   | "companion"
+  | "remote"
   | "about"
 
 /** The sidebar, in order. `keywords` find a section by words none of its rows say. */
@@ -475,6 +526,7 @@ const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; ke
   { id: "mcp", label: "MCP servers", icon: "plug", group: "Integrations" },
   { id: "adapters", label: "Resource adapters", icon: "link", group: "Integrations", keywords: "links" },
   { id: "companion", label: "Companion", icon: "panel-float", group: "Integrations" },
+  { id: "remote", label: "Remote control", icon: "phone", group: "Integrations", keywords: "phone mobile tailscale" },
   { id: "about", label: "About", icon: "info", keywords: "version" },
 ]
 
@@ -924,6 +976,27 @@ export function Settings({
           </div>
           <Toggle on={settings.companion} onChange={(companion) => void window.ctrl.setSettings({ companion })} />
         </div>
+      </div>
+    ),
+
+    remote: (
+      <div className="settings-card">
+        <div className="setting">
+          <div>
+            <div className="setting-title">
+              Remote control <span className="pill">Experimental</span>
+            </div>
+            <div className="setting-desc">
+              Use ctrl from your phone: a web page on your Tailscale network lists your spaces and sessions, streams
+              their terminals and shows the Board. macOS may ask once to allow incoming connections.
+            </div>
+          </div>
+          <Toggle
+            on={settings.remoteControl}
+            onChange={(remoteControl) => void window.ctrl.setSettings({ remoteControl })}
+          />
+        </div>
+        {settings.remoteControl && <RemoteRows remote={state.remote} />}
       </div>
     ),
 
