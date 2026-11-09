@@ -1166,3 +1166,13 @@ button {
   font-size: 16px;
   font-weight: 600;
 }
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  padding: 4px 4px 4px 6px;
+}
+
+.menu-btn .ico {
+  color: var(--text);
+}

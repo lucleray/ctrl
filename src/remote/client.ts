@@ -233,7 +233,7 @@ const ICONS: Record<string, string> = {
   "chevron-right": '<path d="M6 4l4 4-4 4"/>',
   "chevron-down": '<path d="M4 6l4 4 4-4"/>',
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',
-  dots: '<circle cx="3.5" cy="8" r=".9" fill="currentColor"/><circle cx="8" cy="8" r=".9" fill="currentColor"/><circle cx="12.5" cy="8" r=".9" fill="currentColor"/>',
+  dots: '<circle cx="3.5" cy="8" r=".6" fill="currentColor"/><circle cx="8" cy="8" r=".6" fill="currentColor"/><circle cx="12.5" cy="8" r=".6" fill="currentColor"/>',
   compose: '<path d="M7.5 3.5h-3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-3"/><path d="M11.3 2.9a1.3 1.3 0 0 1 1.8 1.8L8.5 9.3l-2.3.5.5-2.3z"/>',
 }
 
@@ -462,16 +462,19 @@ function sheetAction(label: string, run: () => void, opts: { danger?: boolean; c
 
 const spaceLabel = (id: string | null) => (id ? (snapshot.spaces.find((sp) => sp.id === id)?.name ?? "") : "No space")
 
-function sessionMenu(s: Session) {
+/** from: the session screen it's opened on (its own "Open as…" is left out, archiving goes back to the list) */
+function sessionMenu(s: Session, from?: "chat" | "term") {
   const fx = isFx(s.id)
   const parent = s.parentID ? snapshot.sessions.find((x) => x.id === s.parentID) : undefined
   const sub = [s.archived ? "Archived" : spaceLabel(s.spaceID), fx ? "fx" : "opencode"].join(" · ")
   openSheet(s.title || "Untitled", sub, [
     ...(fx
-      ? [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]
+      ? from
+        ? []
+        : [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]
       : [
-          sheetAction("Open as chat", () => (location.hash = `#/s/${encodeURIComponent(s.id)}`)),
-          sheetAction("Open in terminal", () => (location.hash = `#/t/${encodeURIComponent(s.id)}`)),
+          ...(from === "chat" ? [] : [sheetAction("Open as chat", () => (location.hash = `#/s/${encodeURIComponent(s.id)}`))]),
+          ...(from === "term" ? [] : [sheetAction("Open in terminal", () => (location.hash = `#/t/${encodeURIComponent(s.id)}`))]),
         ]),
     sheetAction("New child session", () => {
       creating = `child:${s.id}`
@@ -496,7 +499,9 @@ function sessionMenu(s: Session) {
       () => {
         s.archived = s.archived ? undefined : Date.now()
         send({ t: "archive", id: s.id, on: !!s.archived })
-        render()
+        // Archived from its own screen: it's done, back to the list (like the desktop leaving it).
+        if (from && s.archived) location.hash = "#/"
+        else render()
       },
       { danger: !s.archived },
     ),
@@ -545,6 +550,24 @@ function spaceMenu(space: RemoteSnapshot["spaces"][number]) {
       location.hash = "#/board"
     }),
   ])
+}
+
+/** ⋯ in a session screen's header: the same menu as a long press in the list */
+function sessionMenuButton(id: string, from: "chat" | "term") {
+  return h(
+    "button",
+    {
+      className: "icon menu-btn",
+      title: "More",
+      onclick: () => {
+        const s = snapshot.sessions.find((x) => x.id === id)
+        if (!s) return void ((notice = "This session isn't in the list anymore"), render())
+        sessionMenu(s, from)
+        sheetOpened = 0
+      },
+    },
+    icon("dots"),
+  )
 }
 
 // ---------- rows ----------
@@ -1162,7 +1185,7 @@ function renderSession(id: string) {
   return h(
     "div",
     { className: "session" },
-    h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus, ...toChat),
+    h("header", {}, back, title, h("span", { className: `conn ${connected ? "on" : ""}` }), minus, plus, ...toChat, sessionMenuButton(id, "term")),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     h("div", { className: "term" }),
     h(
@@ -1377,6 +1400,7 @@ function renderChat(id: string) {
       h("span", { className: "title" }, session?.title || "Session"),
       h("span", { className: `conn ${connected ? "on" : ""}` }),
       h("a", { className: "icon", href: `#/t/${encodeURIComponent(id)}` }, "Terminal"),
+      sessionMenuButton(id, "chat"),
     ),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
     h("div", { className: "chat-list" }, h("div", { className: "chat-top" })),
