@@ -197,9 +197,10 @@ where it lives.
   composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
   view above it); permissions as Allow / Always / Deny
   (`src/main/remote-chat.ts`)
-- Questions the agent asks are answered in the chat: options as tappable choices (several for multi-select),
-  "type your own" when the question allows it, text / number inputs, Yes / No; Send answers, Dismiss cancels
-  it. A half-filled question survives live updates
+- Questions the agent asks are answered in the chat, one at a time like the TUI ("1 of 3"): tap an option
+  (it moves on to the next question), tick several for multi-select, or type your own answer when the question
+  allows it; Back / Next / Skip, then a Review step (tap an answer to change it) with Submit. Dismiss cancels
+  it. A half-answered question survives live updates
 
 ## Terminal
 

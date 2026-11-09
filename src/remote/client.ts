@@ -1132,112 +1132,156 @@ const fieldShown = (f: FormField, answers: FormAnswer) =>
 
 const hasValue = (v: FormAnswer[string] | undefined) => v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)
 
-/** An opencode question form: options as chips, text and numbers as inputs, answered with chat-answer. */
+const answerLabel = (f: FormField, v: FormAnswer[string] | undefined) => {
+  if (!hasValue(v)) return "—"
+  const label = (x: string | number | boolean) =>
+    typeof x === "boolean" ? (x ? "Yes" : "No") : (f.options?.find((o) => o.value === x)?.label ?? String(x))
+  return Array.isArray(v) ? v.map(label).join(", ") : label(v!)
+}
+
+/**
+ * An opencode question form, one question at a time like the TUI: pick an option (or several), or type your
+ * own answer, then Next. Several questions end on a review step (tap one to change it) with Submit.
+ */
 function questionEl(p: Extract<ChatPending, { kind: "question" }>) {
   const answers: FormAnswer = {}
+  /** Typed answers, kept apart from picked options so going back shows both */
+  const own: Record<string, string> = {}
   for (const f of p.fields) {
     const d = f.default
     if (typeof d === "string" || typeof d === "number" || typeof d === "boolean") answers[f.key] = d
     else if (Array.isArray(d)) answers[f.key] = d.filter((x): x is string => typeof x === "string")
   }
-  const submit = h("button", { className: "ask-btn primary" }, "Send") as HTMLButtonElement
-  /** Chip redraws by field, so typing your own answer unselects the chips */
-  const redraw: Record<string, () => void> = {}
-  const typed: Record<string, HTMLInputElement> = {}
-  const sync = () => {
-    for (const row of wraps) row.el.hidden = !fieldShown(row.f, answers)
-    const shown = wraps.filter((r) => !r.el.hidden).map((r) => r.f)
-    submit.disabled = shown.some((f) => f.required && f.type !== "external" && !hasValue(answers[f.key]))
+  let step = 0
+  const el = h("div", { className: "ask question" })
+  const steps = () => p.fields.filter((f) => fieldShown(f, answers))
+  const multiStep = () => steps().length > 1
+
+  const finish = () => {
+    const answer: FormAnswer = {}
+    for (const f of steps()) if (hasValue(answers[f.key])) answer[f.key] = answers[f.key]
+    el.classList.add("sent")
+    send({ t: "chat-answer", formID: p.id, answer })
   }
-  const chips = (f: FormField, options: { value: string | boolean; label: string; description?: string }[], multi: boolean) => {
-    const box = h("div", { className: `q-options${f.type === "boolean" ? " inline" : ""}` })
-    const draw = () => {
-      const cur = answers[f.key]
-      box.replaceChildren(
-        ...options.map((o) => {
-          const on = multi ? Array.isArray(cur) && cur.includes(o.value as string) : cur === o.value
-          return h(
-            "button",
-            {
-              className: `q-option${on ? " on" : ""}`,
-              onclick: () => {
-                if (multi) {
-                  const list = Array.isArray(cur) ? cur : []
-                  answers[f.key] = on ? list.filter((x) => x !== o.value) : [...list, o.value as string]
-                } else {
-                  answers[f.key] = o.value
-                  if (typed[f.key]) typed[f.key].value = ""
-                }
-                draw()
-                sync()
-              },
-            },
-            h("span", { className: "q-label" }, o.label),
-            ...(o.description ? [h("span", { className: "q-desc" }, o.description)] : []),
-          )
-        }),
-      )
-    }
+  const go = (n: number) => {
+    step = n
     draw()
-    redraw[f.key] = draw
-    return box
   }
-  const input = (f: FormField, type: "text" | "number") => {
-    const el = h("input", {
-      className: "q-input",
-      type,
-      placeholder: f.placeholder ?? (f.options ? "Or type your own…" : "Your answer"),
-      value: !f.options && answers[f.key] !== undefined ? String(answers[f.key]) : "",
-      inputMode: f.type === "integer" ? "numeric" : f.type === "number" ? "decimal" : undefined,
-    }) as HTMLInputElement
-    typed[f.key] = el
-    el.addEventListener("input", () => {
-      const v = el.value
-      if (type === "number") answers[f.key] = v === "" ? "" : Number(v)
-      else if (f.type === "multiselect") {
+  const next = () => (step < steps().length - 1 || multiStep() ? go(step + 1) : finish())
+
+  function draw() {
+    const list = steps()
+    const review = multiStep() && step >= list.length
+    const top = h(
+      "div",
+      { className: "q-top" },
+      h("span", { className: "q-progress" }, review ? "Review" : multiStep() ? `${step + 1} of ${list.length}` : "Question"),
+      h("button", { className: "q-dismiss", onclick: () => send({ t: "chat-answer", formID: p.id, answer: null }) }, "Dismiss"),
+    )
+    if (review) {
+      el.replaceChildren(
+        top,
+        h("div", { className: "q-heading" }, p.title),
+        ...list.map((f, i) =>
+          h(
+            "button",
+            { className: "q-review", onclick: () => go(i) },
+            h("span", { className: "q-desc" }, f.title || f.key),
+            h("span", { className: "q-label" }, answerLabel(f, answers[f.key])),
+          ),
+        ),
+        h(
+          "div",
+          { className: "ask-actions" },
+          h("button", { className: "ask-btn", onclick: () => go(list.length - 1) }, "Back"),
+          h(
+            "button",
+            { className: "ask-btn primary", disabled: list.some((f) => f.required && f.type !== "external" && !hasValue(answers[f.key])), onclick: finish },
+            "Submit",
+          ),
+        ),
+      )
+      return
+    }
+    const f = list[Math.min(step, list.length - 1)]
+    const picks = f.type === "multiselect" ? (f.options ?? []) : f.type === "boolean" ? [{ value: true, label: "Yes" }, { value: false, label: "No" }] : (f.options ?? [])
+    const multi = f.type === "multiselect"
+    const ownAllowed = f.type !== "boolean" && f.type !== "external" && (!picks.length || f.custom === true)
+    const last = step >= list.length - 1 && !multiStep()
+    const nextBtn = h("button", { className: "ask-btn primary", onclick: next }, last ? "Submit" : "Next") as HTMLButtonElement
+    const syncNext = () => {
+      const empty = !hasValue(answers[f.key])
+      nextBtn.disabled = !!f.required && f.type !== "external" && empty
+      if (!last) nextBtn.textContent = empty && !f.required ? "Skip" : "Next"
+    }
+    const options = picks.map((o) => {
+      const cur = answers[f.key]
+      const on = multi ? Array.isArray(cur) && cur.includes(o.value as string) : cur === o.value
+      return h(
+        "button",
+        {
+          className: `q-option${on ? " on" : ""}${multi ? " multi" : ""}`,
+          onclick: () => {
+            if (multi) {
+              const list = Array.isArray(cur) ? cur : []
+              answers[f.key] = on ? list.filter((x) => x !== o.value) : [...list, o.value as string]
+              draw()
+              return
+            }
+            answers[f.key] = o.value
+            own[f.key] = ""
+            draw()
+            // One pick answers it: on to the next question, like the TUI.
+            if (!last) setTimeout(next, 150)
+          },
+        },
+        h("span", { className: "q-label" }, o.label),
+        ...("description" in o && o.description ? [h("span", { className: "q-desc" }, o.description)] : []),
+      )
+    })
+    const numeric = f.type === "number" || f.type === "integer"
+    const input = ownAllowed
+      ? (h("input", {
+          className: "q-input",
+          type: numeric ? "number" : "text",
+          placeholder: f.placeholder ?? (picks.length ? "Type your own answer…" : "Your answer"),
+          value: own[f.key] ?? (!picks.length && answers[f.key] !== undefined ? String(answers[f.key]) : ""),
+          inputMode: f.type === "integer" ? "numeric" : f.type === "number" ? "decimal" : undefined,
+          enterKeyHint: last ? "send" : "next",
+        }) as HTMLInputElement)
+      : null
+    input?.addEventListener("input", () => {
+      const v = input.value
+      own[f.key] = v
+      if (numeric) answers[f.key] = v === "" ? "" : Number(v)
+      else if (multi) {
         const picked = (Array.isArray(answers[f.key]) ? (answers[f.key] as string[]) : []).filter((x) => f.options?.some((o) => o.value === x))
         answers[f.key] = v.trim() ? [...picked, v.trim()] : picked
       } else answers[f.key] = v
-      redraw[f.key]?.()
-      sync()
+      // Typing your own answer replaces a picked option.
+      if (!multi) for (const b of el.querySelectorAll(".q-option.on")) b.classList.remove("on")
+      syncNext()
     })
-    return el
+    input?.addEventListener("keydown", (e) => e.key === "Enter" && !nextBtn.disabled && next())
+    el.replaceChildren(
+      top,
+      h("div", { className: "q-heading" }, f.title || p.title),
+      ...(f.description ? [h("div", { className: "q-desc q-help" }, f.description)] : []),
+      ...(multi ? [h("div", { className: "q-desc q-help" }, "Pick any")] : []),
+      ...(picks.length ? [h("div", { className: "q-options" }, ...options)] : []),
+      ...(f.type === "external" && f.url ? [h("a", { className: "ask-btn q-link", href: f.url, target: "_blank", rel: "noreferrer" }, "Open link")] : []),
+      ...(input ? [input] : []),
+      h(
+        "div",
+        { className: "ask-actions" },
+        ...(step > 0 ? [h("button", { className: "ask-btn", onclick: () => go(step - 1) }, "Back")] : []),
+        nextBtn,
+      ),
+    )
+    syncNext()
   }
-  const fieldBody = (f: FormField): Node[] => {
-    if (f.type === "external") return f.url ? [h("a", { className: "ask-btn", href: f.url, target: "_blank", rel: "noreferrer" }, "Open link")] : []
-    if (f.type === "boolean")
-      return [chips(f, [{ value: true, label: "Yes" }, { value: false, label: "No" }], false)]
-    if (f.type === "number" || f.type === "integer") return [input(f, "number")]
-    if (f.type === "multiselect") return [chips(f, f.options ?? [], true), ...(f.custom ? [input(f, "text")] : [])]
-    if (f.options?.length) return [chips(f, f.options, false), ...(f.custom ? [input(f, "text")] : [])]
-    return [input(f, "text")]
-  }
-  const wraps = p.fields.map((f) => ({
-    f,
-    el: h(
-      "div",
-      { className: "q-field" },
-      ...(f.title && f.title !== p.title ? [h("div", { className: "q-title" }, f.title)] : []),
-      ...(f.description ? [h("div", { className: "q-desc" }, f.description)] : []),
-      ...fieldBody(f),
-    ),
-  }))
-  submit.onclick = () => {
-    const shown = wraps.filter((r) => !r.el.hidden).map((r) => r.f.key)
-    const answer: FormAnswer = {}
-    for (const k of shown) if (hasValue(answers[k])) answer[k] = answers[k]
-    submit.disabled = true
-    send({ t: "chat-answer", formID: p.id, answer })
-  }
-  const dismiss = h("button", { className: "ask-btn", onclick: () => send({ t: "chat-answer", formID: p.id, answer: null }) }, "Dismiss")
-  sync()
-  return h(
-    "div",
-    { className: "ask question" },
-    h("div", { className: "ask-detail q-heading" }, p.title),
-    ...wraps.map((r) => r.el),
-    h("div", { className: "ask-actions" }, submit, dismiss),
-  )
+  draw()
+  return el
 }
 
 function renderChat(id: string) {
