@@ -708,7 +708,14 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     ...(open
       ? list.length
         ? sessionTree(list).map((r) => row(r.session, r))
-        : [h("div", { className: "row hint" }, "No sessions yet, tap + to start one")]
+        : [
+            h(
+              "div",
+              { className: "row hint" },
+              h("span", { className: "title" }, "No sessions yet"),
+              h("button", { className: "new", title: "New session", disabled: creating === space.id, onclick: () => startNew(space.id) }, icon("plus")),
+            ),
+          ]
       : []),
   )
   el.dataset.spaceId = space.id
