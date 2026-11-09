@@ -670,6 +670,24 @@ const startNew = (spaceID: string | null) => {
   render()
 }
 
+/** The space's ⋯: same menu as a long press. Shows a spinner while a session starts there. */
+function menuButton(space: RemoteSnapshot["spaces"][number]) {
+  return h(
+    "button",
+    {
+      className: "new",
+      title: "More",
+      onclick: (e: MouseEvent) => {
+        e.stopPropagation()
+        spaceMenu(space)
+        // Opened by a tap, not a held finger: no lift to ignore.
+        sheetOpened = 0
+      },
+    },
+    creating === space.id ? h("span", { className: "spinner" }) : icon("dots"),
+  )
+}
+
 function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
   const key = `space:${space.id}`
   const open = !isFolded(key)
@@ -680,8 +698,8 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     icon(open ? "folder-open" : "folder"),
     h("span", { className: "title" }, space.name),
     ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
-    // Starting a session here (from the long-press menu): a spinner until it opens.
-    ...(creating === space.id ? [h("span", { className: "spinner" })] : []),
+    // ⋯ only on open spaces; a folded one still shows a spinner while a session starts there.
+    ...(open ? [menuButton(space)] : creating === space.id ? [h("span", { className: "spinner" })] : []),
   )
   longPress(header, () => spaceMenu(space))
   const el = h(
