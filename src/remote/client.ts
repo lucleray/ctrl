@@ -233,6 +233,7 @@ const ICONS: Record<string, string> = {
   "chevron-right": '<path d="M6 4l4 4-4 4"/>',
   "chevron-down": '<path d="M4 6l4 4 4-4"/>',
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  dots: '<circle cx="3.5" cy="8" r=".9" fill="currentColor"/><circle cx="8" cy="8" r=".9" fill="currentColor"/><circle cx="12.5" cy="8" r=".9" fill="currentColor"/>',
   compose: '<path d="M7.5 3.5h-3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-3"/><path d="M11.3 2.9a1.3 1.3 0 0 1 1.8 1.8L8.5 9.3l-2.3.5.5-2.3z"/>',
 }
 
@@ -647,19 +648,21 @@ const startNew = (spaceID: string | null) => {
   render()
 }
 
-function newButton(spaceID: string) {
+/** The space's ⋯: same menu as a long press. Shows a spinner while a session starts there. */
+function menuButton(space: RemoteSnapshot["spaces"][number]) {
   return h(
     "button",
     {
       className: "new",
-      title: "New session in space",
-      disabled: creating !== null,
+      title: "More",
       onclick: (e: MouseEvent) => {
         e.stopPropagation()
-        startNew(spaceID)
+        spaceMenu(space)
+        // Opened by a tap, not a held finger: no lift to ignore.
+        sheetOpened = 0
       },
     },
-    creating === spaceID ? h("span", { className: "spinner" }) : icon("plus"),
+    creating === space.id ? h("span", { className: "spinner" }) : icon("dots"),
   )
 }
 
@@ -673,7 +676,7 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     icon(open ? "folder-open" : "folder"),
     h("span", { className: "title" }, space.name),
     ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
-    newButton(space.id),
+    menuButton(space),
   )
   longPress(header, () => spaceMenu(space))
   const el = h(
