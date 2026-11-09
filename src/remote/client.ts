@@ -1247,7 +1247,6 @@ function renderChat(id: string) {
       {},
       h("a", { className: "back", href: "#/" }, "‹"),
       h("span", { className: "title" }, session?.title || "Session"),
-      h("span", { className: `conn ${connected ? "on" : ""}` }),
       sessionMenuButton(id, "chat"),
     ),
     ...(notice ? [h("div", { className: "notice" }, notice)] : []),
@@ -1301,7 +1300,6 @@ function render() {
   updateChatChrome()
   const session = snapshot.sessions.find((s) => s.id === id)
   sessionEl.querySelector(".title")!.textContent = session?.title || chat?.title || "Session"
-  sessionEl.querySelector(".conn")!.className = `conn ${connected ? "on" : ""}`
   const old = sessionEl.querySelector(".notice")
   if (notice && !old) sessionEl.querySelector("header")!.after(h("div", { className: "notice" }, notice))
   else if (old && !notice) old.remove()
