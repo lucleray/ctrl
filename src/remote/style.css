@@ -123,6 +123,19 @@ header {
   background: var(--row-active);
 }
 
+/* Experiment: roomier, bigger rows in the Sessions list */
+.list-body .row:not(.hint) {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  font-size: 17px;
+  gap: 10px;
+}
+
+.list-body .row:not(.hint) > .ico svg {
+  width: 18px;
+  height: 18px;
+}
+
 .row .title {
   flex: 1;
   min-width: 0;
