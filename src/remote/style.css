@@ -1158,6 +1158,39 @@ button {
   flex-shrink: 0;
 }
 
+.archived-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px calc(env(safe-area-inset-bottom) + 10px);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.archived-bar span {
+  flex: 1;
+}
+
+.archived-bar button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.is-archived .archived-bar {
+  display: flex;
+}
+
+.is-archived .composer,
+.is-archived .photo-tray {
+  display: none;
+}
+
 .composer-input {
   flex: 1;
   resize: none;

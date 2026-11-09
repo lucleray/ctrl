@@ -1124,6 +1124,8 @@ function updateChatChrome() {
   sessionEl.querySelector(".title")!.textContent = session?.title || chat.title || "Session"
   const running = session?.status === "running"
   sessionEl.querySelector<HTMLElement>(".stop")!.hidden = !running
+  // Like the desktop's banner: no composer until it's unarchived.
+  sessionEl.classList.toggle("is-archived", !!session?.archived)
 }
 
 function permissionEl(p: Extract<ChatPending, { kind: "permission" }>) {
@@ -1426,6 +1428,23 @@ function renderChat(id: string) {
       input,
       h("button", { className: "stop", title: "Stop", hidden: true, onpointerdown: keepFocus, onclick: () => send({ t: "chat-stop" }) }, "■"),
       h("button", { className: "send-btn", title: "Send", onpointerdown: keepFocus, onclick: submit }, "↑"),
+    ),
+    h(
+      "div",
+      { className: "archived-bar", role: "status" },
+      h("span", {}, "This session is archived. Unarchive it to continue."),
+      h(
+        "button",
+        {
+          onclick: () => {
+            const s = snapshot.sessions.find((x) => x.id === id)
+            if (s) s.archived = undefined
+            send({ t: "archive", id, on: false })
+            render()
+          },
+        },
+        "Unarchive",
+      ),
     ),
   )
   sessionEl = el

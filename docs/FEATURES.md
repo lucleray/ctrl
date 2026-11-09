@@ -201,6 +201,8 @@ where it lives.
   paste an image, up to 6 per message, shrunk to 2000px JPEG on the phone and sent to opencode inline, shown
   in your bubble (served from `/file/<session>/<message>/<n>`)
   (`src/main/remote-chat.ts`)
+- An archived session's chat shows "This session is archived" with an Unarchive button in place of the
+  composer, like the desktop's banner
 - Questions the agent asks are answered in the chat, one at a time like the TUI ("1 of 3"): tap an option
   (it moves on to the next question), tick several for multi-select, or type your own answer when the question
   allows it; Back / Next / Skip, then a Review step (tap an answer to change it) with Submit. Dismiss cancels
