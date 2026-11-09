@@ -172,12 +172,12 @@ where it lives.
 ## Remote control (experimental)
 
 - Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
-  7338 for dev runs), so your phone lists spaces and sessions, drives their terminals and shows the Board
+  7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and shows the Board
   (`src/main/remote.ts`, `src/remote/`)
 - The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
-- opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
-  quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
+- fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping one
+  says so. There's no terminal view on the phone
 - Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
   phone; tap a card for its link, a session chip to open it). The top bar shows the connection dot (green
   when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
@@ -189,15 +189,16 @@ where it lives.
   open on the phone without changing the desktop
 - Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
   a snippet, and spaces (tap one to jump to it, unfolded)
-- Long press a session (or ⋯ in its chat / terminal header) for its menu: open as chat or terminal, new child
+- Long press a session (or ⋯ in its chat header) for its menu: open, new child
   session, rename, move to a space, open parent, detach from parent, archive (unarchive in Archived). Long press a space (or the ⋯ on an open one)
   for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
-  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny, questions
-  link to the terminal (`src/main/remote-chat.ts`). **Terminal** in the header switches to the TUI, **Chat** back
-- fx sessions (and the Terminal view) are a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
-  button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size
+  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny
+  (`src/main/remote-chat.ts`)
+- Questions the agent asks are answered in the chat: options as tappable choices (several for multi-select),
+  "type your own" when the question allows it, text / number inputs, Yes / No; Send answers, Dismiss cancels
+  it. A half-filled question survives live updates
 
 ## Terminal
 

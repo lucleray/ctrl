@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import type { McpServerItem, ModelChoices, ModelOption, ModelRef, OpencodeServer, SessionItem } from "../shared/types"
+import type { ChatPending, FormField } from "./remote"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
 const CTRL_INSTRUCTIONS_KEY = "ctrl.cli"
@@ -56,8 +57,19 @@ const FETCH_EVENTS = new Set([
   "session.execution.interrupted",
 ])
 
-/** A pending permission or question, keyed by its request/form id. */
-type Pending = { sessionID: string; detail: string; kind: "permission" | "question" }
+/** A pending permission or question, keyed by its request/form id. Questions keep their form for the phone. */
+type Form = { id: string; sessionID: string; title: string; fields?: FormField[] }
+const question = (form: Form) => ({
+  sessionID: form.sessionID,
+  detail: `Question: ${form.title}`,
+  kind: "question" as const,
+  title: form.title,
+  fields: form.fields ?? [],
+})
+
+type Pending =
+  | { sessionID: string; detail: string; kind: "permission" }
+  | { sessionID: string; detail: string; kind: "question"; title: string; fields: FormField[] }
 
 /**
  * Keeps the sidebar's session list in sync with opencode.
@@ -311,9 +323,8 @@ export class OpenCodeService {
     for (const r of results) {
       if (r.status !== "fulfilled") continue
       for (const item of r.value.data) {
-        const permission = "action" in item
-        const detail = permission ? describePermission(item) : `Question: ${item.title}`
-        out.set(item.id, { sessionID: item.sessionID, detail, kind: permission ? "permission" : "question" })
+        if ("action" in item) out.set(item.id, { sessionID: item.sessionID, detail: describePermission(item), kind: "permission" })
+        else out.set(item.id, question(item as unknown as Form))
       }
     }
     return out
@@ -368,8 +379,8 @@ export class OpenCodeService {
         this.pending.delete(String(d.requestID))
         return this.rebuild()
       case "form.created": {
-        const form = d.form as { id: string; sessionID: string; title: string }
-        this.pending.set(form.id, { sessionID: form.sessionID, detail: `Question: ${form.title}`, kind: "question" })
+        const form = d.form as unknown as Form
+        this.pending.set(form.id, question(form))
         return this.rebuild()
       }
       case "form.replied":
@@ -477,10 +488,12 @@ export class OpenCodeService {
   onSessionEvent?: (sessionID: string, type: string) => void
 
   /** Permissions and questions waiting on you in this session, with their request/form ids. */
-  pendingFor(sessionID: string) {
-    return [...this.pending]
-      .filter(([, p]) => p.sessionID === sessionID)
-      .map(([id, p]) => ({ id, kind: p.kind, detail: p.detail }))
+  pendingFor(sessionID: string): ChatPending[] {
+    return [...this.pending].flatMap(([id, p]): ChatPending[] => {
+      if (p.sessionID !== sessionID) return []
+      if (p.kind === "permission") return [{ id, kind: p.kind, detail: p.detail }]
+      return [{ id, kind: p.kind, detail: p.detail, title: p.title, fields: p.fields }]
+    })
   }
 
   setCurrent(sessionID: string | null) {

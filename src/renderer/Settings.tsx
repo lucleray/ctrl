@@ -987,8 +987,8 @@ export function Settings({
               Remote control <span className="pill">Experimental</span>
             </div>
             <div className="setting-desc">
-              Use ctrl from your phone: a web page on your Tailscale network lists your spaces and sessions, streams
-              their terminals and shows the Board. macOS may ask once to allow incoming connections.
+              Use ctrl from your phone: a web page on your Tailscale network lists your spaces and sessions, lets
+              you chat in opencode ones and shows the Board. macOS may ask once to allow incoming connections.
             </div>
           </div>
           <Toggle
