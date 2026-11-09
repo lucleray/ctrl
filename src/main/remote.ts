@@ -6,7 +6,7 @@ import { networkInterfaces } from "node:os"
 import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { Stage } from "../shared/adapters/adapter"
-import type { Harness, RemoteStatus, SessionStatus, Tone } from "../shared/types"
+import type { Harness, IndexStatus, RemoteStatus, SearchHit, SessionStatus, Tone } from "../shared/types"
 import type { ChatPage } from "./remote-chat"
 import type { Terminal } from "./terminal"
 
@@ -27,6 +27,10 @@ export type RemoteSnapshot = {
     updated: number
     spaceID: string | null
     directory: string
+    /** Session it nests under, like the sidebar's tree */
+    parentID?: string
+    /** When it was archived (archived sessions only) */
+    archived?: number
   }[]
 }
 
@@ -50,6 +54,9 @@ export type RemoteBoardCard = {
   sessions: { id: string; title: string }[]
 }
 
+/** A message hit from ⌘K's index, with what the phone needs to show sessions it doesn't list */
+export type RemoteSearchHit = SearchHit & { spaceID: string | null; archived: boolean; status?: SessionStatus }
+
 type Deps = {
   port: number
   staticDir: string
@@ -67,8 +74,17 @@ type Deps = {
     write(termID: string, data: string): void
     resize(termID: string, size: { cols: number; rows: number } | null): void
   }
-  /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
-  create(spaceID: string | null): Promise<string>
+  /** New session in a space (null: none), with that space's folder, harness and model; returns its id.
+   *  With parentID: a child of that session instead (its space, folder and harness). */
+  create(spaceID: string | null, parentID?: string): Promise<string>
+  rename(sessionID: string, title: string): Promise<void>
+  /** Into a space (null: none), children along; unarchives it, like the sidebar's Move to */
+  move(sessionID: string, spaceID: string | null): void
+  detach(sessionID: string): void
+  /** Message search, the same index as the palette (⌘K) */
+  search(query: string): { hits: RemoteSearchHit[]; status: IndexStatus }
+  /** Archive (children come along, like the sidebar) or unarchive a session */
+  setArchived(sessionID: string, on: boolean): void
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
@@ -101,7 +117,12 @@ type Inbound =
   | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
-  | { t: "new"; spaceID: string | null }
+  | { t: "new"; spaceID: string | null; parentID?: string }
+  | { t: "archive"; id: string; on: boolean }
+  | { t: "rename"; id: string; title: string }
+  | { t: "move"; id: string; spaceID: string | null }
+  | { t: "detach"; id: string }
+  | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
   | { t: "chat-send"; text: string }
@@ -369,8 +390,31 @@ export class RemoteServer {
       return
     }
     if (msg.t === "new") {
-      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
+      const parentID = typeof msg.parentID === "string" ? msg.parentID : undefined
+      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null, parentID)
       this.send(viewer, { t: "created", id })
+      return
+    }
+    if (msg.t === "search") {
+      if (typeof msg.q !== "string") return
+      this.send(viewer, { t: "search", seq: msg.seq, q: msg.q, ...this.deps.search(msg.q.slice(0, 200)) })
+      return
+    }
+    if (msg.t === "rename") {
+      if (typeof msg.id === "string" && typeof msg.title === "string" && msg.title.trim())
+        await this.deps.rename(msg.id, msg.title.trim().slice(0, 300))
+      return
+    }
+    if (msg.t === "move") {
+      if (typeof msg.id === "string") this.deps.move(msg.id, typeof msg.spaceID === "string" ? msg.spaceID : null)
+      return
+    }
+    if (msg.t === "detach") {
+      if (typeof msg.id === "string") this.deps.detach(msg.id)
+      return
+    }
+    if (msg.t === "archive") {
+      if (typeof msg.id === "string") this.deps.setArchived(msg.id, !!msg.on)
       return
     }
     if (msg.t === "board") {

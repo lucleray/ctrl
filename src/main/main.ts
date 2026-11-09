@@ -382,6 +382,8 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
 
 /** Unassigned sessions the phone lists besides the spaces' (bounded, like the sidebar's Recents pages). */
 const REMOTE_RECENTS = 30
+/** Newest archived sessions the phone lists in its Archived section */
+const REMOTE_ARCHIVED = 30
 
 /** Session the phone's TUI shows, so a theme change restarts it on the same one. */
 let remoteRoute: string | null = null
@@ -393,14 +395,19 @@ const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bri
 })
 
 const remoteSnapshot = (): RemoteSnapshot => {
-  const { spaces, assignments, archived } = store.data
+  const { spaces, assignments, archived, parents } = store.data
   const spaceIDs = new Set(spaces.map((s) => s.id))
   let others = 0
-  const list = sessions.filter((s) => {
+  const live = sessions.filter((s) => {
     if (archived[s.id] || pendingDeletes.has(s.id)) return false
     if (spaceIDs.has(assignments[s.id])) return true
     return others++ < REMOTE_RECENTS
   })
+  const gone = sessions
+    .filter((s) => archived[s.id] && !pendingDeletes.has(s.id))
+    .sort((a, b) => archived[b.id] - archived[a.id])
+    .slice(0, REMOTE_ARCHIVED)
+  const list = [...live, ...gone]
   return {
     dark: nativeTheme.shouldUseDarkColors,
     spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
@@ -413,6 +420,8 @@ const remoteSnapshot = (): RemoteSnapshot => {
       updated: s.updated,
       spaceID: spaceIDs.has(assignments[s.id]) ? assignments[s.id] : null,
       directory: s.directory,
+      ...(parents[s.id] ? { parentID: parents[s.id] } : {}),
+      ...(archived[s.id] ? { archived: archived[s.id] } : {}),
     })),
   }
 }
@@ -494,9 +503,13 @@ const remote: RemoteServer = new RemoteServer({
     title: (sessionID) => sessionByID(sessionID)?.title,
   },
   // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
-  create: async (spaceID) => {
+  create: async (spaceID, parentID) => {
     const space = spaceID && store.space(spaceID) ? spaceID : null
-    const created = await newSession(space, undefined, undefined, { focus: false })
+    const parent = parentID ? sessionByID(parentID) : undefined
+    if (parentID && !parent) throw new Error("This session doesn't exist anymore")
+    const created = parent
+      ? await newSession(store.data.assignments[parent.id] ?? null, parent.directory, parent.harness, { focus: false, parentID: parent.id })
+      : await newSession(space, undefined, undefined, { focus: false })
     let id = "id" in created ? created.id : null
     for (let i = 0; i < 150 && !(id && sessionByID(id)); i++) {
       // fx reports its session id once its process is up.
@@ -505,6 +518,41 @@ const remote: RemoteServer = new RemoteServer({
     }
     if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
     return id
+  },
+  search: (query) => {
+    // Searching can surface any session, like the palette: load the older ones too.
+    void opencode.loadOlder()
+    const { hits, status } = search.search(query)
+    const { assignments, archived, spaces } = store.data
+    const spaceIDs = new Set(spaces.map((s) => s.id))
+    return {
+      status,
+      hits: hits.map((h) => ({
+        ...h,
+        title: sessionByID(h.sessionID)?.title ?? h.title,
+        spaceID: spaceIDs.has(assignments[h.sessionID]) ? assignments[h.sessionID] : null,
+        archived: !!archived[h.sessionID],
+        status: sessionByID(h.sessionID)?.status,
+      })),
+    }
+  },
+  rename: (sessionID, title) => renameSession(sessionID, title),
+  move: (sessionID, spaceID) => {
+    if (!sessionByID(sessionID)) return
+    store.assignTree(sessionID, spaceID && store.space(spaceID) ? spaceID : null)
+    // Moving a session somewhere is a clear signal it's wanted again (same as the sidebar's Move to).
+    if (store.data.archived[sessionID]) store.setArchived([sessionID], false)
+    push()
+  },
+  detach: (sessionID) => {
+    if (!store.setParent(sessionID, null)) return
+    push()
+  },
+  setArchived: (sessionID, on) => {
+    if (!sessionByID(sessionID)) return
+    if (on) return archive([sessionID])
+    store.setArchived([sessionID], false)
+    push()
   },
   cantOpen: (sessionID) => {
     const session = sessionByID(sessionID)
