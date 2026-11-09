@@ -993,6 +993,24 @@ function chatReceive(msg: ChatInbound) {
   updateChatChrome()
 }
 
+/**
+ * The keyboard coming up (or the composer growing, a question showing) shrinks the list from the bottom:
+ * keep what was at the bottom in view instead of letting it slide behind the composer.
+ */
+function anchorBottom(list: HTMLElement) {
+  let fromBottom = 0
+  list.addEventListener("scroll", () => (fromBottom = list.scrollHeight - list.scrollTop - list.clientHeight), { passive: true })
+  let height = 0
+  const ro = new ResizeObserver(() => {
+    // Left the chat: removal reports a last resize.
+    if (!list.isConnected) return ro.disconnect()
+    if (list.clientHeight === height) return
+    height = list.clientHeight
+    list.scrollTop = list.scrollHeight - list.clientHeight - fromBottom
+  })
+  ro.observe(list)
+}
+
 function scrollToBottom() {
   const list = sessionEl?.querySelector<HTMLElement>(".chat-list")
   if (list) list.scrollTop = list.scrollHeight
@@ -1261,6 +1279,7 @@ function renderChat(id: string) {
     ),
   )
   sessionEl = el
+  anchorBottom(el.querySelector<HTMLElement>(".chat-list")!)
   drawMessages()
   updateChatChrome()
   if (chat?.loaded) requestAnimationFrame(scrollToBottom)

@@ -194,7 +194,8 @@ where it lives.
   for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
-  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny
+  composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
+  view above it); permissions as Allow / Always / Deny
   (`src/main/remote-chat.ts`)
 - Questions the agent asks are answered in the chat: options as tappable choices (several for multi-select),
   "type your own" when the question allows it, text / number inputs, Yes / No; Send answers, Dismiss cancels
