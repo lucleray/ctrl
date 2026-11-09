@@ -6,7 +6,7 @@ import { networkInterfaces } from "node:os"
 import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { Stage } from "../shared/adapters/adapter"
-import type { Harness, RemoteStatus, SessionStatus, Tone } from "../shared/types"
+import type { Harness, IndexStatus, RemoteStatus, SearchHit, SessionStatus, Tone } from "../shared/types"
 import type { ChatPage } from "./remote-chat"
 import type { Terminal } from "./terminal"
 
@@ -54,6 +54,9 @@ export type RemoteBoardCard = {
   sessions: { id: string; title: string }[]
 }
 
+/** A message hit from ⌘K's index, with what the phone needs to show sessions it doesn't list */
+export type RemoteSearchHit = SearchHit & { spaceID: string | null; archived: boolean; status?: SessionStatus }
+
 type Deps = {
   port: number
   staticDir: string
@@ -73,6 +76,8 @@ type Deps = {
   }
   /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
   create(spaceID: string | null): Promise<string>
+  /** Message search, the same index as the palette (⌘K) */
+  search(query: string): { hits: RemoteSearchHit[]; status: IndexStatus }
   /** Archive (children come along, like the sidebar) or unarchive a session */
   setArchived(sessionID: string, on: boolean): void
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
@@ -109,6 +114,7 @@ type Inbound =
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
   | { t: "archive"; id: string; on: boolean }
+  | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
   | { t: "chat-send"; text: string }
@@ -378,6 +384,11 @@ export class RemoteServer {
     if (msg.t === "new") {
       const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
       this.send(viewer, { t: "created", id })
+      return
+    }
+    if (msg.t === "search") {
+      if (typeof msg.q !== "string") return
+      this.send(viewer, { t: "search", seq: msg.seq, q: msg.q, ...this.deps.search(msg.q.slice(0, 200)) })
       return
     }
     if (msg.t === "archive") {

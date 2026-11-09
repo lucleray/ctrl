@@ -4,7 +4,7 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
 import MarkdownIt from "markdown-it"
-import type { ChatPending, RemoteBoardCard, RemoteSnapshot } from "../main/remote"
+import type { ChatPending, RemoteBoardCard, RemoteSearchHit, RemoteSnapshot } from "../main/remote"
 import type { ChatItem } from "../main/remote-chat"
 
 /**
@@ -22,6 +22,7 @@ type Outbound =
   | { t: "board"; on: boolean }
   | { t: "new"; spaceID: string | null }
   | { t: "archive"; id: string; on: boolean }
+  | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
   | { t: "chat-send"; text: string }
@@ -35,6 +36,7 @@ type Inbound =
   | { t: "error"; message: string }
   | { t: "board"; cards: RemoteBoardCard[] }
   | { t: "created"; id: string }
+  | { t: "search"; seq: number; q: string; hits: RemoteSearchHit[]; status: { indexing: boolean } }
   | { t: "chat"; id: string; title?: string; items: ChatItem[]; cursor: string | null; pending: ChatPending[] }
   | { t: "chat-more"; id: string; items: ChatItem[]; cursor: string | null }
   | { t: "chat-update"; id: string; items: ChatItem[] }
@@ -131,6 +133,8 @@ function receive(msg: Inbound) {
     if (onBoard()) render()
   } else if (msg.t.startsWith("chat")) {
     chatReceive(msg as ChatInbound)
+  } else if (msg.t === "search") {
+    searchReceive(msg)
   } else if (msg.t === "created") {
     creating = null
     location.hash = sessionHref(msg.id)
@@ -478,7 +482,7 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
     ...(rollup ? [h("span", { className: "rollup" }, statusEl(rollup))] : []),
     newButton(space.id),
   )
-  return h(
+  const el = h(
     "div",
     { className: "space" },
     header,
@@ -488,6 +492,8 @@ function spaceGroup(space: RemoteSnapshot["spaces"][number], list: Session[]) {
         : [h("div", { className: "row hint" }, "No sessions yet, tap + to start one")]
       : []),
   )
+  el.dataset.spaceId = space.id
+  return el
 }
 
 function foldSection(key: string, title: string, list: Session[]) {
@@ -539,6 +545,7 @@ const searchBar = h("div", { className: "search" }, searchInput, searchClear)
 searchInput.addEventListener("input", () => {
   query = searchInput.value
   searchClear.hidden = !query
+  askSearch()
   render()
 })
 searchInput.addEventListener("keydown", (e) => {
@@ -550,26 +557,119 @@ searchClear.addEventListener("click", () => clearSearch())
 const clearSearch = () => {
   searchInput.value = query = ""
   searchClear.hidden = true
+  askSearch()
   render()
 }
 
-/** Every word in the title or space name; live sessions first, newest first. */
+// Message search: the Mac's ⌘K index, asked over the socket (debounced, stale answers dropped).
+const SEARCH_DEBOUNCE_MS = 150
+const INDEXING_POLL_MS = 1000
+let searchSeq = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let messageHits: { q: string; hits: RemoteSearchHit[] } = { q: "", hits: [] }
+
+function askSearch() {
+  clearTimeout(searchTimer)
+  const q = query.trim()
+  if (q.length < 2) {
+    messageHits = { q: "", hits: [] }
+    return
+  }
+  searchTimer = setTimeout(() => send({ t: "search", q, seq: ++searchSeq }), SEARCH_DEBOUNCE_MS)
+}
+
+function searchReceive(msg: Extract<Inbound, { t: "search" }>) {
+  if (msg.seq !== searchSeq || msg.q !== query.trim()) return
+  messageHits = { q: msg.q, hits: msg.hits }
+  // Still indexing (first run, or catching up): ask again until it's done, like the palette.
+  if (msg.status.indexing) searchTimer = setTimeout(() => send({ t: "search", q: msg.q, seq: ++searchSeq }), INDEXING_POLL_MS)
+  render()
+}
+
+const matches = (q: string, ...fields: (string | undefined)[]) => {
+  const hay = fields.filter(Boolean).join(" ").toLowerCase()
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))
+}
+
+const folderName = (dir: string) => dir.replace(/\/+$/, "").split("/").pop() ?? ""
+
+/** Index snippets wrap matches in \uE000…\uE001 */
+function snippetEl(text: string, role: string) {
+  const el = h("span", { className: "snippet" })
+  if (role === "user") el.append(h("span", { className: "snippet-role" }, "You: "))
+  text.split("\uE000").forEach((part, i) => {
+    if (i === 0) return void el.append(part)
+    const [hit, rest = ""] = part.split("\uE001")
+    el.append(h("mark", {}, hit), rest)
+  })
+  return el
+}
+
+const resultSection = (title: string, rows: HTMLElement[]) =>
+  rows.length ? [h("div", { className: "section-header" }, h("span", {}, title)), ...rows] : []
+
+/** Like the palette (⌘K): chats by title, space or folder, then message hits, then spaces. Archived rank last. */
 function searchResults() {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const q = query.trim()
   const spaceName = new Map(snapshot.spaces.map((sp) => [sp.id, sp.name]))
-  return snapshot.sessions
-    .filter((s) => {
-      const hay = `${s.title} ${s.spaceID ? (spaceName.get(s.spaceID) ?? "") : ""}`.toLowerCase()
-      return words.every((w) => hay.includes(w))
-    })
+  const where = (archived: boolean, spaceID: string | null, dir?: string) =>
+    archived ? "Archived" : spaceID ? (spaceName.get(spaceID) ?? "") : dir ? folderName(dir) : "No space"
+
+  const chats = snapshot.sessions
+    .filter((s) => matches(q, s.title, s.spaceID ? spaceName.get(s.spaceID) : undefined, s.directory))
     .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.updated - a.updated)
     .slice(0, SEARCH_LIMIT)
-    .map((s) => {
-      const el = row(s)
-      const where = s.archived ? "Archived" : s.spaceID ? spaceName.get(s.spaceID) : "No space"
-      el.querySelector(".title")!.append(h("span", { className: "where" }, where ?? ""))
-      return el
+  const chatRows = chats.map((s) => {
+    const el = row(s)
+    el.querySelector(".title")!.append(h("span", { className: "where" }, where(!!s.archived, s.spaceID, s.directory)))
+    return el
+  })
+
+  const shown = new Set(chats.map((s) => s.id))
+  const known = new Map(snapshot.sessions.map((s) => [s.id, s]))
+  const hits = messageHits.q === q ? messageHits.hits.filter((x) => !shown.has(x.sessionID)) : []
+  hits.sort((a, b) => Number(a.archived) - Number(b.archived))
+  const hitRows = hits.map((x) => {
+    const s = known.get(x.sessionID)
+    const status = s?.status ?? x.status
+    return h(
+      "a",
+      { className: "row hit", href: sessionHref(x.sessionID) },
+      h(
+        "span",
+        { className: "title" },
+        x.title || "Untitled",
+        snippetEl(x.snippet, x.role),
+        h("span", { className: "where" }, where(x.archived, x.spaceID, s?.directory)),
+      ),
+      ...(status && status !== "idle" ? [s ? statusEl(s, status) : h("span", { className: status === "running" ? "spinner" : `dot ${status}` })] : []),
+    )
+  })
+
+  const spaceRows = snapshot.spaces
+    .filter((sp) => matches(q, sp.name))
+    .map((sp) => {
+      const count = snapshot.sessions.filter((s) => s.spaceID === sp.id && !s.archived).length
+      return h(
+        "button",
+        {
+          className: "row space-result",
+          onclick: () => {
+            // Clear the search and land on the space, unfolded.
+            folds[`space:${sp.id}`] = false
+            localStorage.setItem("folds", JSON.stringify(folds))
+            clearSearch()
+            searchInput.blur()
+            document.querySelector(`[data-space-id="${sp.id}"]`)?.scrollIntoView({ block: "start" })
+          },
+        },
+        icon("folder"),
+        h("span", { className: "title" }, sp.name),
+        h("span", { className: "time" }, `${count} session${count === 1 ? "" : "s"}`),
+      )
     })
+
+  return [...resultSection("Chats", chatRows), ...resultSection("Messages", hitRows), ...resultSection("Spaces", spaceRows)]
 }
 
 function listBody() {

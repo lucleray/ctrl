@@ -515,6 +515,23 @@ const remote: RemoteServer = new RemoteServer({
     if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
     return id
   },
+  search: (query) => {
+    // Searching can surface any session, like the palette: load the older ones too.
+    void opencode.loadOlder()
+    const { hits, status } = search.search(query)
+    const { assignments, archived, spaces } = store.data
+    const spaceIDs = new Set(spaces.map((s) => s.id))
+    return {
+      status,
+      hits: hits.map((h) => ({
+        ...h,
+        title: sessionByID(h.sessionID)?.title ?? h.title,
+        spaceID: spaceIDs.has(assignments[h.sessionID]) ? assignments[h.sessionID] : null,
+        archived: !!archived[h.sessionID],
+        status: sessionByID(h.sessionID)?.status,
+      })),
+    }
+  },
   setArchived: (sessionID, on) => {
     if (!sessionByID(sessionID)) return
     if (on) return archive([sessionID])

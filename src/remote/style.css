@@ -511,6 +511,37 @@ button {
   margin-top: 30px;
 }
 
+.results .section-header {
+  margin-top: 8px;
+}
+
+.row.space-result {
+  width: 100%;
+  text-align: left;
+}
+
+.snippet {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.snippet mark {
+  background: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.snippet-role {
+  color: var(--text);
+}
+
 .where {
   display: block;
   font-size: 12px;
