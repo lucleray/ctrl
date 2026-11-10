@@ -10,13 +10,17 @@ const server = await createServer({ configFile: "vite.config.ts" })
 await server.listen()
 const url = server.resolvedUrls.local[0]
 
+// Started from an agent inside ctrl, the shell carries that ctrl's socket and TUI bridge: the dev app has its own.
+const devEnv = { ...process.env }
+for (const v of ["CTRL_SOCKET", "CTRL_BRIDGE_URL", "CTRL_TERM_ID", "OPENCODE_SESSION_ID"]) delete devEnv[v]
+
 let app
 const restart = () => {
   if (app) {
     app.removeAllListeners("exit")
     app.kill()
   }
-  app = spawn(electron, ["."], { stdio: "inherit", env: { ...process.env, VITE_DEV_URL: url } })
+  app = spawn(electron, ["."], { stdio: "inherit", env: { ...devEnv, VITE_DEV_URL: url } })
   app.on("exit", () => process.exit(0))
 }
 

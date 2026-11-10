@@ -88,6 +88,7 @@ const api: CtrlApi = {
   chatModel: (sessionID) => ipcRenderer.invoke("chat:model", sessionID),
   chatSetModel: (sessionID, model) => ipcRenderer.invoke("chat:set-model", sessionID, model),
   onChatModelChanged: on("chat:model-changed"),
+  chatStats: (sessionID) => ipcRenderer.invoke("chat:stats", sessionID),
   onChatUpdate: on("chat:update"),
   onChatPending: on("chat:pending"),
 }

@@ -13,6 +13,7 @@ import {
   type Harness,
   type ModelChoices,
   type ModelOption,
+  type ChatStats,
   type ModelRef,
   type OpencodeCheck,
   type SessionItem,
@@ -470,6 +471,18 @@ const openCodeClient = () => {
   if (!opencode.client) throw new Error("The opencode service isn't connected")
   return opencode.client
 }
+/** Context window per model ("provider::id"), read once per run: model.list is too heavy to call per stats. */
+const contextLimits = new Map<string, number | null>()
+async function contextLimit(model: ModelRef, directory: string) {
+  const key = `${model.providerID}::${model.id}`
+  if (!contextLimits.has(key)) {
+    const list = await openCodeClient().model.list({ location: { directory } }).catch(() => null)
+    for (const m of list?.data ?? []) contextLimits.set(`${m.providerID}::${m.id}`, m.limit?.context || null)
+    if (!contextLimits.has(key)) return null
+  }
+  return contextLimits.get(key) ?? null
+}
+
 /** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
 const chatOps = {
   page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
@@ -1563,6 +1576,24 @@ function registerIpc() {
     if (session.model) return { providerID: session.model.providerID, id: session.model.id, variant: session.model.variant }
     const fallback = await client.model.default({ location: { directory: session.location.directory } }).catch(() => null)
     return fallback?.data ? { providerID: fallback.data.providerID, id: fallback.data.id } : null
+  })
+  // Spend so far and how full the context is, from the newest assistant message that reports tokens.
+  ipcMain.handle("chat:stats", async (_e, sessionID: string): Promise<ChatStats> => {
+    const client = openCodeClient()
+    const [session, recent] = await Promise.all([
+      client.session.get({ sessionID }),
+      client.message.list({ sessionID, limit: 20, order: "desc" }),
+    ])
+    type Assistant = { type: string; model?: ModelRef; tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }
+    const last = (recent.data as unknown as Assistant[]).find((m) => m.type === "assistant" && m.tokens && m.model)
+    let context: ChatStats["context"] = null
+    if (last?.tokens && last.model) {
+      const t = last.tokens
+      const used = t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+      const limit = await contextLimit(last.model, session.location.directory)
+      if (used > 0) context = { used, limit }
+    }
+    return { cost: session.cost ?? 0, context }
   })
   ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) =>
     openCodeClient().session.switchModel({

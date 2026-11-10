@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it"
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem } from "../main/remote-chat"
-import type { ModelChoices, ModelRef, SessionItem } from "../shared/types"
+import type { ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -228,7 +228,8 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                   ))}
                 </div>
               )}
-              <textarea
+              <div className="chat-composer-row">
+                <textarea
                   ref={input}
                   rows={1}
                   value={text}
@@ -254,17 +255,21 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                     void addImages(files)
                   }}
                 />
-              <div className="chat-composer-row">
-                <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => input.current?.focus()} />
-                {running && (
-                  <button className="chat-stop" title="Stop (Esc)" onClick={() => void window.ctrl.chatStop(sessionID)}>
-                    ■
+                {/* One button: stop while a turn runs and nothing's typed, send otherwise (typing queues). */}
+                {running && !text.trim() && !images.length ? (
+                  <button className="chat-action stop" title="Stop (Esc)" onClick={() => void window.ctrl.chatStop(sessionID)}>
+                    <span className="chat-stop-icon" />
+                  </button>
+                ) : (
+                  <button className="chat-action" title="Send (Enter)" disabled={!text.trim() && !images.length} onClick={submit}>
+                    ↑
                   </button>
                 )}
-                <button className="chat-send" title="Send (Enter)" disabled={!text.trim() && !images.length} onClick={submit}>
-                  ↑
-                </button>
               </div>
+            </div>
+            <div className="chat-meta">
+              <Stats sessionID={sessionID} running={running} />
+              <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => input.current?.focus()} />
             </div>
           </div>
         </div>
@@ -593,5 +598,40 @@ function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; di
         />
       )}
     </>
+  )
+}
+
+const money = (usd: number) => (usd < 0.01 && usd > 0 ? "<$0.01" : `$${usd.toFixed(2)}`)
+const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
+
+/** Spend and context used, under the composer. Re-read on open, when a turn ends and when the model changes. */
+function Stats({ sessionID, running }: { sessionID: string; running: boolean }) {
+  const [stats, setStats] = useState<ChatStats | null>(null)
+  useEffect(() => {
+    let live = true
+    const load = () => void window.ctrl.chatStats(sessionID).then((s) => live && setStats(s), () => {})
+    if (!running) load()
+    const off = window.ctrl.onChatModelChanged((id) => id === sessionID && load())
+    return () => {
+      live = false
+      off()
+    }
+  }, [sessionID, running])
+  useEffect(() => setStats(null), [sessionID])
+  if (!stats) return <span className="chat-stats" />
+  const ctx = stats.context
+  const pct = ctx?.limit ? Math.min(100, Math.round((ctx.used / ctx.limit) * 100)) : null
+  return (
+    <span className="chat-stats">
+      <span title="Spent in this session">{money(stats.cost)}</span>
+      {ctx && (
+        <span
+          className={pct !== null && pct >= 80 ? "warn" : ""}
+          title={`Context: ${ctx.used.toLocaleString()}${ctx.limit ? ` of ${ctx.limit.toLocaleString()}` : ""} tokens`}
+        >
+          {pct !== null ? `${pct}% context` : `${tokens(ctx.used)} tokens`}
+        </span>
+      )}
+    </span>
   )
 }
