@@ -102,7 +102,7 @@ type Deps = {
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
     /** images: data: URLs (see cleanImages) */
-    send(sessionID: string, text: string, images: string[]): Promise<void>
+    send(sessionID: string, text: string, images: string[]): Promise<unknown>
     /** An image attached to a message you sent */
     image(sessionID: string, messageID: string, index: number): Promise<{ mime: string; body: Buffer } | null>
     stop(sessionID: string): Promise<void>

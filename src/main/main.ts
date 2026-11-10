@@ -47,7 +47,7 @@ import { loadShellEnv } from "./shell-env"
 import { DesktopChat } from "./desktop-chat"
 import { TermModes } from "./term-modes"
 import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
-import { chatImage, chatPage } from "./remote-chat"
+import { chatImage, chatInbox, chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -486,9 +486,11 @@ async function contextLimit(model: ModelRef, directory: string) {
 /** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
 const chatOps = {
   page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
+  // Steer, never queue: a message sent mid-turn reaches the agent at its next step.
   send: async (sessionID: string, text: string, images: string[]) => {
     const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
-    await openCodeClient().session.prompt({ sessionID, text, ...(files.length ? { files } : {}) })
+    const sent = await openCodeClient().session.prompt({ sessionID, text, delivery: "steer", ...(files.length ? { files } : {}) })
+    return sent?.id
   },
   image: (sessionID: string, messageID: string, index: number) => chatImage(openCodeClient(), sessionID, messageID, index),
   stop: async (sessionID: string) => void (await openCodeClient().session.interrupt({ sessionID })),
@@ -503,10 +505,12 @@ const chatOps = {
 }
 
 const desktopChat = new DesktopChat({
-  page: (sessionID) => chatOps.page(sessionID),
+  page: (sessionID) => chatPage(openCodeClient(), sessionID, undefined, true),
   pending: chatOps.pending,
+  inbox: (sessionID) => chatInbox(openCodeClient(), sessionID),
   updated: (sessionID, items) => send("chat:update", sessionID, items),
   pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
+  inboxChanged: (sessionID, inbox) => send("chat:inbox", sessionID, inbox),
 })
 
 opencode.onSessionEvent = (sessionID, type) => {
@@ -1558,10 +1562,16 @@ function registerIpc() {
     return desktopChat.open(sessionID)
   })
   ipcMain.handle("chat:close", () => desktopChat.close())
-  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chatOps.page(sessionID, cursor))
+  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chatPage(openCodeClient(), sessionID, cursor, true))
   ipcMain.handle("chat:send", (_e, sessionID: string, text: string, images: unknown) =>
     chatOps.send(sessionID, String(text ?? ""), cleanImages(images)),
   )
+  // The chat view's empty state: a new opencode session in the default space, started with this message.
+  ipcMain.handle("chat:new", async (_e, text: string, images: unknown) => {
+    const created = await newSession(defaultSpaceID(), undefined, "opencode")
+    if (!("id" in created)) return
+    await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
+  })
   ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
   ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
     chatOps.reply(sessionID, requestID, decision),

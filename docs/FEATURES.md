@@ -212,19 +212,29 @@ where it lives.
 
 - Settings → Appearance → opencode sessions: Terminal (default) or Chat. Chat shows the opencode session on
   screen as a chat, like remote control's phone view, with the same reads (`src/main/remote-chat.ts`): your
-  messages, the assistant's markdown, thinking markers and tool one-liners (`src/renderer/ChatView.tsx`)
+  messages, the assistant's markdown, what it thought and its tool calls (`src/renderer/ChatView.tsx`)
+- Thinking and shell commands show in full in a box clamped to its first 3 lines: click it to unfold, click again
+  to fold it back. Other tool calls are one line, or their full input clamped the same way when it's long
 - The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,
-  ⌘N and `/new` work as before. No session yet (the new-session screen) and fx sessions show their terminal
-- One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed (typing queues a
-  message). Enter sends, ⇧↩ new line, Esc stops; paste or drop images to attach them
+  ⌘N and `/new` work as before. fx sessions show their terminal
+- No session on screen (the new-session screen, e.g. after archiving the current one): "What do you want to work
+  on?" with the composer in the middle. Sending starts an opencode session in the default space with that message
+- One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed. Enter sends, ⇧↩ new
+  line, Esc stops; paste or drop images to attach them
+- Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
+  above the composer ("Steers the agent at its next step") until opencode hands them to the agent
+- Long pastes (5+ lines or 800+ characters) go in as a highlighted `[Pasted 12 lines]` token, like opencode's TUI;
+  ⌘V again right after puts the full text in its place. Backspace removes a token whole; the full text is sent
 - Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's
   context window) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
   Picking switches the session's model for its next turns and the TUI follows, and the other way round
 - Newest 40 messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most
-  every 300ms)
+  every 300ms). Only messages that changed are sent to the view and re-rendered, markdown is rendered once per
+  text, and the composer is its own component, so typing doesn't re-render the conversation
 - Permissions (Allow / Always / Deny) and questions (one at a time, Review, Submit) show above the composer.
   Archived sessions hide the composer behind the archived banner
-- Dropping a session or a resource row on it pastes the reference into the composer
+- Dropping a session or a resource row on it pastes the reference into the composer. A session goes in as an
+  `@Title` token (sent as the full `@session[Title](id)` mention) and shows as a chip in the sent message
 - Tables: as wide as their content up to the chat's width, then they scroll sideways in their own box. Columns are
   sized from their longest cell: short values (`#`, a status) stay compact, labels get a minimum width, prose more
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
 import { DEFAULT_SOUND_CHOICES, FONT_SIZE, harnessOf, type AppState } from "../shared/types"
 import { ArchivedBanner } from "./ArchivedBanner"
-import { ChatView, type ChatHandle } from "./ChatView"
+import { ChatHome, ChatView, type ChatHandle } from "./ChatView"
 import { Board, loadFilter, onlySpace, saveFilter, type BoardFilter } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
@@ -88,6 +88,9 @@ export function App() {
     harnessOf(state.currentSessionID) === "opencode"
       ? state.currentSessionID
       : null
+  // No session on screen (the TUI's new-session screen, e.g. after archiving): a centered composer instead.
+  const chatHome =
+    state.settings.sessionView === "chat" && activeTerm?.harness === "opencode" && !state.currentSessionID && state.opencode.state === "ok"
   const checked = state.opencode.state !== "checking" && state.fx.state !== "checking"
   // First launch, or nothing usable installed. Drawn over the terminals, which keep running underneath.
   const onboarding = checked && (!state.ui.onboarded || !ready)
@@ -279,7 +282,7 @@ export function App() {
               fontSize={state.settings.fontSize}
               opencodeOpensLinks={state.opencode.state === "ok" && state.opencode.opensLinks}
               archived={state.archived}
-              concealed={!!chatID}
+              concealed={!!chatID || chatHome}
             />
             {chatID && (
               <ChatView
@@ -289,6 +292,7 @@ export function App() {
                 archived={!!state.archived[chatID]}
               />
             )}
+            {chatHome && <ChatHome ref={chat} />}
             {archivedOnScreen && !onboarding && (
               <ArchivedBanner
                 onUnarchive={() => {

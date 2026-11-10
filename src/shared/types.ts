@@ -1,5 +1,5 @@
 import type { ChatPending, FormAnswer } from "../main/remote"
-import type { ChatItem, ChatPage } from "../main/remote-chat"
+import type { ChatItem, ChatPage, ChatQueued } from "../main/remote-chat"
 import type { CommandID, ShortcutOverrides } from "./shortcuts"
 
 /** variant: opencode model variant, or fx reasoning effort (`--effort`); unset = the model's default */
@@ -554,8 +554,10 @@ export type CtrlApi = {
   /** Stop watching (the chat view went away) */
   chatClose(): Promise<void>
   chatMore(sessionID: string, cursor: string): Promise<ChatPage>
-  /** images: data: URLs */
-  chatSend(sessionID: string, text: string, images: string[]): Promise<void>
+  /** images: data: URLs. Steers a running turn. Resolves with the message's id (it shows in the inbox until delivered) */
+  chatSend(sessionID: string, text: string, images: string[]): Promise<string | undefined>
+  /** A new opencode session in the default space, opened, with this first message */
+  chatNew(text: string, images: string[]): Promise<void>
   chatStop(sessionID: string): Promise<void>
   chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
   /** Answer a question form (null: dismiss it) */
@@ -571,9 +573,11 @@ export type CtrlApi = {
   /** Newer messages of the watched session (replace by id) */
   onChatUpdate(cb: (sessionID: string, items: ChatItem[]) => void): () => void
   onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
+  /** Messages sent but not handed to the agent yet (they steer at its next step) */
+  onChatInbox(cb: (sessionID: string, inbox: ChatQueued[]) => void): () => void
 }
 
-export type ChatOpened = ChatPage & { pending: ChatPending[] }
+export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[] }
 
 /** Under the chat composer: spend so far (USD) and context used (limit null: unknown) */
 export type ChatStats = { cost: number; context: { used: number; limit: number | null } | null }
