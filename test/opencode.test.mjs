@@ -40,8 +40,8 @@ function sessions(count) {
 }
 
 /** Pages by offset like opencode's cursors; records every call. */
-function fakeClient(all, active = {}) {
-  const calls = { list: [], asked: [] }
+function fakeClient(all, active = {}, { shells = [], subagents = {} } = {}) {
+  const calls = { list: [], asked: [], shells: [] }
   const page = (from, limit = 50) => {
     const data = all.slice(from, from + limit)
     return { data, cursor: { next: from + limit < all.length ? String(from + limit) : undefined } }
@@ -53,6 +53,12 @@ function fakeClient(all, active = {}) {
         return page(input.cursor ? Number(input.cursor) : 0, input.limit)
       },
       active: async () => active,
+      get: async ({ sessionID }) => ({ id: sessionID, parentID: subagents[sessionID] }),
+    },
+    shell: {
+      list: async ({ location }) => (
+        calls.shells.push(location.directory), { data: shells.filter((s) => s.cwd === location.directory) }
+      ),
     },
     permission: { request: { list: async ({ location }) => (calls.asked.push(location.directory), { data: [] }) } },
     form: { list: async () => ({ data: [] }) },
@@ -61,8 +67,8 @@ function fakeClient(all, active = {}) {
   return { client, calls }
 }
 
-function service(all, active) {
-  const { client, calls } = fakeClient(all, active)
+function service(all, active, extra) {
+  const { client, calls } = fakeClient(all, active, extra)
   const svc = new OpenCodeService(() => {})
   svc.client = client
   return { svc, calls }
@@ -108,4 +114,36 @@ test("loadOlder during a re-sync still ends with the older sessions loaded", asy
   await Promise.all([resync, during])
   await svc.loadOlder()
   assert.equal(svc.sessions.length, 400)
+})
+
+test("background activity: shells and running subagents count towards their root session", async () => {
+  const all = sessions(3).map((s, i) => ({ ...s, time: { ...s.time, updated: Date.now() - i * 60_000 } }))
+  const shells = [
+    { id: "sh_1", status: "running", cwd: "/dir/0", metadata: { sessionID: "ses_0000" } },
+    { id: "sh_2", status: "exited", cwd: "/dir/0", metadata: { sessionID: "ses_0000" } },
+    { id: "sh_3", status: "running", cwd: "/dir/1", metadata: { sessionID: "ses_sub2" } },
+  ]
+  // ses_sub2 is a subagent of ses_sub1, itself a subagent of ses_0001.
+  const subagents = { ses_sub1: "ses_0001", ses_sub2: "ses_sub1" }
+  const active = { ses_sub1: { type: "running" }, ses_sub2: { type: "running" } }
+  const { svc, calls } = service(all, active, { shells, subagents })
+  await svc.sync()
+  assert.deepEqual(calls.shells.sort(), ["/dir/0", "/dir/1", "/dir/2"])
+  assert.deepEqual(svc.activity("ses_0000"), { shells: 1, subagents: 0 })
+  assert.deepEqual(svc.activity("ses_0001"), { shells: 1, subagents: 2 })
+  assert.equal(svc.activity("ses_0002"), undefined)
+  // Subagents never show up as sessions of their own.
+  assert.equal(svc.sessions.length, 3)
+
+  svc.apply({ type: "shell.exited", data: { id: "sh_1" } })
+  assert.equal(svc.activity("ses_0000"), undefined)
+  svc.apply({ type: "shell.created", data: { info: { id: "sh_4", status: "running", metadata: { sessionID: "ses_0002" } } } })
+  assert.deepEqual(svc.activity("ses_0002"), { shells: 1, subagents: 0 })
+})
+
+test("shells are only listed in the folders of recently updated sessions", async () => {
+  const { svc, calls } = service(sessions(5))
+  await svc.sync()
+  // One day apart: only the newest session was updated in the last 6 hours.
+  assert.deepEqual(calls.shells, ["/dir/0"])
 })
