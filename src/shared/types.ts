@@ -560,6 +560,11 @@ export type CtrlApi = {
   chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
   /** Answer a question form (null: dismiss it) */
   chatAnswer(sessionID: string, formID: string, answer: FormAnswer | null): Promise<void>
+  /** The model the session's next turn uses (null: opencode has none to offer) */
+  chatModel(sessionID: string): Promise<ModelRef | null>
+  chatSetModel(sessionID: string, model: ModelRef): Promise<void>
+  /** The session's model changed (picked in the TUI, or here) */
+  onChatModelChanged(cb: (sessionID: string) => void): () => void
   /** An image attached to a message you sent, as a data: URL */
   chatImage(sessionID: string, messageID: string, index: number): Promise<string | null>
   /** Newer messages of the watched session (replace by id) */

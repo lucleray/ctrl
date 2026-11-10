@@ -496,9 +496,11 @@ const desktopChat = new DesktopChat({
   pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
 })
 
-opencode.onSessionEvent = (sessionID) => {
+opencode.onSessionEvent = (sessionID, type) => {
   remote.sessionEvent(sessionID)
   desktopChat.sessionEvent(sessionID)
+  // Picked in the TUI (or another client): the chat view's model picker follows.
+  if (type === "session.model.selected") send("chat:model-changed", sessionID)
 }
 
 const remote: RemoteServer = new RemoteServer({
@@ -1553,6 +1555,20 @@ function registerIpc() {
   )
   ipcMain.handle("chat:answer", (_e, sessionID: string, formID: string, answer: FormAnswer | null) =>
     chatOps.answer(sessionID, formID, answer),
+  )
+  // The session's model, else what opencode would use in its folder (a session that never picked one).
+  ipcMain.handle("chat:model", async (_e, sessionID: string) => {
+    const client = openCodeClient()
+    const session = await client.session.get({ sessionID })
+    if (session.model) return { providerID: session.model.providerID, id: session.model.id, variant: session.model.variant }
+    const fallback = await client.model.default({ location: { directory: session.location.directory } }).catch(() => null)
+    return fallback?.data ? { providerID: fallback.data.providerID, id: fallback.data.id } : null
+  })
+  ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) =>
+    openCodeClient().session.switchModel({
+      sessionID,
+      model: { providerID: String(model.providerID), id: String(model.id), ...(model.variant ? { variant: String(model.variant) } : {}) },
+    }),
   )
   ipcMain.handle("chat:image", async (_e, sessionID: string, messageID: string, index: number) => {
     const found = await chatOps.image(sessionID, messageID, index).catch(() => null)

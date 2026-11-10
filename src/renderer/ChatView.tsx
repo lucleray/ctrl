@@ -2,7 +2,9 @@ import MarkdownIt from "markdown-it"
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem } from "../main/remote-chat"
-import type { SessionItem } from "../shared/types"
+import type { ModelChoices, ModelRef, SessionItem } from "../shared/types"
+import { Icon } from "./icons"
+import { keyOf, ModelPopover } from "./ModelPicker"
 
 /**
  * opencode sessions as a chat, like remote control's phone view (src/remote/client.ts), for Settings →
@@ -226,8 +228,7 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                   ))}
                 </div>
               )}
-              <div className="chat-composer-row">
-                <textarea
+              <textarea
                   ref={input}
                   rows={1}
                   value={text}
@@ -253,6 +254,8 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                     void addImages(files)
                   }}
                 />
+              <div className="chat-composer-row">
+                <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => input.current?.focus()} />
                 {running && (
                   <button className="chat-stop" title="Stop (Esc)" onClick={() => void window.ctrl.chatStop(sessionID)}>
                     ■
@@ -501,5 +504,94 @@ function Question({ sessionID, pending }: { sessionID: string; pending: Extract<
         </button>
       </div>
     </div>
+  )
+}
+
+/** The composer's model: the session's own, switched for its next turns (the TUI follows). */
+function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; directory?: string; onPicked(): void }) {
+  const [model, setModel] = useState<ModelRef | null>(null)
+  const [choices, setChoices] = useState<ModelChoices | null>(null)
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    let live = true
+    const load = () => void window.ctrl.chatModel(sessionID).then((m) => live && setModel(m), () => {})
+    setModel(null)
+    load()
+    const off = window.ctrl.onChatModelChanged((id) => id === sessionID && load())
+    return () => {
+      live = false
+      off()
+    }
+  }, [sessionID])
+
+  useEffect(() => {
+    let live = true
+    void window.ctrl.listModels("opencode", directory).then((c) => live && setChoices(c), () => {})
+    return () => {
+      live = false
+    }
+  }, [directory])
+
+  const current = model && choices?.models.find((m) => keyOf(m) === keyOf(model))
+  const pick = (m: ModelRef) => {
+    setOpen(false)
+    // Keep the variant when the new model has one with the same name.
+    const next = choices?.models.find((x) => keyOf(x) === keyOf(m))
+    const variant = model?.variant && next?.variants.includes(model.variant) ? model.variant : undefined
+    const ref = variant ? { ...m, variant } : m
+    setModel(ref)
+    void window.ctrl.chatSetModel(sessionID, ref)
+    onPicked()
+  }
+  const setVariant = (variant: string | undefined) => {
+    if (!model) return
+    const ref = { providerID: model.providerID, id: model.id, ...(variant ? { variant } : {}) }
+    setModel(ref)
+    void window.ctrl.chatSetModel(sessionID, ref)
+  }
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        className={`chat-model${open ? " open" : ""}`}
+        disabled={!choices}
+        title="Model for the next messages"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="chat-model-name">{current?.name ?? model?.id ?? "Model"}</span>
+        <Icon name="chevron-down" />
+      </button>
+      {current && current.variants.length > 0 && (
+        <select
+          className="chat-variant"
+          title="Variant"
+          value={model?.variant ?? ""}
+          onChange={(e) => setVariant(e.target.value || undefined)}
+        >
+          <option value="">Default</option>
+          {current.variants.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      )}
+      {open && choices && trigger.current && (
+        <ModelPopover
+          anchor={trigger.current}
+          align="right"
+          choices={choices}
+          value={model}
+          onPick={pick}
+          onClose={() => {
+            setOpen(false)
+            onPicked()
+          }}
+        />
+      )}
+    </>
   )
 }

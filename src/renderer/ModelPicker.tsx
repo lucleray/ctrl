@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import type { ModelChoices, ModelOption, ModelRef } from "../shared/types"
 import { Icon } from "./icons"
 
-const keyOf = (m: ModelRef) => `${m.providerID}::${m.id}`
+export const keyOf = (m: ModelRef) => `${m.providerID}::${m.id}`
 
 type Props = {
   choices: ModelChoices | null
@@ -52,7 +52,7 @@ export function ModelPicker({ choices, error, value, onChange, enabled, fallback
         <Icon name="chevron-down" />
       </button>
       {open && enabled && choices && (
-        <Popover
+        <ModelPopover
           anchor={trigger.current!}
           choices={choices}
           value={value}
@@ -96,13 +96,17 @@ function matches(m: ModelOption, terms: string[]) {
   return terms.every((t) => hay.includes(t))
 }
 
-function Popover({
+/** The searchable model list, under (or above) `anchor`. Also the chat view's composer picker (ChatView.tsx). */
+export function ModelPopover({
   anchor,
   choices,
   value,
   onPick,
   onClose,
+  align = "left",
 }: {
+  /** Which edge of the anchor the list lines up with */
+  align?: "left" | "right"
   anchor: HTMLElement
   choices: ModelChoices
   value: ModelRef | null
@@ -170,7 +174,7 @@ function Popover({
       const above = r.top - 16
       const up = below < 320 && above > below
       const width = Math.min(Math.max(r.width, 380), 560, window.innerWidth - 24)
-      const left = Math.max(12, Math.min(r.left, window.innerWidth - width - 12))
+      const left = Math.max(12, Math.min(align === "right" ? r.right - width : r.left, window.innerWidth - width - 12))
       setStyle({
         left,
         width,
@@ -181,7 +185,7 @@ function Popover({
     place()
     window.addEventListener("resize", place)
     return () => window.removeEventListener("resize", place)
-  }, [anchor])
+  }, [anchor, align])
 
   // Once placed (hidden elements can't take focus or scroll): focus search, center the current model.
   const placed = style.visibility !== "hidden"

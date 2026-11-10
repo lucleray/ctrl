@@ -215,6 +215,9 @@ where it lives.
   messages, the assistant's markdown, thinking markers and tool one-liners (`src/renderer/ChatView.tsx`)
 - The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,
   ⌘N and `/new` work as before. No session yet (the new-session screen) and fx sessions show their terminal
+- Model picker under the message (same searchable list as Settings): switches the session's model for its next
+  turns, and the TUI follows; a variant menu next to it when the model has variants. Picking one in the TUI
+  updates it too
 - Enter sends, ⇧↩ new line, Esc or ■ stops a running turn; paste or drop images to attach them. Newest 40
   messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most every 300ms)
 - Permissions (Allow / Always / Deny) and questions (one at a time, Review, Submit) show above the composer.
