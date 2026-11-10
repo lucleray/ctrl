@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
-import { DEFAULT_SOUND_CHOICES, FONT_SIZE, type AppState } from "../shared/types"
+import { DEFAULT_SOUND_CHOICES, FONT_SIZE, harnessOf, type AppState } from "../shared/types"
 import { ArchivedBanner } from "./ArchivedBanner"
+import { ChatHome, ChatView, type ChatHandle } from "./ChatView"
 import { Board, loadFilter, onlySpace, saveFilter, type BoardFilter } from "./Board"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
@@ -33,7 +34,7 @@ const EMPTY: AppState = {
     resourcesCollapsed: false,
     resourcesDocked: false,
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal" },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -71,11 +72,25 @@ export function App() {
     if (id) open(id)
   })
   const terminal = useRef<TerminalHandle>(null)
+  const chat = useRef<ChatHandle>(null)
+  // The chat view while it's on screen, else the terminal.
+  const focusMain = useCallback(() => (chat.current ? chat.current.focus() : terminal.current?.focus()), [])
   // Either harness is enough: without opencode, ctrl runs fx sessions only (and the other way round).
   const ready = state.opencode.state === "ok" || state.fx.state === "ok"
   const activeTerm = state.terms.find((t) => t.id === state.activeTermID)
   // Its terminal is read-only (TerminalStack) until it's unarchived.
   const archivedOnScreen = activeTerm?.sessionID && state.archived[activeTerm.sessionID] ? activeTerm.sessionID : null
+  // Sessions as chat: opencode sessions show as a chat over the TUI, which keeps running underneath.
+  const chatID =
+    state.settings.sessionView === "chat" &&
+    activeTerm?.harness === "opencode" &&
+    state.currentSessionID &&
+    harnessOf(state.currentSessionID) === "opencode"
+      ? state.currentSessionID
+      : null
+  // No session on screen (the TUI's new-session screen, e.g. after archiving): a centered composer instead.
+  const chatHome =
+    state.settings.sessionView === "chat" && activeTerm?.harness === "opencode" && !state.currentSessionID && state.opencode.state === "ok"
   const checked = state.opencode.state !== "checking" && state.fx.state !== "checking"
   // First launch, or nothing usable installed. Drawn over the terminals, which keep running underneath.
   const onboarding = checked && (!state.ui.onboarded || !ready)
@@ -92,7 +107,7 @@ export function App() {
     setSpaceSettingsID(null)
     setBoard(false)
     void window.ctrl.openSession(id)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   const create = useCallback(async (spaceID: string | null) => {
@@ -100,7 +115,7 @@ export function App() {
     setSpaceSettingsID(null)
     setBoard(false)
     await window.ctrl.newSession(spaceID)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   const fixMcp = useCallback((name: string) => {
@@ -108,7 +123,7 @@ export function App() {
     setSettings(false)
     setSpaceSettingsID(null)
     void window.ctrl.fixMcp(name)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   const revealSpace = useCallback(async (spaceID: string) => {
@@ -125,12 +140,12 @@ export function App() {
 
   const closeSettings = useCallback(() => {
     setSettings(false)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   const closeSpaceSettings = useCallback(() => {
     setSpaceSettingsID(null)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   useEffect(
@@ -162,7 +177,7 @@ export function App() {
 
   const closeBoard = useCallback(() => {
     setBoard(false)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   // The CLI (`ctrl ui settings`, `ctrl ui palette`) drives these too.
@@ -190,7 +205,7 @@ export function App() {
   const closePalette = useCallback(() => {
     setPaletteQuery("")
     setPalette(false)
-    terminal.current?.focus()
+    focusMain()
   }, [])
 
   useEffect(
@@ -213,7 +228,7 @@ export function App() {
           setPalette(false)
           setSettings(false)
           setSpaceSettingsID(null)
-          terminal.current?.focus()
+          focusMain()
         }
       }),
     [create, cancelHints],
@@ -226,7 +241,7 @@ export function App() {
       state={state}
       onClose={() => {
         void window.ctrl.setUi({ resourcesOpen: false })
-        terminal.current?.focus()
+        focusMain()
       }}
     />
   )
@@ -250,7 +265,7 @@ export function App() {
         footer={
           <Toasts
             onView={open}
-            onAction={() => terminal.current?.focus()}
+            onAction={() => focusMain()}
             undoLabel={shortcutLabel("undo", state.settings.shortcuts)}
           />
         }
@@ -267,12 +282,22 @@ export function App() {
               fontSize={state.settings.fontSize}
               opencodeOpensLinks={state.opencode.state === "ok" && state.opencode.opensLinks}
               archived={state.archived}
+              concealed={!!chatID || chatHome}
             />
+            {chatID && (
+              <ChatView
+                ref={chat}
+                sessionID={chatID}
+                session={state.sessions.find((s) => s.id === chatID)}
+                archived={!!state.archived[chatID]}
+              />
+            )}
+            {chatHome && <ChatHome ref={chat} />}
             {archivedOnScreen && !onboarding && (
               <ArchivedBanner
                 onUnarchive={() => {
                   void window.ctrl.setArchived(archivedOnScreen, false)
-                  terminal.current?.focus()
+                  focusMain()
                 }}
               />
             )}
@@ -282,7 +307,8 @@ export function App() {
                 currentSessionID={state.currentSessionID}
                 target={activeTerm.harness}
                 onReference={(text, kind) => {
-                  terminal.current?.paste(`${text} `)
+                  if (chat.current) chat.current.paste(`${text} `)
+                  else terminal.current?.paste(`${text} `)
                   if (kind === "session") void window.ctrl.sessionReferenced()
                 }}
               />
@@ -297,7 +323,7 @@ export function App() {
             onDone={(defaultHarness) => {
               void window.ctrl.setSettings({ defaultHarness })
               void window.ctrl.setUi({ onboarded: true })
-              terminal.current?.focus()
+              focusMain()
             }}
           />
         )}

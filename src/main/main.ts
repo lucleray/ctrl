@@ -13,6 +13,7 @@ import {
   type Harness,
   type ModelChoices,
   type ModelOption,
+  type ChatStats,
   type ModelRef,
   type OpencodeCheck,
   type SessionItem,
@@ -44,8 +45,10 @@ import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
-import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
-import { chatPage } from "./remote-chat"
+import { DesktopChat } from "./desktop-chat"
+import { TermModes } from "./term-modes"
+import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
+import { chatImage, chatInbox, chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -203,6 +206,7 @@ const push = () => {
     send("state", state())
     companion.changed()
     remote.changed()
+    desktopChat.changed()
     for (const cb of [...changeListeners]) {
       try {
         cb()
@@ -268,7 +272,6 @@ const fx: FxSessions = new FxSessions({
 const fxTerms: FxTerminals = new FxTerminals({
   onData: (termID, data, end) => {
     send("pty:data", termID, data, end)
-    remote.fxData(termID, data)
   },
   onChange: () => {
     fx.rebuild()
@@ -363,12 +366,17 @@ const attention = new Attention({
 })
 
 let opencodeOut = 0
+const opencodeModes = new TermModes()
 const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
   onData: (data) => {
     opencodeOut += data.length
+    opencodeModes.feed(data)
     send("pty:data", OPENCODE_TERM, data, opencodeOut)
   },
-  onReset: () => send("pty:reset", OPENCODE_TERM),
+  onReset: () => {
+    opencodeModes.reset()
+    send("pty:reset", OPENCODE_TERM)
+  },
   onRoute: (id) => {
     opencodeRoute = id
     if (showOpencode) opencode.setCurrent(id)
@@ -386,25 +394,23 @@ const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "brid
 
 /** Unassigned sessions the phone lists besides the spaces' (bounded, like the sidebar's Recents pages). */
 const REMOTE_RECENTS = 30
-
-/** Session the phone's TUI shows, so a theme change restarts it on the same one. */
-let remoteRoute: string | null = null
-const remoteTui = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
-  onData: (data) => remote.tuiData(data),
-  onReset: () => remote.tuiReset(),
-  onRoute: (id) => (remoteRoute = id),
-  onBridge: () => {},
-})
+/** Newest archived sessions the phone lists in its Archived section */
+const REMOTE_ARCHIVED = 30
 
 const remoteSnapshot = (): RemoteSnapshot => {
-  const { spaces, assignments, archived } = store.data
+  const { spaces, assignments, archived, parents } = store.data
   const spaceIDs = new Set(spaces.map((s) => s.id))
   let others = 0
-  const list = sessions.filter((s) => {
+  const live = sessions.filter((s) => {
     if (archived[s.id] || pendingDeletes.has(s.id)) return false
     if (spaceIDs.has(assignments[s.id])) return true
     return others++ < REMOTE_RECENTS
   })
+  const gone = sessions
+    .filter((s) => archived[s.id] && !pendingDeletes.has(s.id))
+    .sort((a, b) => archived[b.id] - archived[a.id])
+    .slice(0, REMOTE_ARCHIVED)
+  const list = [...live, ...gone]
   return {
     dark: nativeTheme.shouldUseDarkColors,
     spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
@@ -417,6 +423,8 @@ const remoteSnapshot = (): RemoteSnapshot => {
       updated: s.updated,
       spaceID: spaceIDs.has(assignments[s.id]) ? assignments[s.id] : null,
       directory: s.directory,
+      ...(parents[s.id] ? { parentID: parents[s.id] } : {}),
+      ...(archived[s.id] ? { archived: archived[s.id] } : {}),
     })),
   }
 }
@@ -467,7 +475,54 @@ const openCodeClient = () => {
   if (!opencode.client) throw new Error("The opencode service isn't connected")
   return opencode.client
 }
-opencode.onSessionEvent = (sessionID) => remote.sessionEvent(sessionID)
+/** Context window per model ("provider::id"), read once per run: model.list is too heavy to call per stats. */
+const contextLimits = new Map<string, number | null>()
+async function contextLimit(model: ModelRef, directory: string) {
+  const key = `${model.providerID}::${model.id}`
+  if (!contextLimits.has(key)) {
+    const list = await openCodeClient().model.list({ location: { directory } }).catch(() => null)
+    for (const m of list?.data ?? []) contextLimits.set(`${m.providerID}::${m.id}`, m.limit?.context || null)
+    if (!contextLimits.has(key)) return null
+  }
+  return contextLimits.get(key) ?? null
+}
+
+/** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
+const chatOps = {
+  page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
+  // Steer, never queue: a message sent mid-turn reaches the agent at its next step.
+  send: async (sessionID: string, text: string, images: string[]) => {
+    const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
+    const sent = await openCodeClient().session.prompt({ sessionID, text, delivery: "steer", ...(files.length ? { files } : {}) })
+    return sent?.id
+  },
+  image: (sessionID: string, messageID: string, index: number) => chatImage(openCodeClient(), sessionID, messageID, index),
+  stop: async (sessionID: string) => void (await openCodeClient().session.interrupt({ sessionID })),
+  reply: (sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
+    openCodeClient().permission.reply({ sessionID, requestID, decision }),
+  answer: (sessionID: string, formID: string, answer: FormAnswer | null) =>
+    answer
+      ? openCodeClient().session.form.reply({ sessionID, formID, answer })
+      : openCodeClient().session.form.cancel({ sessionID, formID }),
+  pending: (sessionID: string) => opencode.pendingFor(sessionID),
+  title: (sessionID: string) => sessionByID(sessionID)?.title,
+}
+
+const desktopChat = new DesktopChat({
+  page: (sessionID) => chatPage(openCodeClient(), sessionID, undefined, true),
+  pending: chatOps.pending,
+  inbox: (sessionID) => chatInbox(openCodeClient(), sessionID),
+  updated: (sessionID, items) => send("chat:update", sessionID, items),
+  pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
+  inboxChanged: (sessionID, inbox) => send("chat:inbox", sessionID, inbox),
+})
+
+opencode.onSessionEvent = (sessionID, type) => {
+  remote.sessionEvent(sessionID)
+  desktopChat.sessionEvent(sessionID)
+  // Picked in the TUI (or another client): the chat view's model picker follows.
+  if (type === "session.model.selected") send("chat:model-changed", sessionID)
+}
 
 const remote: RemoteServer = new RemoteServer({
   port: REMOTE_PORT,
@@ -482,25 +537,15 @@ const remote: RemoteServer = new RemoteServer({
       .filter((r) => cards.has(r.id))
     void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
   },
-  tui: remoteTui,
-  fx: {
-    open: (sessionID) => fxTermFor(sessionID),
-    backlog: (termID) => fxTerms.backlog(termID),
-    write: (termID, data) => fxTerms.write(termID, data),
-    resize: (termID, size) => fxTerms.resizeTerm(termID, size),
-  },
-  chat: {
-    page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
-    send: async (sessionID, text) => void (await openCodeClient().session.prompt({ sessionID, text })),
-    stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
-    reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
-    pending: (sessionID) => opencode.pendingFor(sessionID),
-    title: (sessionID) => sessionByID(sessionID)?.title,
-  },
+  chat: chatOps,
   // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
-  create: async (spaceID) => {
+  create: async (spaceID, parentID) => {
     const space = spaceID && store.space(spaceID) ? spaceID : null
-    const created = await newSession(space, undefined, undefined, { focus: false })
+    const parent = parentID ? sessionByID(parentID) : undefined
+    if (parentID && !parent) throw new Error("This session doesn't exist anymore")
+    const created = parent
+      ? await newSession(store.data.assignments[parent.id] ?? null, parent.directory, parent.harness, { focus: false, parentID: parent.id })
+      : await newSession(space, undefined, undefined, { focus: false })
     let id = "id" in created ? created.id : null
     for (let i = 0; i < 150 && !(id && sessionByID(id)); i++) {
       // fx reports its session id once its process is up.
@@ -509,6 +554,41 @@ const remote: RemoteServer = new RemoteServer({
     }
     if (!id || !sessionByID(id)) throw new Error("The new session didn't show up, try again from the list")
     return id
+  },
+  search: (query) => {
+    // Searching can surface any session, like the palette: load the older ones too.
+    void opencode.loadOlder()
+    const { hits, status } = search.search(query)
+    const { assignments, archived, spaces } = store.data
+    const spaceIDs = new Set(spaces.map((s) => s.id))
+    return {
+      status,
+      hits: hits.map((h) => ({
+        ...h,
+        title: sessionByID(h.sessionID)?.title ?? h.title,
+        spaceID: spaceIDs.has(assignments[h.sessionID]) ? assignments[h.sessionID] : null,
+        archived: !!archived[h.sessionID],
+        status: sessionByID(h.sessionID)?.status,
+      })),
+    }
+  },
+  rename: (sessionID, title) => renameSession(sessionID, title),
+  move: (sessionID, spaceID) => {
+    if (!sessionByID(sessionID)) return
+    store.assignTree(sessionID, spaceID && store.space(spaceID) ? spaceID : null)
+    // Moving a session somewhere is a clear signal it's wanted again (same as the sidebar's Move to).
+    if (store.data.archived[sessionID]) store.setArchived([sessionID], false)
+    push()
+  },
+  detach: (sessionID) => {
+    if (!store.setParent(sessionID, null)) return
+    push()
+  },
+  setArchived: (sessionID, on) => {
+    if (!sessionByID(sessionID)) return
+    if (on) return archive([sessionID])
+    store.setArchived([sessionID], false)
+    push()
   },
   cantOpen: (sessionID) => {
     const session = sessionByID(sessionID)
@@ -676,7 +756,6 @@ const applyTheme = () => {
   // Nested objects merge over cli.json, so omitting `name` keeps the user's theme.
   const overrides = { theme: { mode: dark ? "dark" : "light", ...(tuiTheme ? { name: tuiTheme } : {}) } }
   terminal.setCliOverrides(overrides, opencodeRoute)
-  remoteTui.setCliOverrides(overrides, remoteRoute)
   fxTerms.colorScheme(dark)
   push()
 }
@@ -1482,8 +1561,67 @@ function registerIpc() {
   ipcMain.handle("update:install", () => updater.install().catch(report))
 
   // The opencode TUI repaints itself, so a re-attached xterm only needs live output from here on.
+  ipcMain.handle("chat:open", (_e, sessionID: string) => {
+    if (typeof sessionID !== "string" || harnessOf(sessionID) !== "opencode") throw new Error("Not an opencode session")
+    return desktopChat.open(sessionID)
+  })
+  ipcMain.handle("chat:close", () => desktopChat.close())
+  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chatPage(openCodeClient(), sessionID, cursor, true))
+  ipcMain.handle("chat:send", (_e, sessionID: string, text: string, images: unknown) =>
+    chatOps.send(sessionID, String(text ?? ""), cleanImages(images)),
+  )
+  // The chat view's empty state: a new opencode session in the default space, started with this message.
+  ipcMain.handle("chat:new", async (_e, text: string, images: unknown) => {
+    const created = await newSession(defaultSpaceID(), undefined, "opencode")
+    if (!("id" in created)) return
+    await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
+  })
+  ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
+    chatOps.reply(sessionID, requestID, decision),
+  )
+  ipcMain.handle("chat:answer", (_e, sessionID: string, formID: string, answer: FormAnswer | null) =>
+    chatOps.answer(sessionID, formID, answer),
+  )
+  // The session's model, else what opencode would use in its folder (a session that never picked one).
+  ipcMain.handle("chat:model", async (_e, sessionID: string) => {
+    const client = openCodeClient()
+    const session = await client.session.get({ sessionID })
+    if (session.model) return { providerID: session.model.providerID, id: session.model.id, variant: session.model.variant }
+    const fallback = await client.model.default({ location: { directory: session.location.directory } }).catch(() => null)
+    return fallback?.data ? { providerID: fallback.data.providerID, id: fallback.data.id } : null
+  })
+  // Spend so far and how full the context is, from the newest assistant message that reports tokens.
+  ipcMain.handle("chat:stats", async (_e, sessionID: string): Promise<ChatStats> => {
+    const client = openCodeClient()
+    const [session, recent] = await Promise.all([
+      client.session.get({ sessionID }),
+      client.message.list({ sessionID, limit: 20, order: "desc" }),
+    ])
+    type Assistant = { type: string; model?: ModelRef; tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }
+    const used = (m: Assistant) => {
+      const t = m.tokens
+      return t ? t.input + t.output + t.reasoning + t.cache.read + t.cache.write : 0
+    }
+    // Interrupted or failed steps report zero tokens: skip back to the newest one that used some.
+    const last = (recent.data as unknown as Assistant[]).find((m) => m.type === "assistant" && m.model && used(m) > 0)
+    const context: ChatStats["context"] = last?.model
+      ? { used: used(last), limit: await contextLimit(last.model, session.location.directory) }
+      : null
+    return { cost: session.cost ?? 0, context }
+  })
+  ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) =>
+    openCodeClient().session.switchModel({
+      sessionID,
+      model: { providerID: String(model.providerID), id: String(model.id), ...(model.variant ? { variant: String(model.variant) } : {}) },
+    }),
+  )
+  ipcMain.handle("chat:image", async (_e, sessionID: string, messageID: string, index: number) => {
+    const found = await chatOps.image(sessionID, messageID, index).catch(() => null)
+    return found ? `data:${found.mime};base64,${found.body.toString("base64")}` : null
+  })
   ipcMain.handle("pty:attach", (_e, termID: string) =>
-    termID === OPENCODE_TERM ? { data: "", end: opencodeOut } : fxTerms.backlog(termID),
+    termID === OPENCODE_TERM ? { data: opencodeModes.replay(), end: opencodeOut } : fxTerms.backlog(termID),
   )
   ipcMain.on("pty:write", (_e, termID: string, data: string) =>
     termID === OPENCODE_TERM ? terminal.write(data) : fxTerms.write(termID, data),
@@ -1828,7 +1966,6 @@ app.whenReady().then(async () => {
   registerIpc()
   cliServer.start().catch((err) => console.error("[ctrl] cli socket failed", err))
   await terminal.init()
-  await remoteTui.init()
   if (store.data.settings.remoteControl) void remote.setEnabled(true)
   watchBridge()
   loadThemes()
@@ -1881,7 +2018,6 @@ app.on("window-all-closed", () => app.quit())
 app.on("will-quit", () => {
   cliServer.stop()
   remote.stop()
-  remoteTui.dispose()
   terminal.dispose()
   fxTerms.dispose()
   fx.stop()

@@ -6,16 +6,38 @@ import { networkInterfaces } from "node:os"
 import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { Stage } from "../shared/adapters/adapter"
-import type { Harness, RemoteStatus, SessionStatus, Tone } from "../shared/types"
+import type { Harness, IndexStatus, RemoteStatus, SearchHit, SessionStatus, Tone } from "../shared/types"
 import type { ChatPage } from "./remote-chat"
-import type { Terminal } from "./terminal"
 
 /** A permission or question waiting on you, shown above the chat's composer */
-export type ChatPending = { id: string; kind: "permission" | "question"; detail: string }
+export type ChatPending =
+  | { id: string; kind: "permission"; detail: string }
+  /** fields: the form opencode asks (src/remote/client.ts draws them and answers with chat-answer) */
+  | { id: string; kind: "question"; detail: string; title: string; fields: FormField[] }
+
+/** One field of an opencode question form, as opencode describes it (@opencode/client's FormField) */
+export type FormField = {
+  key: string
+  type: "string" | "number" | "integer" | "boolean" | "multiselect" | "external"
+  title?: string
+  description?: string
+  required?: boolean
+  hidden?: boolean
+  when?: { key: string; op: "eq" | "neq"; value: unknown }[]
+  options?: { value: string; label: string; description?: string }[]
+  custom?: boolean
+  placeholder?: string
+  default?: unknown
+  url?: string
+  minItems?: number
+  maxItems?: number
+}
+
+export type FormAnswer = Record<string, string | number | boolean | string[]>
 
 /** What the phone's list shows. Kept small: spaces, their sessions and the newest others. */
 export type RemoteSnapshot = {
-  /** ctrl's appearance, which the TUIs follow too */
+  /** ctrl's appearance, which the phone follows */
   dark: boolean
   spaces: { id: string; name: string }[]
   sessions: {
@@ -27,6 +49,10 @@ export type RemoteSnapshot = {
     updated: number
     spaceID: string | null
     directory: string
+    /** Session it nests under, like the sidebar's tree */
+    parentID?: string
+    /** When it was archived (archived sessions only) */
+    archived?: number
   }[]
 }
 
@@ -50,6 +76,9 @@ export type RemoteBoardCard = {
   sessions: { id: string; title: string }[]
 }
 
+/** A message hit from ⌘K's index, with what the phone needs to show sessions it doesn't list */
+export type RemoteSearchHit = SearchHit & { spaceID: string | null; archived: boolean; status?: SessionStatus }
+
 type Deps = {
   port: number
   staticDir: string
@@ -58,23 +87,28 @@ type Deps = {
   board(): RemoteBoardCard[]
   /** Fetch live details that are due for these resources (ids) */
   refreshBoard(ids: Set<string>): void
-  /** The phone's own opencode TUI, separate from the desktop one so each keeps its own size and session */
-  tui: Terminal
-  fx: {
-    /** The fx terminal for a session, started in the background when it has none */
-    open(sessionID: string): Promise<string>
-    backlog(termID: string): { data: string; end: number }
-    write(termID: string, data: string): void
-    resize(termID: string, size: { cols: number; rows: number } | null): void
-  }
-  /** New session in a space (null: none), with that space's folder, harness and model; returns its id */
-  create(spaceID: string | null): Promise<string>
+  /** New session in a space (null: none), with that space's folder, harness and model; returns its id.
+   *  With parentID: a child of that session instead (its space, folder and harness). */
+  create(spaceID: string | null, parentID?: string): Promise<string>
+  rename(sessionID: string, title: string): Promise<void>
+  /** Into a space (null: none), children along; unarchives it, like the sidebar's Move to */
+  move(sessionID: string, spaceID: string | null): void
+  detach(sessionID: string): void
+  /** Message search, the same index as the palette (⌘K) */
+  search(query: string): { hits: RemoteSearchHit[]; status: IndexStatus }
+  /** Archive (children come along, like the sidebar) or unarchive a session */
+  setArchived(sessionID: string, on: boolean): void
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
-    send(sessionID: string, text: string): Promise<void>
+    /** images: data: URLs (see cleanImages) */
+    send(sessionID: string, text: string, images: string[]): Promise<unknown>
+    /** An image attached to a message you sent */
+    image(sessionID: string, messageID: string, index: number): Promise<{ mime: string; body: Buffer } | null>
     stop(sessionID: string): Promise<void>
     reply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
+    /** Answer a question form (answer null: dismiss it) */
+    answer(sessionID: string, formID: string, answer: FormAnswer | null): Promise<void>
     pending(sessionID: string): ChatPending[]
     title(sessionID: string): string | undefined
   }
@@ -83,10 +117,8 @@ type Deps = {
   onStatus(): void
 }
 
-type View = { sessionID: string; harness: Harness; termID?: string; cols: number; rows: number }
 type Viewer = {
   ws: WebSocket
-  view?: View
   seq: number
   board?: boolean
   /** opencode session open in the chat view */
@@ -96,21 +128,34 @@ type Viewer = {
 }
 
 type Inbound =
-  | { t: "open"; id: string; cols: number; rows: number }
-  | { t: "input"; data: string }
-  | { t: "resize"; cols: number; rows: number }
   | { t: "leave" }
   | { t: "board"; on: boolean }
-  | { t: "new"; spaceID: string | null }
+  | { t: "new"; spaceID: string | null; parentID?: string }
+  | { t: "archive"; id: string; on: boolean }
+  | { t: "rename"; id: string; title: string }
+  | { t: "move"; id: string; spaceID: string | null }
+  | { t: "detach"; id: string }
+  | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
-  | { t: "chat-send"; text: string }
+  | { t: "chat-send"; text: string; images?: string[] }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
+  | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
 
 const COOKIE = "ctrl_remote"
-/** The phone's TUI quits after this long with nobody looking at it, and comes back on the next open. */
-const TUI_IDLE_MS = 10 * 60_000
+/** Photos per message, and the size of each once base64'd (the phone shrinks them well below this). */
+const MAX_IMAGES = 6
+const MAX_IMAGE_CHARS = 12_000_000
+const IMAGE_URL = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+
+/** The images a phone attached to a message: data: URLs of formats models read, size-capped. */
+export function cleanImages(images: unknown): string[] {
+  if (!Array.isArray(images)) return []
+  return images
+    .filter((i): i is string => typeof i === "string" && i.length <= MAX_IMAGE_CHARS && IMAGE_URL.test(i))
+    .slice(0, MAX_IMAGES)
+}
 /** Interfaces are checked this often, so Tailscale connecting (or its address changing) is picked up. */
 const RECHECK_MS = 15_000
 /** While a turn streams, the chat view re-reads the newest messages at most this often. */
@@ -176,12 +221,9 @@ const cookieOf = (req: IncomingMessage) => {
 
 /**
  * Remote control: a small web app (src/remote) served on this Mac's Tailscale address, so a phone on the
- * same tailnet lists spaces and sessions and drives their terminals.
+ * same tailnet lists spaces and sessions and chats in opencode ones (src/main/remote-chat.ts). fx sessions
+ * are listed but open on the Mac only.
  *
- * - opencode sessions get their own TUI (started on first open, sized to the phone), so the desktop one
- *   keeps its session and size. Both talk to the same opencode service, so running turns are shared.
- * - fx has one process per session, so the phone mirrors the desktop's pty, resized to the phone while
- *   it's looking.
  * - Access: only the Tailscale interface listens (localhost when there's none), and the URL carries a
  *   token that becomes an HttpOnly cookie on first visit.
  */
@@ -192,7 +234,6 @@ export class RemoteServer {
   private host: string | null = null
   private viewers = new Set<Viewer>()
   private recheck?: ReturnType<typeof setInterval>
-  private idleTimer?: ReturnType<typeof setTimeout>
   private lastSnapshot = ""
   private boardTimer?: ReturnType<typeof setTimeout>
   private lastBoard = ""
@@ -210,7 +251,6 @@ export class RemoteServer {
       clearInterval(this.recheck)
       this.recheck = undefined
       this.close()
-      this.deps.tui.stop()
       this.setStatus({ state: "off" })
     }
   }
@@ -291,6 +331,8 @@ export class RemoteServer {
       // Lax, not Strict, for the same reason (Strict cookies skip navigations coming from other apps).
       headers["Set-Cookie"] = `${COOKIE}=${given}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`
     } else if (!this.authorized(req)) return this.deny(res)
+    const image = url.pathname.match(/^\/file\/([\w-]+)\/([\w-]+)\/(\d{1,2})$/)
+    if (image) return this.image(res, image[1], image[2], Number(image[3]))
     const file = url.pathname === "/" ? "index.html" : url.pathname.slice(1)
     if (!/^[\w.-]+$/.test(file)) return this.notFound(res)
     try {
@@ -304,6 +346,14 @@ export class RemoteServer {
     } catch {
       this.notFound(res)
     }
+  }
+
+  private async image(res: ServerResponse, sessionID: string, messageID: string, index: number) {
+    const found = await this.deps.chat.image(sessionID, messageID, index).catch(() => null)
+    if (!found) return this.notFound(res)
+    // A sent message never changes: the phone keeps it.
+    res.writeHead(200, { "Content-Type": found.mime, "Cache-Control": "private, max-age=31536000, immutable" })
+    res.end(found.body)
   }
 
   private deny(res: ServerResponse) {
@@ -349,7 +399,6 @@ export class RemoteServer {
   }
 
   private async message(viewer: Viewer, msg: Inbound) {
-    if (msg.t === "open") return this.open(viewer, msg.id, size(msg))
     if (msg.t === "leave") return this.leave(viewer)
     if (msg.t === "chat") return this.openChat(viewer, msg.id)
     if (typeof msg.t === "string" && msg.t.startsWith("chat-")) {
@@ -358,19 +407,46 @@ export class RemoteServer {
       if (msg.t === "chat-more" && typeof msg.cursor === "string") {
         const page = await this.deps.chat.page(id, msg.cursor)
         if (viewer.chat === id) this.send(viewer, { t: "chat-more", id, ...page })
-      } else if (msg.t === "chat-send" && typeof msg.text === "string" && msg.text.trim()) {
-        await this.deps.chat.send(id, msg.text)
+      } else if (msg.t === "chat-send" && typeof msg.text === "string") {
+        const images = cleanImages(msg.images)
+        if (!msg.text.trim() && !images.length) return
+        await this.deps.chat.send(id, msg.text, images)
         this.sessionEvent(id)
       } else if (msg.t === "chat-stop") {
         await this.deps.chat.stop(id)
       } else if (msg.t === "chat-reply" && ["once", "always", "reject"].includes(msg.decision)) {
         await this.deps.chat.reply(id, String(msg.requestID), msg.decision)
+      } else if (msg.t === "chat-answer" && typeof msg.formID === "string") {
+        await this.deps.chat.answer(id, msg.formID, cleanAnswer(msg.answer))
       }
       return
     }
     if (msg.t === "new") {
-      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null)
+      const parentID = typeof msg.parentID === "string" ? msg.parentID : undefined
+      const id = await this.deps.create(typeof msg.spaceID === "string" ? msg.spaceID : null, parentID)
       this.send(viewer, { t: "created", id })
+      return
+    }
+    if (msg.t === "search") {
+      if (typeof msg.q !== "string") return
+      this.send(viewer, { t: "search", seq: msg.seq, q: msg.q, ...this.deps.search(msg.q.slice(0, 200)) })
+      return
+    }
+    if (msg.t === "rename") {
+      if (typeof msg.id === "string" && typeof msg.title === "string" && msg.title.trim())
+        await this.deps.rename(msg.id, msg.title.trim().slice(0, 300))
+      return
+    }
+    if (msg.t === "move") {
+      if (typeof msg.id === "string") this.deps.move(msg.id, typeof msg.spaceID === "string" ? msg.spaceID : null)
+      return
+    }
+    if (msg.t === "detach") {
+      if (typeof msg.id === "string") this.deps.detach(msg.id)
+      return
+    }
+    if (msg.t === "archive") {
+      if (typeof msg.id === "string") this.deps.setArchived(msg.id, !!msg.on)
       return
     }
     if (msg.t === "board") {
@@ -381,53 +457,13 @@ export class RemoteServer {
       this.deps.refreshBoard(new Set(cards.filter((c) => c.stage !== "done").map((c) => c.id)))
       return
     }
-    const view = viewer.view
-    if (!view) return
-    if (msg.t === "input" && typeof msg.data === "string") {
-      if (view.harness === "opencode") this.deps.tui.write(msg.data)
-      else if (view.termID) this.deps.fx.write(view.termID, msg.data)
-    } else if (msg.t === "resize") {
-      Object.assign(view, size(msg))
-      if (view.harness === "opencode") this.deps.tui.resize(view.cols, view.rows)
-      else if (view.termID) this.deps.fx.resize(view.termID, view)
-    }
-  }
-
-  private async open(viewer: Viewer, sessionID: string, { cols, rows }: { cols: number; rows: number }) {
-    if (typeof sessionID !== "string") return
-    const problem = this.deps.cantOpen(sessionID)
-    if (problem) throw new Error(problem)
-    this.leave(viewer)
-    const seq = ++viewer.seq
-    const harness: Harness = sessionID.startsWith("fx:") ? "fx" : "opencode"
-    const view: View = { sessionID, harness, cols, rows }
-    if (harness === "opencode") {
-      clearTimeout(this.idleTimer)
-      viewer.view = view
-      this.send(viewer, { t: "open", id: sessionID, harness })
-      const tui = this.deps.tui
-      if (!tui.running) tui.start(cols, rows, sessionID)
-      else {
-        tui.resize(cols, rows)
-        tui.open(sessionID)
-        tui.repaint()
-      }
-      return
-    }
-    const termID = await this.deps.fx.open(sessionID)
-    // Another open (or a leave) came in while fx was starting.
-    if (viewer.seq !== seq) return
-    view.termID = termID
-    viewer.view = view
-    this.send(viewer, { t: "open", id: sessionID, harness })
-    this.send(viewer, { t: "data", data: this.deps.fx.backlog(termID).data })
-    this.deps.fx.resize(termID, { cols, rows })
   }
 
   private async openChat(viewer: Viewer, sessionID: string) {
     if (typeof sessionID !== "string") return
     const problem = this.deps.cantOpen(sessionID)
     if (problem) throw new Error(problem)
+    if (sessionID.startsWith("fx:")) throw new Error("fx sessions open on your Mac")
     this.leave(viewer)
     viewer.chat = sessionID
     const seq = viewer.seq
@@ -460,35 +496,10 @@ export class RemoteServer {
   private leave(viewer: Viewer) {
     viewer.chat = undefined
     viewer.pendingJSON = undefined
-    const view = viewer.view
-    viewer.view = undefined
     viewer.seq++
-    if (!view) return
-    if (view.harness === "fx" && view.termID) {
-      const stillViewed = [...this.viewers].some((v) => v !== viewer && v.view?.termID === view.termID)
-      if (!stillViewed) this.deps.fx.resize(view.termID, null)
-    }
-    if (view.harness === "opencode" && ![...this.viewers].some((v) => v !== viewer && v.view?.harness === "opencode")) {
-      clearTimeout(this.idleTimer)
-      this.idleTimer = setTimeout(() => this.deps.tui.stop(), TUI_IDLE_MS)
-    }
   }
 
   // ---------- from main ----------
-
-  /** Output of the phone's opencode TUI. */
-  tuiData(data: string) {
-    for (const v of this.viewers) if (v.view?.harness === "opencode") this.send(v, { t: "data", data })
-  }
-
-  tuiReset() {
-    for (const v of this.viewers) if (v.view?.harness === "opencode") this.send(v, { t: "reset" })
-  }
-
-  fxData(termID: string, data: string) {
-    if (!this.viewers.size) return
-    for (const v of this.viewers) if (v.view?.termID === termID) this.send(v, { t: "data", data })
-  }
 
   /** Resources or their live details changed: resend the board to phones looking at it. */
   boardChanged() {
@@ -527,7 +538,15 @@ export class RemoteServer {
   }
 }
 
-const size = (msg: { cols?: unknown; rows?: unknown }) => ({
-  cols: Math.max(20, Math.min(500, Math.round(Number(msg.cols) || 80))),
-  rows: Math.max(5, Math.min(300, Math.round(Number(msg.rows) || 24))),
-})
+/** Only what a form answer can hold (strings, numbers, booleans, lists of strings); null dismisses. */
+function cleanAnswer(raw: unknown): FormAnswer | null {
+  if (!raw || typeof raw !== "object") return null
+  const out: FormAnswer = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v.slice(0, 10_000)
+    else if (typeof v === "number" && Number.isFinite(v)) out[k] = v
+    else if (typeof v === "boolean") out[k] = v
+    else if (Array.isArray(v)) out[k] = v.filter((x): x is string => typeof x === "string").slice(0, 100)
+  }
+  return out
+}

@@ -175,21 +175,71 @@ where it lives.
 ## Remote control (experimental)
 
 - Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
-  7338 for dev runs), so your phone lists spaces and sessions, drives their terminals and shows the Board
+  7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and shows the Board
   (`src/main/remote.ts`, `src/remote/`)
+- Settings shows a QR code of the link to scan with the phone's camera ("Can't scan? Show the link" reveals
+  it with a Copy button), the MagicDNS name when there is one
 - The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
-- opencode sessions open in a separate TUI sized to the phone, so the desktop keeps its session and size; it
-  quits after 10 minutes with nobody looking. fx sessions mirror the desktop's pty, resized while the phone views it
-- Phone screens: Sessions (spaces, then Recents, with status dots; + on a section starts a session there,
-  with the space's folder, harness and model, and opens it on the phone without changing the desktop) and Board (the four columns stacked, one
-  space at a time or all, saved on the phone; tap a card for its link, a session chip to open it).
+- fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping one
+  says so. There's no terminal view on the phone
+- Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
+  phone; tap a card for its link, a session chip to open it). The top bar shows the connection dot (green
+  when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
+- Sessions mirrors the sidebar: search with a New chat button next to it, then Spaces (folders in the sidebar's order, child sessions nested
+  under their parent with a fold toggle, a folded space shows its most urgent status), Recents (every live
+  session, newest first, 10 at a time) and Archived (the newest 30). Spaces, Recents, Archived and child sessions start folded;
+  what you fold is saved on the phone. An empty space shows "No sessions yet" followed by a small inline New session button to start
+  one. New sessions start with the space's folder, harness and model, and
+  open on the phone without changing the desktop
+- Search at the top works like ⌘K: chats by title, space or folder, message hits from the search index with
+  a snippet, and spaces (tap one to jump to it, unfolded)
+- Long press a session (or ⋯ in its chat header) for its menu: open, new child
+  session, rename, move to a space, open parent, detach from parent, archive (unarchive in Archived). Long press a space (or the ⋯ on an open one)
+  for new session, fold and its board. Right-click does the same in a desktop browser
 - opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
-  composer (Return = new line, ↑ sends, ■ stops the turn); permissions as Allow / Always / Deny, questions
-  link to the terminal (`src/main/remote-chat.ts`). **Terminal** in the header switches to the TUI, **Chat** back
-- fx sessions (and the Terminal view) are a full-width terminal: tap it to type with the phone's keyboard (Return adds a new line, the round send
-  button that shows while typing submits), swipe to scroll the TUI, A−/A+ for the font size
+  composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
+  view above it); permissions as Allow / Always / Deny; photos: + in the composer (camera or library) or
+  paste an image, up to 6 per message, shrunk to 2000px JPEG on the phone and sent to opencode inline, shown
+  in your bubble (served from `/file/<session>/<message>/<n>`)
+  (`src/main/remote-chat.ts`)
+- An archived session's chat shows "This session is archived" with an Unarchive button in place of the
+  composer, like the desktop's banner
+- Questions the agent asks are answered in the chat, one at a time like the TUI ("1 of 3"): tap an option
+  (it moves on to the next question), tick several for multi-select, or type your own answer when the question
+  allows it; Back / Next / Skip, then a Review step (tap an answer to change it) with Submit. Dismiss cancels
+  it. A half-answered question survives live updates
+
+## Chat view (experimental)
+
+- Settings → Appearance → opencode sessions: Terminal (default) or Chat. Chat shows the opencode session on
+  screen as a chat, like remote control's phone view, with the same reads (`src/main/remote-chat.ts`): your
+  messages, the assistant's markdown, what it thought and its tool calls (`src/renderer/ChatView.tsx`)
+- Thinking and shell commands show in full in a box clamped to its first 3 lines: click it to unfold, click again
+  to fold it back. Other tool calls are one line, or their full input clamped the same way when it's long
+- The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,
+  ⌘N and `/new` work as before. fx sessions show their terminal
+- No session on screen (the new-session screen, e.g. after archiving the current one): "What do you want to work
+  on?" with the composer in the middle. Sending starts an opencode session in the default space with that message
+- One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed. Enter sends, ⇧↩ new
+  line, Esc stops; paste or drop images to attach them
+- Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
+  above the composer ("Steers the agent at its next step") until opencode hands them to the agent
+- Long pastes (5+ lines or 800+ characters) go in as a highlighted `[Pasted 12 lines]` token, like opencode's TUI;
+  ⌘V again right after puts the full text in its place. Backspace removes a token whole; the full text is sent
+- Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's
+  context window) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
+  Picking switches the session's model for its next turns and the TUI follows, and the other way round
+- Newest 40 messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most
+  every 300ms). Only messages that changed are sent to the view and re-rendered, markdown is rendered once per
+  text, and the composer is its own component, so typing doesn't re-render the conversation
+- Permissions (Allow / Always / Deny) and questions (one at a time, Review, Submit) show above the composer.
+  Archived sessions hide the composer behind the archived banner
+- Dropping a session or a resource row on it pastes the reference into the composer. A session goes in as an
+  `@Title` token (sent as the full `@session[Title](id)` mention) and shows as a chip in the sent message
+- Tables: as wide as their content up to the chat's width, then they scroll sideways in their own box. Columns are
+  sized from their longest cell: short values (`#`, a status) stay compact, labels get a minimum width, prose more
 
 ## Terminal
 

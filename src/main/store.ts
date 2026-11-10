@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS: Settings = {
   shortcuts: {},
   companion: false,
   remoteControl: false,
+  sessionView: "terminal",
 }
 
 type Persisted = {

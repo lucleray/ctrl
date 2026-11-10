@@ -1028,6 +1028,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `sounds` | boolean | Sounds when a session needs you, fails or finishes |
 | `soundsWhenFocused` | boolean | Also play sounds while ctrl is focused |
 | `remoteControl` | boolean | Remote control: serve a web page on your Tailscale network to use ctrl from your phone |
+| `sessionView` | "terminal" \| "chat" | How opencode sessions show: the embedded TUI (terminal) or a chat view (chat). fx sessions always use their terminal |
 | `soundChoices.<event>` | system sound name \| absolute path \| null | Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null |
 | `shortcuts.<command>` | string[] \| null | Bindings for an app command, e.g. ["Cmd+Shift+N"]; [] disables it, null restores the default |
 | `companion` | boolean | ctrl Companion: always-on-top window listing the sessions that mentioned what's on screen (browser tab, Slack thread, Notion page), with a global shortcut for a new session about it |

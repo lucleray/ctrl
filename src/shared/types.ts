@@ -1,3 +1,5 @@
+import type { ChatPending, FormAnswer } from "../main/remote"
+import type { ChatItem, ChatPage, ChatQueued } from "../main/remote-chat"
 import type { CommandID, ShortcutOverrides } from "./shortcuts"
 
 /** variant: opencode model variant, or fx reasoning effort (`--effort`); unset = the model's default */
@@ -172,7 +174,12 @@ export type Settings = {
   companion: boolean
   /** Remote control: a web page on your Tailscale network to use ctrl from your phone (src/main/remote.ts) */
   remoteControl: boolean
+  /** How opencode sessions show: the embedded TUI, or a chat view like the phone's (src/renderer/ChatView.tsx) */
+  sessionView: SessionView
 }
+
+export type SessionView = "terminal" | "chat"
+
 
 /**
  * The remote control server. on: listening on a Tailscale address, `urls` open it on the phone (they carry
@@ -547,4 +554,35 @@ export type CtrlApi = {
   onPtyData(cb: (termID: string, data: string, end: number) => void): () => void
   /** The terminal restarted: clear it */
   onPtyReset(cb: (termID: string) => void): () => void
+  /** Chat view (Settings → Appearance → Sessions as chat): the newest page of an opencode session, and watch it */
+  chatOpen(sessionID: string): Promise<ChatOpened>
+  /** Stop watching (the chat view went away) */
+  chatClose(): Promise<void>
+  chatMore(sessionID: string, cursor: string): Promise<ChatPage>
+  /** images: data: URLs. Steers a running turn. Resolves with the message's id (it shows in the inbox until delivered) */
+  chatSend(sessionID: string, text: string, images: string[]): Promise<string | undefined>
+  /** A new opencode session in the default space, opened, with this first message */
+  chatNew(text: string, images: string[]): Promise<void>
+  chatStop(sessionID: string): Promise<void>
+  chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
+  /** Answer a question form (null: dismiss it) */
+  chatAnswer(sessionID: string, formID: string, answer: FormAnswer | null): Promise<void>
+  /** The model the session's next turn uses (null: opencode has none to offer) */
+  chatModel(sessionID: string): Promise<ModelRef | null>
+  chatSetModel(sessionID: string, model: ModelRef): Promise<void>
+  chatStats(sessionID: string): Promise<ChatStats>
+  /** The session's model changed (picked in the TUI, or here) */
+  onChatModelChanged(cb: (sessionID: string) => void): () => void
+  /** An image attached to a message you sent, as a data: URL */
+  chatImage(sessionID: string, messageID: string, index: number): Promise<string | null>
+  /** Newer messages of the watched session (replace by id) */
+  onChatUpdate(cb: (sessionID: string, items: ChatItem[]) => void): () => void
+  onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
+  /** Messages sent but not handed to the agent yet (they steer at its next step) */
+  onChatInbox(cb: (sessionID: string, inbox: ChatQueued[]) => void): () => void
 }
+
+export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[] }
+
+/** Under the chat composer: spend so far (USD) and context used (limit null: unknown) */
+export type ChatStats = { cost: number; context: { used: number; limit: number | null } | null }

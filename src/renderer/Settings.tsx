@@ -1,3 +1,4 @@
+import QRCode from "qrcode"
 import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import {
@@ -49,8 +50,25 @@ const MCP_LABELS: Record<McpStatus, string> = {
   needs_auth: "Needs sign-in",
 }
 
+/** Dark modules on white with a quiet zone, so phone cameras read it in dark mode too. */
+function QrCode({ text, size = 168 }: { text: string; size?: number }) {
+  const { modules } = QRCode.create(text, { errorCorrectionLevel: "M" })
+  const n = modules.size
+  const pad = 2
+  let d = ""
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) if (modules.get(y, x)) d += `M${x + pad} ${y + pad}h1v1h-1z`
+  return (
+    <svg className="qr" width={size} height={size} viewBox={`0 0 ${n + pad * 2} ${n + pad * 2}`} shapeRendering="crispEdges">
+      <rect width="100%" height="100%" fill="#fff" />
+      <path d={d} fill="#000" />
+    </svg>
+  )
+}
+
 function RemoteRows({ remote }: { remote: RemoteStatus }) {
-  const [copied, setCopied] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [showLink, setShowLink] = useState(false)
   if (remote.state === "off") return null
   if (remote.state === "error")
     return (
@@ -61,6 +79,8 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
         </div>
       </div>
     )
+  // The MagicDNS name when there is one, else the tailnet IP.
+  const url = remote.urls[0]
   return (
     <>
       {remote.state === "local" && (
@@ -74,8 +94,25 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
           </div>
         </div>
       )}
-      {remote.urls.map((url) => (
-        <div className="setting setting-indent" key={url}>
+      {remote.state === "on" && (
+        <div className="setting setting-indent remote-qr">
+          <QrCode text={url} />
+          <div>
+            <div className="setting-title">Scan with your phone</div>
+            <div className="setting-desc">
+              Point your phone's camera at the code and open the link. Your phone needs Tailscale on. After the first
+              visit, the phone stays signed in.
+            </div>
+            {!showLink && (
+              <button className="text-btn" onClick={() => setShowLink(true)}>
+                Can't scan? Show the link
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {(showLink || remote.state === "local") && (
+        <div className="setting setting-indent">
           <div style={{ minWidth: 0 }}>
             <div className="setting-title">{new URL(url).host}</div>
             <div className="setting-desc">Open this link on your phone. It holds a secret, so keep it private.</div>
@@ -84,16 +121,16 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
             className="btn"
             onClick={() =>
               void navigator.clipboard.writeText(url).then(() => {
-                setCopied(url)
-                setTimeout(() => setCopied(null), 1500)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
               })
             }
           >
-            <Icon name={copied === url ? "check" : "copy"} />
-            {copied === url ? "Copied" : "Copy link"}
+            <Icon name={copied ? "check" : "copy"} />
+            {copied ? "Copied" : "Copy link"}
           </button>
         </div>
-      ))}
+      )}
     </>
   )
 }
@@ -518,7 +555,7 @@ type SectionID =
 
 /** The sidebar, in order. `keywords` find a section by words none of its rows say. */
 const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; keywords?: string }[] = [
-  { id: "appearance", label: "Appearance", icon: "sun", group: "General", keywords: "dark light font zoom" },
+  { id: "appearance", label: "Appearance", icon: "sun", group: "General", keywords: "dark light font zoom chat terminal" },
   { id: "sessions", label: "Sessions", icon: "terminal", group: "General" },
   { id: "notifications", label: "Notifications", icon: "bell", group: "General", keywords: "alerts" },
   { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
@@ -675,6 +712,27 @@ export function Settings({
                 onClick={() => void window.ctrl.setSettings({ appearance: a.value })}
               >
                 {a.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting">
+          <div>
+            <div className="setting-title">opencode sessions</div>
+            <div className="setting-desc">
+              Show them in the TUI, or as a chat like on your phone. The TUI keeps running underneath. fx sessions
+              always use their terminal.
+            </div>
+          </div>
+          <div className="segmented">
+            {(["terminal", "chat"] as const).map((v) => (
+              <button
+                key={v}
+                className={settings.sessionView === v ? "on" : ""}
+                onClick={() => void window.ctrl.setSettings({ sessionView: v })}
+              >
+                {v === "terminal" ? "Terminal" : "Chat"}
               </button>
             ))}
           </div>
@@ -987,8 +1045,8 @@ export function Settings({
               Remote control <span className="pill">Experimental</span>
             </div>
             <div className="setting-desc">
-              Use ctrl from your phone: a web page on your Tailscale network lists your spaces and sessions, streams
-              their terminals and shows the Board. macOS may ask once to allow incoming connections.
+              Use ctrl from your phone: a web page on your Tailscale network lists your spaces and sessions, lets
+              you chat in opencode ones and shows the Board. macOS may ask once to allow incoming connections.
             </div>
           </div>
           <Toggle

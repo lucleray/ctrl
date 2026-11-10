@@ -74,6 +74,11 @@ export const SETTING_KEYS: SettingKey[] = [
     description: "Remote control: serve a web page on your Tailscale network to use ctrl from your phone",
   },
   {
+    key: "sessionView",
+    type: { kind: "enum", values: ["terminal", "chat"] },
+    description: "How opencode sessions show: the embedded TUI (terminal) or a chat view (chat). fx sessions always use their terminal",
+  },
+  {
     key: "soundChoices.<event>",
     type: { kind: "sound" },
     description: "Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null",

@@ -91,6 +91,8 @@ type Props = {
   opencodeOpensLinks: boolean
   /** Terminals showing one of these sessions are read-only until it's unarchived */
   archived: Record<string, number>
+  /** The chat view covers it (Settings → Appearance → Sessions as chat): it keeps running but never takes focus */
+  concealed?: boolean
 }
 
 /**
@@ -98,11 +100,13 @@ type Props = {
  * active one is visible. They all keep the same size, so switching never reflows.
  */
 export const TerminalStack = forwardRef<TerminalHandle, Props>(function TerminalStack(
-  { terms, activeID, dark, fontSize, opencodeOpensLinks, archived },
+  { terms, activeID, dark, fontSize, opencodeOpensLinks, archived, concealed = false },
   ref,
 ) {
   const activeRef = useRef(activeID)
   activeRef.current = activeID
+  const concealedRef = useRef(concealed)
+  concealedRef.current = concealed
   const isLocked = (t: TermInfo) => !!(t.sessionID && archived[t.sessionID])
   const lockedIDs = useRef(new Set<string>())
   lockedIDs.current = new Set(terms.filter(isLocked).map((t) => t.id))
@@ -110,7 +114,7 @@ export const TerminalStack = forwardRef<TerminalHandle, Props>(function Terminal
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => (activeRef.current ? panes.get(activeRef.current)?.term.focus() : undefined),
+      focus: () => (activeRef.current && !concealedRef.current ? panes.get(activeRef.current)?.term.focus() : undefined),
       paste: (text) => {
         const id = activeRef.current
         if (!id || lockedIDs.current.has(id)) return
@@ -122,12 +126,12 @@ export const TerminalStack = forwardRef<TerminalHandle, Props>(function Terminal
   )
 
   useEffect(() => {
-    if (activeID) requestAnimationFrame(() => panes.get(activeID)?.term.focus())
-  }, [activeID])
+    if (activeID && !concealed) requestAnimationFrame(() => panes.get(activeID)?.term.focus())
+  }, [activeID, concealed])
 
   const active = terms.find((t) => t.id === activeID)
   return (
-    <div className="terminal-stack" style={{ background: palette(active?.harness ?? "fx", dark).background }}>
+    <div className={`terminal-stack${concealed ? " concealed" : ""}`} style={{ background: palette(active?.harness ?? "fx", dark).background }}>
       {terms.map((t) => (
         <TermPane
           key={t.id}
