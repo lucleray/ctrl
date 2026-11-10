@@ -437,14 +437,24 @@ button {
 .activity {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   flex-shrink: 0;
-  color: var(--muted);
+  animation: pulse 1.6s ease-in-out infinite;
 }
 
 .activity .icon {
   width: 13px;
   height: 13px;
+  color: var(--muted);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @keyframes spin {

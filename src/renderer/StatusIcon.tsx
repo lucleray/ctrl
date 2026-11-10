@@ -18,12 +18,14 @@ export function topStatus(sessions: SessionItem[]): SessionItem | undefined {
   return top
 }
 
-/** A session whose turn is over but still has shells or subagents running: shown instead of its age. */
+/**
+ * A session whose turn is over but still has shells or subagents running: a pulsing icon instead of its
+ * age, like the spinner for a running turn. Subagents win when there are both.
+ */
 export function ActivityIcon({ activity }: { activity: SessionActivity }) {
   return (
     <span className="activity" aria-label={`${activityText(activity)} running`}>
-      {activity.subagents > 0 && <Icon name="subagent" />}
-      {activity.shells > 0 && <Icon name="terminal" />}
+      <Icon name={activity.subagents > 0 ? "subagent" : "terminal"} />
     </span>
   )
 }
