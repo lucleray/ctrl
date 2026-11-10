@@ -3129,6 +3129,10 @@ body.resizing .terminal-pane.active {
   padding: 0 24px 12vh;
 }
 
+.chat-home-center .chat-column {
+  max-width: 540px;
+}
+
 .chat-home-title {
   margin: 0 0 18px;
   text-align: center;
