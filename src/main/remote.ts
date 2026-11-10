@@ -150,7 +150,7 @@ const MAX_IMAGE_CHARS = 12_000_000
 const IMAGE_URL = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
 
 /** The images a phone attached to a message: data: URLs of formats models read, size-capped. */
-function cleanImages(images: unknown): string[] {
+export function cleanImages(images: unknown): string[] {
   if (!Array.isArray(images)) return []
   return images
     .filter((i): i is string => typeof i === "string" && i.length <= MAX_IMAGE_CHARS && IMAGE_URL.test(i))

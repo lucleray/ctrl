@@ -208,6 +208,26 @@ where it lives.
   allows it; Back / Next / Skip, then a Review step (tap an answer to change it) with Submit. Dismiss cancels
   it. A half-answered question survives live updates
 
+## Chat view (experimental)
+
+- Settings → Appearance → opencode sessions: Terminal (default) or Chat. Chat shows the opencode session on
+  screen as a chat, like remote control's phone view, with the same reads (`src/main/remote-chat.ts`): your
+  messages, the assistant's markdown, thinking markers and tool one-liners (`src/renderer/ChatView.tsx`)
+- The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,
+  ⌘N and `/new` work as before. No session yet (the new-session screen) and fx sessions show their terminal
+- One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed (typing queues a
+  message). Enter sends, ⇧↩ new line, Esc stops; paste or drop images to attach them
+- Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's
+  context window) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
+  Picking switches the session's model for its next turns and the TUI follows, and the other way round
+- Newest 40 messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most
+  every 300ms)
+- Permissions (Allow / Always / Deny) and questions (one at a time, Review, Submit) show above the composer.
+  Archived sessions hide the composer behind the archived banner
+- Dropping a session or a resource row on it pastes the reference into the composer
+- Tables: as wide as their content up to the chat's width, then they scroll sideways in their own box. Columns are
+  sized from their longest cell: short values (`#`, a status) stay compact, labels get a minimum width, prose more
+
 ## Terminal
 
 - Key fixes: ⇧↩ new line, ⌘← / ⌘→ line start / end, ⌘⌫ delete to line start (`translateKey()` in
