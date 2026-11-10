@@ -636,20 +636,37 @@ function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; di
 const money = (usd: number) => (usd < 0.01 && usd > 0 ? "<$0.01" : `$${usd.toFixed(2)}`)
 const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 
-/** Spend and context used, under the composer. Re-read on open, when a turn ends and when the model changes. */
+/** Last stats per session, so coming back to one (or the view remounting) shows them right away. */
+const statsCache = new Map<string, ChatStats>()
+/** While a turn runs, spend and context are re-read this often (each step of a turn adds to them). */
+const STATS_RUNNING_MS = 15_000
+
+/**
+ * Spend and context used, under the composer. Read on open, when a turn ends, when the model changes and every
+ * STATS_RUNNING_MS while one runs. A failed read keeps what's shown.
+ */
 function Stats({ sessionID, running }: { sessionID: string; running: boolean }) {
-  const [stats, setStats] = useState<ChatStats | null>(null)
+  const [stats, setStats] = useState<ChatStats | null>(() => statsCache.get(sessionID) ?? null)
   useEffect(() => {
     let live = true
-    const load = () => void window.ctrl.chatStats(sessionID).then((s) => live && setStats(s), () => {})
-    if (!running) load()
+    setStats(statsCache.get(sessionID) ?? null)
+    const load = () =>
+      void window.ctrl.chatStats(sessionID).then(
+        (s) => {
+          statsCache.set(sessionID, s)
+          if (live) setStats(s)
+        },
+        () => {},
+      )
+    load()
+    const timer = running ? setInterval(load, STATS_RUNNING_MS) : undefined
     const off = window.ctrl.onChatModelChanged((id) => id === sessionID && load())
     return () => {
       live = false
+      clearInterval(timer)
       off()
     }
   }, [sessionID, running])
-  useEffect(() => setStats(null), [sessionID])
   if (!stats) return <span className="chat-stats" />
   const ctx = stats.context
   const pct = ctx?.limit ? Math.min(100, Math.round((ctx.used / ctx.limit) * 100)) : null

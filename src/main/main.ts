@@ -1585,14 +1585,15 @@ function registerIpc() {
       client.message.list({ sessionID, limit: 20, order: "desc" }),
     ])
     type Assistant = { type: string; model?: ModelRef; tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }
-    const last = (recent.data as unknown as Assistant[]).find((m) => m.type === "assistant" && m.tokens && m.model)
-    let context: ChatStats["context"] = null
-    if (last?.tokens && last.model) {
-      const t = last.tokens
-      const used = t.input + t.output + t.reasoning + t.cache.read + t.cache.write
-      const limit = await contextLimit(last.model, session.location.directory)
-      if (used > 0) context = { used, limit }
+    const used = (m: Assistant) => {
+      const t = m.tokens
+      return t ? t.input + t.output + t.reasoning + t.cache.read + t.cache.write : 0
     }
+    // Interrupted or failed steps report zero tokens: skip back to the newest one that used some.
+    const last = (recent.data as unknown as Assistant[]).find((m) => m.type === "assistant" && m.model && used(m) > 0)
+    const context: ChatStats["context"] = last?.model
+      ? { used: used(last), limit: await contextLimit(last.model, session.location.directory) }
+      : null
     return { cost: session.cost ?? 0, context }
   })
   ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) =>
