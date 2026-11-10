@@ -37,6 +37,7 @@ import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/ada
 import { AdapterService } from "./adapters/service"
 import { checkFx, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
+import { sessionsOf, type HarnessSource } from "./harness"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode } from "./opencode-bin"
 import { Skill } from "./skill"
@@ -129,10 +130,13 @@ const currentSessionID = (): string | null => {
   return showOpencode ? opencodeRoute : null
 }
 
+/** Every harness ctrl reads sessions from (src/main/harness.ts). */
+const harnesses = (): HarnessSource[] => [opencode, fx]
+
 /** Both harnesses' sessions, newest first. Rebuilt when either changes. */
 let sessions: SessionItem[] = []
 const rebuildSessions = () => {
-  sessions = [...opencode.sessions, ...fx.sessions].sort((a, b) => b.updated - a.updated)
+  sessions = harnesses().flatMap(sessionsOf).sort((a, b) => b.updated - a.updated)
 }
 const sessionByID = (id: string) => sessions.find((s) => s.id === id)
 

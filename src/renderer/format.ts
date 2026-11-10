@@ -1,4 +1,4 @@
-import type { SessionItem } from "../shared/types"
+import type { SessionActivity, SessionItem } from "../shared/types"
 
 export function age(ms: number) {
   const s = Math.max(0, (Date.now() - ms) / 1000)
@@ -13,6 +13,12 @@ export function age(ms: number) {
 export function statusText(s: SessionItem) {
   if (!s.statusDetail) return undefined
   return s.status === "failed" || s.status === "unread" ? `${s.statusDetail} · ${age(s.updated)} ago` : s.statusDetail
+}
+
+/** "1 shell · 2 subagents" */
+export function activityText(a: SessionActivity) {
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+  return [a.subagents && plural(a.subagents, "subagent"), a.shells && plural(a.shells, "shell")].filter(Boolean).join(" · ")
 }
 
 export function shortPath(p: string) {

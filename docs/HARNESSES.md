@@ -59,6 +59,8 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Status: failed | ✅ | ⚠️ | fx: only for sessions open in ctrl, with an fx that sends OSC 7501 (0.0.13 doesn't) |
 | `ctrl session read` of a turn in progress | ✅ | ✅ | fx: from `recovery.json`, since fx logs a turn only once it ends |
 | Status: finished, unread | ✅ | ✅ | fx: read state kept by ctrl |
+| Background shells and subagents (sidebar icon once the turn is over) | ✅ | ❌ | opencode: shell events + subagent sessions; shells already running at launch are found in the folders of sessions updated in the last 6 hours · fx: doesn't expose them |
+| Background shells and subagents in the prompt footer | ✅ | ❌ | opencode's own TUI shows `1 subagent · 1 shell` before context and cost |
 | Status of sessions that aren't open | ✅ live | ⚠️ | fx: read from files on disk |
 | Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
 | Sessions open in another terminal | ✅ | ⚠️ | fx allows one process per session: shown, but ctrl can't open or delete them until that fx quits |
@@ -78,3 +80,18 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Remote control: chat view on the phone | ✅ | ❌ | fx sessions open in the terminal view |
 | Remote control (phone) | ✅ | ⚠️ | opencode: its own TUI sized to the phone · fx: mirrors the desktop's process, which is resized to the phone while you look at it |
 | Welcome screen | ✅ | ✅ | First launch: shows what's installed, lets you pick when both are, install commands when neither is |
+
+## Adding a harness
+
+Everything ctrl reads from a harness goes through `HarnessSource` in `src/main/harness.ts`. Only the
+required part is needed to see its sessions; each optional capability turns on one piece of UI, and is
+simply hidden for harnesses that don't implement it.
+
+1. **Id and name:** add it to `Harness` and `HARNESSES` in `src/shared/types.ts`, with an id prefix like
+   fx's (`harnessOf()`), so its sessions don't collide with opencode's.
+2. **Sessions (required):** a class implementing `HarnessSource` (`sessions`, `problem`), listed in
+   `harnesses()` in `src/main/main.ts`. `src/main/fx.ts` is the smallest example.
+3. **Terminal:** how a session opens on the right, like `src/main/fx-terminals.ts`.
+4. **Optional capabilities**, any time later, one by one:
+   - `activity()`: background shells and subagents per session (sidebar icon).
+5. **Support table** above: add a column and fill in what works.

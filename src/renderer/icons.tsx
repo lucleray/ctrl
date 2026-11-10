@@ -31,6 +31,7 @@ const paths: Record<string, string> = {
   thread: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   hash: "M4 9h16M4 15h16M10 3 8 21M16 3l-2 18",
   terminal: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM7 10l3 2-3 2M12 15h5",
+  subagent: "M9 3h6v5H9zM12 8v3M6 11h12M6 11v3M18 11v3M3 14h6v6H3zM15 14h6v6h-6z",
   bot: "M12 3v4M6 7h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM9 12v2M15 12v2",
   "corner-up-left": "M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5V20",
   triangle: "M12 4 21 20H3z",

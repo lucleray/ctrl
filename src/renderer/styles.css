@@ -304,6 +304,7 @@ button {
 }
 
 .row.session:hover .meta,
+.row.session:hover .activity,
 .row.session:hover .spinner {
   display: none;
 }
@@ -430,6 +431,20 @@ button {
   border-top-color: transparent;
   animation: spin 0.9s linear infinite;
   flex-shrink: 0;
+}
+
+/* Turn over, shells or subagents still running (StatusIcon.tsx → ActivityIcon) */
+.activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.activity .icon {
+  width: 13px;
+  height: 13px;
 }
 
 @keyframes spin {

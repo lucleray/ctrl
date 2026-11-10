@@ -3,8 +3,8 @@ import { shortcutLabel } from "../shared/shortcuts"
 import { STATUS_RANK, type AppState, type SessionItem, type Space } from "../shared/types"
 import { Icon } from "./icons"
 import { SESSION_DRAG } from "./ReferenceDrop"
-import { age, shortPath, statusText } from "./format"
-import { StatusIcon, topStatus } from "./StatusIcon"
+import { activityText, age, shortPath, statusText } from "./format"
+import { ActivityIcon, StatusIcon, topStatus } from "./StatusIcon"
 import { useSidebarWidth } from "./ResizeHandle"
 
 const SPACE_DRAG = "application/x-ctrl-space"
@@ -309,7 +309,7 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
           e.preventDefault()
           void window.ctrl.showSessionMenu(s.id)
         }}
-        title={[statusText(s), s.title, `${s.harness} · ${shortPath(s.directory)}`, parentText(s), agentText(s), tree?.rollup && `${tree.rollup.title}: ${statusText(tree.rollup)}`]
+        title={[statusText(s), s.activity && `Running in the background: ${activityText(s.activity)}`, s.title, `${s.harness} · ${shortPath(s.directory)}`, parentText(s), agentText(s), tree?.rollup && `${tree.rollup.title}: ${statusText(tree.rollup)}`]
           .filter(Boolean)
           .join("\n")}
       >
@@ -357,6 +357,8 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
         <span className="label">{s.title}</span>
         {hints?.has(s.id) ? (
           <kbd className="jump-hint">⌘{hints.get(s.id)}</kbd>
+        ) : status === "idle" && s.activity ? (
+          <ActivityIcon activity={s.activity} />
         ) : s.status === "idle" ||
           // Archived sessions only flag what's live (running, needs you), not unread/failed.
           (state.archived[s.id] && (s.status === "unread" || s.status === "failed")) ? (

@@ -103,3 +103,5 @@ node scripts/demo/capture.mjs --harness fx   # the fx versions (hero-fx.png, …
   installed into the demo folder, so it needs no image tools.
 - `gh auth token` is passed to the demo app as `GH_TOKEN`: the demo HOME hides gh's keychain login.
 - Change the story in `SESSIONS` (`seed.mjs`), the shots in `capture.mjs` and the crops in `media.mjs`.
+- `node scripts/demo/activity.mjs` opens a demo ctrl (visible, not headless) whose sessions have real background
+  shells and subagents that never finish (a local fake model), to look at those states. Ctrl+C stops it all.
