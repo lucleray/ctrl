@@ -44,6 +44,7 @@ import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
 import { DesktopChat } from "./desktop-chat"
+import { TermModes } from "./term-modes"
 import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
 import { chatImage, chatPage } from "./remote-chat"
 import { Store } from "./store"
@@ -360,12 +361,17 @@ const attention = new Attention({
 })
 
 let opencodeOut = 0
+const opencodeModes = new TermModes()
 const terminal = new Terminal(app.isPackaged ? join(process.resourcesPath, "bridge") : join(root, "bridge"), {
   onData: (data) => {
     opencodeOut += data.length
+    opencodeModes.feed(data)
     send("pty:data", OPENCODE_TERM, data, opencodeOut)
   },
-  onReset: () => send("pty:reset", OPENCODE_TERM),
+  onReset: () => {
+    opencodeModes.reset()
+    send("pty:reset", OPENCODE_TERM)
+  },
   onRoute: (id) => {
     opencodeRoute = id
     if (showOpencode) opencode.setCurrent(id)
@@ -1553,7 +1559,7 @@ function registerIpc() {
     return found ? `data:${found.mime};base64,${found.body.toString("base64")}` : null
   })
   ipcMain.handle("pty:attach", (_e, termID: string) =>
-    termID === OPENCODE_TERM ? { data: "", end: opencodeOut } : fxTerms.backlog(termID),
+    termID === OPENCODE_TERM ? { data: opencodeModes.replay(), end: opencodeOut } : fxTerms.backlog(termID),
   )
   ipcMain.on("pty:write", (_e, termID: string, data: string) =>
     termID === OPENCODE_TERM ? terminal.write(data) : fxTerms.write(termID, data),
