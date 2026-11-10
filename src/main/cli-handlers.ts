@@ -560,6 +560,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     sounds: true,
     soundsWhenFocused: false,
     remoteControl: false,
+    sessionView: "terminal",
     "soundChoices.needs-input": "Glass",
     "soundChoices.failed": "Basso",
     "soundChoices.finished": "Hero",

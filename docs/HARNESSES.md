@@ -76,4 +76,5 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | `ctrl` typing without sending (`--no-submit`, `reference`) | ⚠️ | ✅ | opencode: one TUI, so the session must be on screen (`--focus`) |
 | `ctrl session stop` | ✅ | ⚠️ | fx: Escape to its fx process, only for sessions open in ctrl |
 | Remote control: chat on the phone | ✅ | ❌ | fx sessions are listed (rename, move, archive) but open on the Mac only |
+| Chat view on the desktop (Settings → Appearance) | ✅ | ❌ | fx has no chat API: fx sessions keep their terminal |
 | Welcome screen | ✅ | ✅ | First launch: shows what's installed, lets you pick when both are, install commands when neither is |

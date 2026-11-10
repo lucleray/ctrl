@@ -555,7 +555,7 @@ type SectionID =
 
 /** The sidebar, in order. `keywords` find a section by words none of its rows say. */
 const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; keywords?: string }[] = [
-  { id: "appearance", label: "Appearance", icon: "sun", group: "General", keywords: "dark light font zoom" },
+  { id: "appearance", label: "Appearance", icon: "sun", group: "General", keywords: "dark light font zoom chat terminal" },
   { id: "sessions", label: "Sessions", icon: "terminal", group: "General" },
   { id: "notifications", label: "Notifications", icon: "bell", group: "General", keywords: "alerts" },
   { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
@@ -712,6 +712,27 @@ export function Settings({
                 onClick={() => void window.ctrl.setSettings({ appearance: a.value })}
               >
                 {a.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting">
+          <div>
+            <div className="setting-title">opencode sessions</div>
+            <div className="setting-desc">
+              Show them in the TUI, or as a chat like on your phone. The TUI keeps running underneath. fx sessions
+              always use their terminal.
+            </div>
+          </div>
+          <div className="segmented">
+            {(["terminal", "chat"] as const).map((v) => (
+              <button
+                key={v}
+                className={settings.sessionView === v ? "on" : ""}
+                onClick={() => void window.ctrl.setSettings({ sessionView: v })}
+              >
+                {v === "terminal" ? "Terminal" : "Chat"}
               </button>
             ))}
           </div>

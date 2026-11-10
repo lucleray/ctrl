@@ -1,3 +1,5 @@
+import type { ChatPending, FormAnswer } from "../main/remote"
+import type { ChatItem, ChatPage } from "../main/remote-chat"
 import type { CommandID, ShortcutOverrides } from "./shortcuts"
 
 /** variant: opencode model variant, or fx reasoning effort (`--effort`); unset = the model's default */
@@ -167,7 +169,12 @@ export type Settings = {
   companion: boolean
   /** Remote control: a web page on your Tailscale network to use ctrl from your phone (src/main/remote.ts) */
   remoteControl: boolean
+  /** How opencode sessions show: the embedded TUI, or a chat view like the phone's (src/renderer/ChatView.tsx) */
+  sessionView: SessionView
 }
+
+export type SessionView = "terminal" | "chat"
+
 
 /**
  * The remote control server. on: listening on a Tailscale address, `urls` open it on the phone (they carry
@@ -542,4 +549,22 @@ export type CtrlApi = {
   onPtyData(cb: (termID: string, data: string, end: number) => void): () => void
   /** The terminal restarted: clear it */
   onPtyReset(cb: (termID: string) => void): () => void
+  /** Chat view (Settings → Appearance → Sessions as chat): the newest page of an opencode session, and watch it */
+  chatOpen(sessionID: string): Promise<ChatOpened>
+  /** Stop watching (the chat view went away) */
+  chatClose(): Promise<void>
+  chatMore(sessionID: string, cursor: string): Promise<ChatPage>
+  /** images: data: URLs */
+  chatSend(sessionID: string, text: string, images: string[]): Promise<void>
+  chatStop(sessionID: string): Promise<void>
+  chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
+  /** Answer a question form (null: dismiss it) */
+  chatAnswer(sessionID: string, formID: string, answer: FormAnswer | null): Promise<void>
+  /** An image attached to a message you sent, as a data: URL */
+  chatImage(sessionID: string, messageID: string, index: number): Promise<string | null>
+  /** Newer messages of the watched session (replace by id) */
+  onChatUpdate(cb: (sessionID: string, items: ChatItem[]) => void): () => void
+  onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
 }
+
+export type ChatOpened = ChatPage & { pending: ChatPending[] }

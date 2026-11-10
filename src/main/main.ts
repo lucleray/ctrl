@@ -43,7 +43,8 @@ import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
-import { RemoteServer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
+import { DesktopChat } from "./desktop-chat"
+import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
 import { chatImage, chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { Terminal } from "./terminal"
@@ -199,6 +200,7 @@ const push = () => {
     send("state", state())
     companion.changed()
     remote.changed()
+    desktopChat.changed()
     for (const cb of [...changeListeners]) {
       try {
         cb()
@@ -462,7 +464,36 @@ const openCodeClient = () => {
   if (!opencode.client) throw new Error("The opencode service isn't connected")
   return opencode.client
 }
-opencode.onSessionEvent = (sessionID) => remote.sessionEvent(sessionID)
+/** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
+const chatOps = {
+  page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
+  send: async (sessionID: string, text: string, images: string[]) => {
+    const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
+    await openCodeClient().session.prompt({ sessionID, text, ...(files.length ? { files } : {}) })
+  },
+  image: (sessionID: string, messageID: string, index: number) => chatImage(openCodeClient(), sessionID, messageID, index),
+  stop: async (sessionID: string) => void (await openCodeClient().session.interrupt({ sessionID })),
+  reply: (sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
+    openCodeClient().permission.reply({ sessionID, requestID, decision }),
+  answer: (sessionID: string, formID: string, answer: FormAnswer | null) =>
+    answer
+      ? openCodeClient().session.form.reply({ sessionID, formID, answer })
+      : openCodeClient().session.form.cancel({ sessionID, formID }),
+  pending: (sessionID: string) => opencode.pendingFor(sessionID),
+  title: (sessionID: string) => sessionByID(sessionID)?.title,
+}
+
+const desktopChat = new DesktopChat({
+  page: (sessionID) => chatOps.page(sessionID),
+  pending: chatOps.pending,
+  updated: (sessionID, items) => send("chat:update", sessionID, items),
+  pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
+})
+
+opencode.onSessionEvent = (sessionID) => {
+  remote.sessionEvent(sessionID)
+  desktopChat.sessionEvent(sessionID)
+}
 
 const remote: RemoteServer = new RemoteServer({
   port: REMOTE_PORT,
@@ -477,22 +508,7 @@ const remote: RemoteServer = new RemoteServer({
       .filter((r) => cards.has(r.id))
     void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
   },
-  chat: {
-    page: (sessionID, cursor) => chatPage(openCodeClient(), sessionID, cursor),
-    send: async (sessionID, text, images) => {
-      const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
-      await openCodeClient().session.prompt({ sessionID, text, ...(files.length ? { files } : {}) })
-    },
-    image: (sessionID, messageID, index) => chatImage(openCodeClient(), sessionID, messageID, index),
-    stop: async (sessionID) => void (await openCodeClient().session.interrupt({ sessionID })),
-    reply: (sessionID, requestID, decision) => openCodeClient().permission.reply({ sessionID, requestID, decision }),
-    answer: (sessionID, formID, answer) =>
-      answer
-        ? openCodeClient().session.form.reply({ sessionID, formID, answer })
-        : openCodeClient().session.form.cancel({ sessionID, formID }),
-    pending: (sessionID) => opencode.pendingFor(sessionID),
-    title: (sessionID) => sessionByID(sessionID)?.title,
-  },
+  chat: chatOps,
   // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
   create: async (spaceID, parentID) => {
     const space = spaceID && store.space(spaceID) ? spaceID : null
@@ -1516,6 +1532,26 @@ function registerIpc() {
   ipcMain.handle("update:install", () => updater.install().catch(report))
 
   // The opencode TUI repaints itself, so a re-attached xterm only needs live output from here on.
+  ipcMain.handle("chat:open", (_e, sessionID: string) => {
+    if (typeof sessionID !== "string" || harnessOf(sessionID) !== "opencode") throw new Error("Not an opencode session")
+    return desktopChat.open(sessionID)
+  })
+  ipcMain.handle("chat:close", () => desktopChat.close())
+  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chatOps.page(sessionID, cursor))
+  ipcMain.handle("chat:send", (_e, sessionID: string, text: string, images: unknown) =>
+    chatOps.send(sessionID, String(text ?? ""), cleanImages(images)),
+  )
+  ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
+    chatOps.reply(sessionID, requestID, decision),
+  )
+  ipcMain.handle("chat:answer", (_e, sessionID: string, formID: string, answer: FormAnswer | null) =>
+    chatOps.answer(sessionID, formID, answer),
+  )
+  ipcMain.handle("chat:image", async (_e, sessionID: string, messageID: string, index: number) => {
+    const found = await chatOps.image(sessionID, messageID, index).catch(() => null)
+    return found ? `data:${found.mime};base64,${found.body.toString("base64")}` : null
+  })
   ipcMain.handle("pty:attach", (_e, termID: string) =>
     termID === OPENCODE_TERM ? { data: "", end: opencodeOut } : fxTerms.backlog(termID),
   )
