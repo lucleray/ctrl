@@ -48,6 +48,9 @@ where it lives.
   instructions Default / On / Off
   (`src/renderer/SpaceSettings.tsx`)
 - Status rollup on a space: shows the most urgent status of its sessions (`src/renderer/StatusIcon.tsx`)
+- Background work: a session whose turn is over but still has shells or subagents running shows a pulsing icon
+  instead of its age, like the spinner for a running turn: subagent if any, else shell (the tooltip counts them). Unread and failed dots still win. A harness
+  capability (`activity()` in `src/main/harness.ts`), opencode only for now
 
 ## Sessions
 

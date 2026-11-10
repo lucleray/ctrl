@@ -98,7 +98,12 @@ export type SessionItem = {
   statusDetail?: string
   /** fx: open in an fx outside ctrl (another terminal), so it can't be opened here */
   elsewhere?: boolean
+  /** Work still going on in the background. Unset when nothing runs, or the harness can't tell (src/main/harness.ts) */
+  activity?: SessionActivity
 }
+
+/** Shells and subagents a session (or any of its subagents) still has running. Counts are > 0 when set. */
+export type SessionActivity = { shells: number; subagents: number }
 
 /**
  * One terminal on the right. "opencode" is the single embedded opencode TUI, switched between

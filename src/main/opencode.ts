@@ -3,7 +3,16 @@ import { Service } from "@opencode/client/service"
 import { homedir } from "node:os"
 import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
-import type { McpServerItem, ModelChoices, ModelOption, ModelRef, OpencodeServer, SessionItem } from "../shared/types"
+import type { HarnessSource } from "./harness"
+import type {
+  McpServerItem,
+  ModelChoices,
+  ModelOption,
+  ModelRef,
+  OpencodeServer,
+  SessionActivity,
+  SessionItem,
+} from "../shared/types"
 import type { ChatPending, FormField } from "./remote"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
@@ -25,6 +34,16 @@ const PAGE_SIZE = 300
 const RECENT_MS = 30 * 24 * 60 * 60_000
 /** Coalesce a burst of events for one session (execution end + idle) into one fetch. */
 const FETCH_DEBOUNCE_MS = 100
+/**
+ * Shells are listed per folder, and asking a folder makes opencode load it. So the full sync only asks the
+ * folders of sessions updated this recently (a session that starts a shell gets updated), at most
+ * SHELL_FOLDERS of them. Shells started later arrive as events wherever they run.
+ */
+const SHELL_RECENT_MS = 6 * 60 * 60_000
+const SHELL_FOLDERS = 12
+/** Subagents nest; walking up to the root stops here. */
+const MAX_DEPTH = 16
+const MAX_SUBAGENTS = 2000
 
 /**
  * Runs inside the service. Fails once it lost its macOS login session (e.g. the terminal that
@@ -80,7 +99,8 @@ type Pending =
  * directly, or re-read just the session they're about, so the cost of an update
  * doesn't grow with the number of sessions.
  */
-export class OpenCodeService {
+export class OpenCodeService implements HarnessSource {
+  readonly harness = "opencode" as const
   client?: Client
   sessions: SessionItem[] = []
   /** MCP servers for the TUI's folder (~), where global config applies. */
@@ -92,7 +112,14 @@ export class OpenCodeService {
 
   /** Root, non-archived sessions as opencode reports them. */
   private infos = new Map<string, SessionInfo>()
+  /** Running sessions, subagents included. */
   private running = new Set<string>()
+  /** Subagent → the session that started it (opencode's parentID), learned as subagents start. */
+  private subagentParents = new Map<string, string>()
+  /** Running shells → the session that started them (`metadata.sessionID`). */
+  private shells = new Map<string, string>()
+  /** Background activity per root session, derived in rebuild(). */
+  private activityByRoot = new Map<string, SessionActivity>()
   private pending = new Map<string, Pending>()
   /** Events that arrive during a full sync are applied after it, so the snapshot can't overwrite them. */
   private buffered: Event[] | null = null
@@ -217,8 +244,15 @@ export class OpenCodeService {
     // Only a running session can wait on you, so only their folders are asked. Asking a folder makes
     // opencode load it (config, plugins, MCP), and every folder that ever had a session adds up.
     const running = Object.keys(active)
-    const pending = await this.pendingInput([
-      ...new Set(running.flatMap((id) => byID.get(id)?.location.directory ?? [])),
+    const shellCutoff = Date.now() - SHELL_RECENT_MS
+    const shellFolders = [
+      ...new Set(roots.filter((s) => s.time.updated >= shellCutoff).map((s) => s.location.directory)),
+    ].slice(0, SHELL_FOLDERS)
+    const [pending, shells, parents] = await Promise.all([
+      this.pendingInput([...new Set(running.flatMap((id) => byID.get(id)?.location.directory ?? []))]),
+      this.listShells(shellFolders),
+      // Running sessions the root list doesn't have are subagents (bounded by what runs right now).
+      this.parentsOf(running.filter((id) => !byID.has(id))),
     ])
     if (generation !== this.generation) return
     this.infos = byID
@@ -226,6 +260,8 @@ export class OpenCodeService {
     this.olderLoad = null
     this.running = new Set(running)
     this.pending = pending
+    this.shells = shells
+    for (const [id, parentID] of parents) this.subagentParents.set(id, parentID)
     this.rebuild()
     this.refreshMcpSoon()
     console.log(`[ctrl] full sync: ${roots.length} recent sessions`)
@@ -312,6 +348,30 @@ export class OpenCodeService {
     }
   }
 
+  /** Running shells in these folders, by shell id → session id. */
+  private async listShells(directories: string[]) {
+    const out = new Map<string, string>()
+    const results = await Promise.allSettled(
+      directories.map((directory) => this.client!.shell.list({ location: { directory } })),
+    )
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue
+      for (const shell of r.value.data) {
+        const sessionID = shell.metadata?.sessionID
+        if (shell.status === "running" && typeof sessionID === "string") out.set(shell.id, sessionID)
+      }
+    }
+    return out
+  }
+
+  /** Parent of each subagent session. */
+  private async parentsOf(ids: string[]) {
+    const out = new Map<string, string>()
+    const results = await Promise.allSettled(ids.map((sessionID) => this.client!.session.get({ sessionID })))
+    for (const r of results) if (r.status === "fulfilled" && r.value.parentID) out.set(r.value.id, r.value.parentID)
+    return out
+  }
+
   private async pendingInput(directories: string[]) {
     const out = new Map<string, Pending>()
     const results = await Promise.allSettled(
@@ -389,6 +449,17 @@ export class OpenCodeService {
         return this.rebuild()
       case "mcp.status.changed":
         return this.refreshMcpSoon()
+      case "shell.created": {
+        const info = d.info as { id: string; status: string; metadata?: Record<string, unknown> }
+        const sessionID = info.metadata?.sessionID
+        if (info.status !== "running" || typeof sessionID !== "string") return
+        this.shells.set(info.id, sessionID)
+        return this.rebuild()
+      }
+      case "shell.exited":
+      case "shell.deleted":
+        if (this.shells.delete(String(d.id))) this.rebuild()
+        return
     }
     if (!id) return
     const info = this.infos.get(id)
@@ -397,6 +468,7 @@ export class OpenCodeService {
         this.deleted.add(id)
         this.infos.delete(id)
         this.running.delete(id)
+        this.subagentParents.delete(id)
         return this.rebuild()
       case "session.renamed":
         if (info) this.infos.set(id, { ...info, title: String(d.title) })
@@ -438,6 +510,7 @@ export class OpenCodeService {
       // Deleted meanwhile, or a transient failure the next event or sync will fix.
     }
     if (this.ending.delete(id)) this.running.delete(id)
+    if (info?.parentID) this.subagentParents.set(id, info.parentID)
     if (info && !this.deleted.has(id) && !info.parentID) {
       if (info.time.archived) this.infos.delete(id)
       else this.infos.set(id, info)
@@ -445,8 +518,46 @@ export class OpenCodeService {
     this.rebuild()
   }
 
+  /** The root session a subagent (at any depth) belongs to. */
+  private rootOf(id: string) {
+    let root = id
+    for (let i = 0; i < MAX_DEPTH; i++) {
+      const parent = this.subagentParents.get(root)
+      if (!parent) break
+      root = parent
+    }
+    return root
+  }
+
+  /** Shells and running subagents per root session. Proportional to what runs, not to how many sessions exist. */
+  private rebuildActivity() {
+    const out = new Map<string, SessionActivity>()
+    const entry = (root: string) => {
+      let a = out.get(root)
+      if (!a) out.set(root, (a = { shells: 0, subagents: 0 }))
+      return a
+    }
+    for (const sessionID of this.shells.values()) entry(this.rootOf(sessionID)).shells++
+    for (const id of this.running) {
+      if (!this.subagentParents.has(id)) continue
+      entry(this.rootOf(id)).subagents++
+    }
+    this.activityByRoot = out
+    // Every subagent ever seen would pile up: past a bound, forget the ones nothing runs in anymore.
+    if (this.subagentParents.size > MAX_SUBAGENTS) {
+      const shellSessions = new Set(this.shells.values())
+      for (const id of this.subagentParents.keys())
+        if (!this.running.has(id) && !shellSessions.has(id)) this.subagentParents.delete(id)
+    }
+  }
+
+  activity(sessionID: string) {
+    return this.activityByRoot.get(sessionID)
+  }
+
   /** Derives the sidebar list from in-memory state, without touching the network. */
   private rebuild() {
+    this.rebuildActivity()
     const waiting = new Map<string, string>()
     for (const p of this.pending.values()) if (!waiting.has(p.sessionID)) waiting.set(p.sessionID, p.detail)
     this.sessions = [...this.infos.values()]
@@ -603,6 +714,7 @@ export class OpenCodeService {
     this.deleted.add(sessionID)
     this.infos.delete(sessionID)
     this.running.delete(sessionID)
+    this.subagentParents.delete(sessionID)
     this.rebuild()
   }
 }

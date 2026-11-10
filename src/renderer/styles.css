@@ -199,7 +199,27 @@ button {
 
 .row.session {
   padding-left: 35px;
+  padding-right: 4px;
   position: relative;
+}
+
+/*
+ * Trailing slot: the archive button (22px, shown on hover) sits against the row's padding, and what it
+ * replaces lines up with its icon. Text and icons end where its icon ends, dots and the spinner share
+ * its center, so nothing shifts on hover.
+ */
+.row.session > .meta,
+.row.session > .activity,
+.row.session > .jump-hint {
+  margin-right: 4px;
+}
+
+.row.session > .spinner {
+  margin-right: 5.5px;
+}
+
+.row.session > .status-dot {
+  margin-right: 7px;
 }
 
 /* Child sessions: fold toggle in the indent, left of the label */
@@ -304,6 +324,7 @@ button {
 }
 
 .row.session:hover .meta,
+.row.session:hover .activity,
 .row.session:hover .spinner {
   display: none;
 }
@@ -430,6 +451,31 @@ button {
   border-top-color: transparent;
   animation: spin 0.9s linear infinite;
   flex-shrink: 0;
+}
+
+/* Turn over, shells or subagents still running (StatusIcon.tsx → ActivityIcon) */
+.activity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.activity .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @keyframes spin {

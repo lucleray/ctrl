@@ -3,6 +3,7 @@ import { existsSync, watch, type FSWatcher } from "node:fs"
 import { open, readdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import type { HarnessSource } from "./harness"
 import { FX_PREFIX, type FxCheck, type SessionItem, type SessionStatus } from "../shared/types"
 
 /** fx's profile folder; CTRL_FX_HOME is a debug hook for throwaway sessions. */
@@ -100,7 +101,8 @@ const alive = (pid: number) => {
  * recursive fs watcher re-reads just the session folder that changed, so an
  * update costs the same with 50 or 5,000 sessions.
  */
-export class FxSessions {
+export class FxSessions implements HarnessSource {
+  readonly harness = "fx" as const
   sessions: SessionItem[] = []
   problem: string | null = null
   private all = new Map<string, FxSession>()
