@@ -218,7 +218,7 @@ where it lives.
 - One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed (typing queues a
   message). Enter sends, ⇧↩ new line, Esc stops; paste or drop images to attach them
 - Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's
-  context window) on the left; model picker (same searchable list as Settings) and variant menu on the right.
+  context window) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
   Picking switches the session's model for its next turns and the TUI follows, and the other way round
 - Newest 40 messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most
   every 300ms)

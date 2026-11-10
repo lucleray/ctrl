@@ -3149,14 +3149,57 @@ body.resizing .terminal-pane.active {
   opacity: 0.7;
 }
 
-/* Native select, dressed as text next to the model name */
 .chat-variant {
-  appearance: none;
-  border: 0;
-  background: none;
-  font-family: inherit;
   color: var(--muted);
-  outline: none;
+}
+
+.chat-variant.open {
+  background: var(--hover-strong);
+  color: var(--text);
+}
+
+.chat-variant-wrap {
+  position: relative;
+}
+
+/* Opens upward, right-aligned with the button */
+.chat-variant-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.chat-variant-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.chat-variant-option.active {
+  background: var(--hover-strong);
+}
+
+.chat-variant-check {
+  width: 14px;
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.chat-variant-check svg {
+  width: 12px;
+  height: 12px;
 }
 
 .chat-composer textarea {

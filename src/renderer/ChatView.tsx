@@ -570,19 +570,15 @@ function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; di
         <Icon name="chevron-down" />
       </button>
       {current && current.variants.length > 0 && (
-        <select
-          className="chat-variant"
-          title="Variant"
-          value={model?.variant ?? ""}
-          onChange={(e) => setVariant(e.target.value || undefined)}
-        >
-          <option value="">Default</option>
-          {current.variants.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
+        <VariantMenu
+          variants={current.variants}
+          // opencode reports "default" for a session that never picked one: that's the Default row.
+          value={model?.variant && current.variants.includes(model.variant) ? model.variant : undefined}
+          onChange={(v) => {
+            setVariant(v)
+            onPicked()
+          }}
+        />
       )}
       {open && choices && trigger.current && (
         <ModelPopover
@@ -633,5 +629,63 @@ function Stats({ sessionID, running }: { sessionID: string; running: boolean }) 
         </span>
       )}
     </span>
+  )
+}
+
+/** The model's variants, in a small menu that opens upward (the composer sits at the bottom). */
+function VariantMenu({ variants, value, onChange }: { variants: string[]; value?: string; onChange(v: string | undefined): void }) {
+  const [open, setOpen] = useState(false)
+  const options = [undefined, ...variants]
+  const [active, setActive] = useState(0)
+  const root = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setActive(Math.max(0, options.indexOf(value)))
+    const down = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false)
+    document.addEventListener("mousedown", down)
+    window.addEventListener("blur", () => setOpen(false), { once: true })
+    return () => document.removeEventListener("mousedown", down)
+  }, [open])
+
+  const pick = (v: string | undefined) => {
+    setOpen(false)
+    onChange(v)
+  }
+
+  return (
+    <div
+      className="chat-variant-wrap"
+      ref={root}
+      onKeyDown={(e) => {
+        if (!open) return
+        e.stopPropagation()
+        if (e.key === "Escape") (e.preventDefault(), setOpen(false))
+        else if (e.key === "ArrowDown") (e.preventDefault(), setActive((a) => Math.min(options.length - 1, a + 1)))
+        else if (e.key === "ArrowUp") (e.preventDefault(), setActive((a) => Math.max(0, a - 1)))
+        else if (e.key === "Enter") (e.preventDefault(), pick(options[active]))
+      }}
+    >
+      <button className={`chat-variant${open ? " open" : ""}`} title="Variant" onClick={() => setOpen((o) => !o)}>
+        {value ?? "Default"}
+      </button>
+      {open && (
+        <div className="chat-variant-menu" role="listbox">
+          {options.map((v, i) => (
+            <div
+              key={v ?? ""}
+              role="option"
+              aria-selected={v === value}
+              className={`chat-variant-option${i === active ? " active" : ""}`}
+              onMouseMove={() => setActive(i)}
+              onClick={() => pick(v)}
+            >
+              <span className="chat-variant-check">{v === value && <Icon name="check" />}</span>
+              {v ?? "Default"}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
