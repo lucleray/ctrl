@@ -225,6 +225,8 @@ where it lives.
 - Permissions (Allow / Always / Deny) and questions (one at a time, Review, Submit) show above the composer.
   Archived sessions hide the composer behind the archived banner
 - Dropping a session or a resource row on it pastes the reference into the composer
+- Tables: as wide as their content up to the chat's width, then they scroll sideways in their own box. Columns are
+  sized from their longest cell: short values (`#`, a status) stay compact, labels get a minimum width, prose more
 
 ## Terminal
 

@@ -25,6 +25,42 @@ type Props = {
 }
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
+// Wide tables scroll sideways in their own box instead of squeezing every column.
+md.renderer.rules.table_open = () => '<div class="chat-table"><table>\n'
+md.renderer.rules.table_close = () => "</table></div>\n"
+
+/** Longest cell (in characters) for a column to stay compact (no minimum width, no wrapping), or to count as prose. */
+const NARROW_COLUMN = 12
+const PROSE_COLUMN = 40
+
+// Sizes columns by their longest cell: short values ("#", a status) stay compact, prose gets more room than
+// names and labels. CSS turns these into minimum widths; past them, the table scrolls sideways.
+md.core.ruler.push("table_columns", (state) => {
+  const tokens = state.tokens
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "table_open") continue
+    const cells: { token: (typeof tokens)[number]; col: number }[] = []
+    const longest: number[] = []
+    let col = -1
+    let j = i + 1
+    for (; j < tokens.length && tokens[j].type !== "table_close"; j++) {
+      const t = tokens[j]
+      if (t.type === "tr_open") col = -1
+      else if (t.type === "th_open" || t.type === "td_open") {
+        col++
+        cells.push({ token: t, col })
+        const text = tokens[j + 1]?.type === "inline" ? tokens[j + 1].content : ""
+        longest[col] = Math.max(longest[col] ?? 0, [...text].length)
+      }
+    }
+    for (const c of cells) {
+      const len = longest[c.col] ?? 0
+      if (len <= NARROW_COLUMN) c.token.attrJoin("class", "narrow")
+      else if (len > PROSE_COLUMN) c.token.attrJoin("class", "prose")
+    }
+    i = j
+  }
+})
 
 const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
 const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/
