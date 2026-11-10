@@ -1,15 +1,26 @@
 import MarkdownIt from "markdown-it"
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
-import type { ChatItem } from "../main/remote-chat"
+import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
 import type { ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
 /**
  * opencode sessions as a chat, like remote control's phone view (src/remote/client.ts), for Settings →
- * Appearance → Sessions as chat. Same reads (src/main/remote-chat.ts): text, thinking markers and tool
- * one-liners. The TUI keeps running underneath, so switching back to the terminal is instant.
+ * Appearance → Sessions as chat. Same reads (src/main/remote-chat.ts), plus what only the desktop shows:
+ * thinking text and full shell commands. The TUI keeps running underneath, so switching back is instant.
  */
 
 export type ChatHandle = {
@@ -62,9 +73,28 @@ md.core.ruler.push("table_columns", (state) => {
   }
 })
 
+/** Rendered markdown by source: a streaming turn re-renders its last part only, and remounts render nothing. */
+const htmlCache = new Map<string, string>()
+const HTML_CACHE_MAX = 400
+function renderMarkdown(text: string) {
+  let html = htmlCache.get(text)
+  if (html === undefined) {
+    html = md.render(text)
+    if (htmlCache.size >= HTML_CACHE_MAX) htmlCache.delete(htmlCache.keys().next().value!)
+    htmlCache.set(text, html)
+  }
+  return html
+}
+
 const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
 const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/
 const MAX_IMAGES = 6
+
+/** `@session[Title](id)`, what a dropped session pastes (sessionMention in ReferenceDrop.tsx) */
+const MENTION = /@session\[([^\]\n]*)\]\(((?:ses_|fx:)[^)\s]+)\)/g
+/** A paste this long shows as one `[Pasted N lines]` token in the composer; ⌘V again pastes it in full. */
+const LONG_PASTE_LINES = 5
+const LONG_PASTE_CHARS = 800
 
 const readImage = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -74,30 +104,44 @@ const readImage = (file: File) =>
     reader.readAsDataURL(file)
   })
 
+/** Text with session mentions drawn as chips (sent messages, and ones waiting to steer). */
+function withMentions(text: string): ReactNode[] {
+  const out: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(MENTION)) {
+    if (m.index > last) out.push(text.slice(last, m.index))
+    out.push(
+      <span key={m.index} className="chat-chip" title={m[2]}>
+        <Icon name="link" />
+        {m[1].trim() || m[2]}
+      </span>,
+    )
+    last = m.index + m[0].length
+  }
+  if (last < text.length) out.push(text.slice(last))
+  return out
+}
+
 export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessionID, session, archived }, ref) {
   const [items, setItems] = useState<Map<string, ChatItem>>(new Map())
   const [cursor, setCursor] = useState<string | null>(null)
   const [pending, setPending] = useState<ChatPending[]>([])
+  const [inbox, setInbox] = useState<ChatQueued[]>([])
+  /** Sent from here, shown right away until the inbox (or the message list) has them */
+  const [sent, setSent] = useState<ChatQueued[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [text, setText] = useState("")
-  const [images, setImages] = useState<string[]>([])
   const list = useRef<HTMLDivElement>(null)
-  const input = useRef<HTMLTextAreaElement>(null)
+  const composer = useRef<ChatHandle>(null)
   /** What to do with the scroll position after the next render */
   const scroll = useRef<{ kind: "bottom" } | { kind: "keep"; fromBottom: number } | { kind: "follow" } | null>(null)
 
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => input.current?.focus(),
-      paste: (t) => {
-        const el = input.current
-        if (!el) return
-        el.focus()
-        document.execCommand("insertText", false, t)
-      },
+      focus: () => composer.current?.focus(),
+      paste: (t) => composer.current?.paste(t),
     }),
     [],
   )
@@ -107,6 +151,8 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     setItems(new Map())
     setCursor(null)
     setPending([])
+    setInbox([])
+    setSent([])
     setLoaded(false)
     setError(null)
     window.ctrl
@@ -117,9 +163,11 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
         setItems(new Map(page.items.map((i) => [i.id, i])))
         setCursor(page.cursor)
         setPending(page.pending)
+        setInbox(page.inbox)
         setLoaded(true)
       })
       .catch((err) => live && setError(String(err?.message ?? err)))
+    // Only the messages that changed come in: the others keep their object, so they don't re-render.
     const offUpdate = window.ctrl.onChatUpdate((id, next) => {
       if (id !== sessionID) return
       const el = list.current
@@ -132,11 +180,13 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
       })
     })
     const offPending = window.ctrl.onChatPending((id, p) => id === sessionID && setPending(p))
-    requestAnimationFrame(() => input.current?.focus())
+    const offInbox = window.ctrl.onChatInbox((id, q) => id === sessionID && setInbox(q))
+    requestAnimationFrame(() => composer.current?.focus())
     return () => {
       live = false
       offUpdate()
       offPending()
+      offInbox()
     }
   }, [sessionID])
 
@@ -185,29 +235,24 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     }
   }, [cursor, loadingMore, sessionID])
 
-  const submit = useCallback(() => {
-    if (!text.trim() && !images.length) return
-    void window.ctrl.chatSend(sessionID, text, images).catch((err) => setError(String(err?.message ?? err)))
-    setText("")
-    setImages([])
-    scroll.current = { kind: "bottom" }
-  }, [text, images, sessionID])
+  const submit = useCallback(
+    (text: string, images: string[]) => {
+      scroll.current = { kind: "bottom" }
+      window.ctrl.chatSend(sessionID, text, images).then(
+        (id) => id && setSent((prev) => [...prev, { id, text, images: images.length }]),
+        (err) => setError(String(err?.message ?? err)),
+      )
+    },
+    [sessionID],
+  )
+  const stop = useCallback(() => void window.ctrl.chatStop(sessionID), [sessionID])
 
-  const addImages = useCallback(async (files: File[]) => {
-    const picked = files.filter((f) => IMAGE_TYPES.test(f.type))
-    const urls = await Promise.all(picked.map(readImage))
-    setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES))
-  }, [])
-
-  // Grow with its content, up to a third of the window.
-  useLayoutEffect(() => {
-    const el = input.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight / 3)}px`
-  }, [text])
-
-  const sorted = [...items.values()].sort((a, b) => a.time - b.time)
+  const sorted = useMemo(() => [...items.values()].sort((a, b) => a.time - b.time), [items])
+  // Waiting to steer: in the inbox (or just sent), and not delivered into the conversation yet.
+  const waiting = useMemo(() => {
+    const ids = new Set(inbox.map((q) => q.id))
+    return [...inbox, ...sent.filter((q) => !ids.has(q.id))].filter((q) => !items.has(q.id))
+  }, [inbox, sent, items])
   const running = session?.status === "running"
 
   return (
@@ -244,6 +289,19 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
       {!archived && (
         <div className="chat-bottom">
           <div className="chat-column">
+            {waiting.length > 0 && (
+              <div className="chat-waiting">
+                {waiting.map((q) => (
+                  <div key={q.id} className="chat-msg user waiting">
+                    <div className="chat-bubble">
+                      {q.images > 0 && <span className="chat-waiting-photos">{q.images === 1 ? "1 photo" : `${q.images} photos`} · </span>}
+                      {withMentions(q.text)}
+                    </div>
+                  </div>
+                ))}
+                <div className="chat-waiting-note">Steers the agent at its next step</div>
+              </div>
+            )}
             {pending.map((p) =>
               p.kind === "permission" ? (
                 <Permission key={p.id} sessionID={sessionID} pending={p} />
@@ -251,61 +309,16 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                 <Question key={p.id} sessionID={sessionID} pending={p} />
               ),
             )}
-            <div className="chat-composer">
-              {images.length > 0 && (
-                <div className="chat-tray">
-                  {images.map((src, n) => (
-                    <div key={n} className="chat-thumb">
-                      <img src={src} alt="" />
-                      <button title="Remove" onClick={() => setImages((prev) => prev.filter((_, k) => k !== n))}>
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="chat-composer-row">
-                <textarea
-                  ref={input}
-                  rows={1}
-                  value={text}
-                  placeholder={running ? "Queue a message…" : "Message"}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault()
-                      submit()
-                    }
-                    if (e.key === "Escape" && running) void window.ctrl.chatStop(sessionID)
-                  }}
-                  onPaste={(e) => {
-                    const files = [...e.clipboardData.files]
-                    if (!files.some((f) => IMAGE_TYPES.test(f.type))) return
-                    e.preventDefault()
-                    void addImages(files)
-                  }}
-                  onDrop={(e) => {
-                    const files = [...e.dataTransfer.files]
-                    if (!files.some((f) => IMAGE_TYPES.test(f.type))) return
-                    e.preventDefault()
-                    void addImages(files)
-                  }}
-                />
-                {/* One button: stop while a turn runs and nothing's typed, send otherwise (typing queues). */}
-                {running && !text.trim() && !images.length ? (
-                  <button className="chat-action stop" title="Stop (Esc)" onClick={() => void window.ctrl.chatStop(sessionID)}>
-                    <span className="chat-stop-icon" />
-                  </button>
-                ) : (
-                  <button className="chat-action" title="Send (Enter)" disabled={!text.trim() && !images.length} onClick={submit}>
-                    ↑
-                  </button>
-                )}
-              </div>
-            </div>
+            <Composer
+              ref={composer}
+              placeholder={running ? "Steer the agent…" : "Message"}
+              sendTitle={running ? "Steer (Enter)" : "Send (Enter)"}
+              onSubmit={submit}
+              onStop={running ? stop : undefined}
+            />
             <div className="chat-meta">
               <Stats sessionID={sessionID} running={running} />
-              <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => input.current?.focus()} />
+              <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => composer.current?.focus()} />
             </div>
           </div>
         </div>
@@ -313,6 +326,336 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     </div>
   )
 })
+
+/** No session on screen (the TUI's new-session screen): the composer alone, starting a new session. */
+export const ChatHome = forwardRef<ChatHandle>(function ChatHome(_props, ref) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const composer = useRef<ChatHandle>(null)
+  useImperativeHandle(ref, () => ({ focus: () => composer.current?.focus(), paste: (t) => composer.current?.paste(t) }), [])
+  useEffect(() => {
+    requestAnimationFrame(() => composer.current?.focus())
+  }, [])
+  return (
+    <div className="chat-view chat-home">
+      <div className="chat-home-center">
+        <div className="chat-column">
+          <h2 className="chat-home-title">What do you want to work on?</h2>
+          <Composer
+            ref={composer}
+            placeholder="Start a new session…"
+            sendTitle="Start (Enter)"
+            disabled={busy}
+            onSubmit={(text, images) => {
+              setBusy(true)
+              setError(null)
+              window.ctrl.chatNew(text, images).catch((err) => {
+                setBusy(false)
+                setError(String(err?.message ?? err))
+              })
+            }}
+          />
+          {error && <p className="chat-home-error">{error}</p>}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+type ComposerProps = {
+  placeholder: string
+  sendTitle: string
+  disabled?: boolean
+  onSubmit(text: string, images: string[]): void
+  /** Set while a turn runs: the button stops it when nothing's typed, and so does Esc */
+  onStop?(): void
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const lineCount = (s: string) => s.split("\n").length
+
+/**
+ * The message box. Long pastes and dropped sessions go in as short tokens (`[Pasted 12 lines]`, `@Title`),
+ * highlighted by a backdrop drawn under the transparent textarea, and are swapped for what they stand for
+ * when sent. Backspace removes a token whole; ⌘V again right after a long paste puts the full text in.
+ * Its own component, so typing never re-renders the messages.
+ */
+const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ placeholder, sendTitle, disabled, onSubmit, onStop }, ref) {
+  const [text, setText] = useState("")
+  const [images, setImages] = useState<string[]>([])
+  const input = useRef<HTMLTextAreaElement>(null)
+  const backdrop = useRef<HTMLDivElement>(null)
+  /** Token label → the text it stands for */
+  const tokens = useRef(new Map<string, string>())
+  /** The last long paste, so the same ⌘V right after expands it */
+  const lastPaste = useRef<{ label: string; text: string } | null>(null)
+
+  /** Typed in through the editor, so ⌘Z undoes it and React's onChange sees it. */
+  const insert = (s: string) => document.execCommand("insertText", false, s)
+
+  const addToken = (base: string, value: string) => {
+    let label = base
+    for (let n = 2; tokens.current.has(label) && tokens.current.get(label) !== value; n++) label = base.replace(/(\]?)$/, ` #${n}$1`)
+    tokens.current.set(label, value)
+    return label
+  }
+
+  /** Session mentions in `s` become `@Title` tokens. */
+  const tokenize = (s: string) => s.replace(MENTION, (whole, title: string, id: string) => addToken(`@${title.trim() || id}`, whole))
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => input.current?.focus(),
+      paste: (t) => {
+        const el = input.current
+        if (!el) return
+        el.focus()
+        insert(tokenize(t))
+      },
+    }),
+    [],
+  )
+
+  // Grow with its content, up to a third of the window.
+  useLayoutEffect(() => {
+    const el = input.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight / 3)}px`
+    if (backdrop.current) backdrop.current.scrollTop = el.scrollTop
+  }, [text])
+
+  const addImages = useCallback(async (files: File[]) => {
+    const picked = files.filter((f) => IMAGE_TYPES.test(f.type))
+    const urls = await Promise.all(picked.map(readImage))
+    setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES))
+  }, [])
+
+  const labels = [...tokens.current.keys()].filter((l) => text.includes(l))
+  const empty = !text.trim() && !images.length
+
+  const submit = () => {
+    if (empty || disabled) return
+    let out = text
+    for (const label of labels) out = out.split(label).join(tokens.current.get(label)!)
+    onSubmit(out, images)
+    setText("")
+    setImages([])
+    tokens.current.clear()
+    lastPaste.current = null
+  }
+
+  /** The token that ends (backward) or starts (forward) at the cursor, as [start, end]. */
+  const tokenAt = (pos: number, backward: boolean): [number, number] | null => {
+    for (const label of labels) {
+      const start = backward ? pos - label.length : pos
+      if (start >= 0 && text.startsWith(label, start)) return [start, start + label.length]
+    }
+    return null
+  }
+
+  const marked = useMemo(() => {
+    if (!labels.length) return null
+    const re = new RegExp(labels.map(escapeRegExp).join("|"), "g")
+    const out: ReactNode[] = []
+    let last = 0
+    for (const m of text.matchAll(re)) {
+      out.push(text.slice(last, m.index))
+      out.push(
+        <mark key={m.index} className="chat-token">
+          {m[0]}
+        </mark>,
+      )
+      last = m.index + m[0].length
+    }
+    out.push(text.slice(last))
+    return out
+  }, [text, labels.join("\n")])
+
+  return (
+    <div className={`chat-composer${disabled ? " disabled" : ""}`}>
+      {images.length > 0 && (
+        <div className="chat-tray">
+          {images.map((src, n) => (
+            <div key={n} className="chat-thumb">
+              <img src={src} alt="" />
+              <button title="Remove" onClick={() => setImages((prev) => prev.filter((_, k) => k !== n))}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="chat-composer-row">
+        <div className="chat-input">
+          {marked && (
+            <div className="chat-input-backdrop" ref={backdrop} aria-hidden>
+              {marked}
+              {"\u200b"}
+            </div>
+          )}
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            placeholder={placeholder}
+            onChange={(e) => setText(e.target.value)}
+            onScroll={(e) => backdrop.current && (backdrop.current.scrollTop = e.currentTarget.scrollTop)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submit()
+                return
+              }
+              if (e.key === "Escape" && onStop) return onStop()
+              const el = e.currentTarget
+              if ((e.key === "Backspace" || e.key === "Delete") && el.selectionStart === el.selectionEnd && !e.metaKey && !e.altKey) {
+                const range = tokenAt(el.selectionStart, e.key === "Backspace")
+                if (!range) return
+                e.preventDefault()
+                el.setSelectionRange(range[0], range[1])
+                document.execCommand("delete")
+              }
+            }}
+            onPaste={(e) => {
+              const files = [...e.clipboardData.files]
+              if (files.some((f) => IMAGE_TYPES.test(f.type))) {
+                e.preventDefault()
+                void addImages(files)
+                return
+              }
+              const pasted = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n")
+              if (!pasted) return
+              const el = e.currentTarget
+              const prev = lastPaste.current
+              const at = el.selectionStart
+              // The same long paste again, right after its token: put the full text in its place.
+              if (prev && prev.text === pasted && el.selectionEnd === at && text.slice(at - prev.label.length, at) === prev.label) {
+                e.preventDefault()
+                lastPaste.current = null
+                el.setSelectionRange(at - prev.label.length, at)
+                insert(pasted)
+                return
+              }
+              lastPaste.current = null
+              const lines = lineCount(pasted)
+              if (lines >= LONG_PASTE_LINES || pasted.length >= LONG_PASTE_CHARS) {
+                e.preventDefault()
+                const label = addToken(lines > 1 ? `[Pasted ${lines} lines]` : `[Pasted ${pasted.length.toLocaleString()} characters]`, pasted)
+                lastPaste.current = { label, text: pasted }
+                insert(label)
+                return
+              }
+              if (MENTION.test(pasted)) {
+                MENTION.lastIndex = 0
+                e.preventDefault()
+                insert(tokenize(pasted))
+              }
+            }}
+            onDrop={(e) => {
+              const files = [...e.dataTransfer.files]
+              if (!files.some((f) => IMAGE_TYPES.test(f.type))) return
+              e.preventDefault()
+              void addImages(files)
+            }}
+          />
+        </div>
+        {/* One button: stop while a turn runs and nothing's typed, send otherwise (typing steers). */}
+        {onStop && empty ? (
+          <button className="chat-action stop" title="Stop (Esc)" onClick={onStop}>
+            <span className="chat-stop-icon" />
+          </button>
+        ) : (
+          <button className="chat-action" title={sendTitle} disabled={empty || disabled} onClick={submit}>
+            ↑
+          </button>
+        )}
+      </div>
+    </div>
+  )
+})
+
+/**
+ * A box showing its first 3 lines; click it to see everything, click again to fold it back. Clicks that
+ * select text or follow a link don't toggle it.
+ */
+function Clamp({ className, children }: { className: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el || open) return
+    const check = () => setOverflows(el.scrollHeight > el.clientHeight + 1)
+    check()
+    // The box grows until it's clamped (streaming), and rewraps when the window resizes.
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [open])
+  const foldable = overflows || open
+  return (
+    <div
+      ref={box}
+      className={`chat-clamp ${className}${open ? " open" : ""}${foldable ? " foldable" : ""}${overflows && !open ? " clipped" : ""}`}
+      onClick={(e) => {
+        if (!foldable || (e.target as HTMLElement).closest("a") || window.getSelection()?.toString()) return
+        setOpen((o) => !o)
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+const TextPart = memo(function TextPart({ text }: { text: string }) {
+  return <div className="chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+})
+
+function Thinking({ text }: { text?: string }) {
+  if (!text) return <div className="chat-thinking">Thought</div>
+  return (
+    <Clamp className="chat-thinking has-text">
+      <div className="chat-thinking-label">Thought</div>
+      <div className="chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+    </Clamp>
+  )
+}
+
+const oneLine = (s: string) => s.trim().replace(/\s+/g, " ")
+
+function Tool({ part }: { part: Extract<ChatPart, { type: "tool" }> }) {
+  const head = (
+    <>
+      <span className="chat-tool-icon">{TOOL_ICONS[part.status]}</span>
+      <span className="chat-tool-name">{part.name}</span>
+    </>
+  )
+  if (part.command) {
+    // The summary is the command's description when it has one, else the command itself (shown below).
+    const description = oneLine(part.command).startsWith(part.summary.replace(/…$/, "")) ? "" : part.summary
+    return (
+      <div className="chat-tool-block">
+        <div className={`chat-tool ${part.status}`}>
+          {head}
+          {description && <span className="chat-tool-summary">{description}</span>}
+        </div>
+        <Clamp className="chat-cmd">{part.command}</Clamp>
+      </div>
+    )
+  }
+  return (
+    <div className={`chat-tool ${part.status}`}>
+      {head}
+      {part.detail ? (
+        <Clamp className="chat-tool-detail">{part.detail}</Clamp>
+      ) : (
+        <span className="chat-tool-summary">{part.summary}</span>
+      )}
+    </div>
+  )
+}
 
 const Message = memo(function Message({ item, sessionID }: { item: ChatItem; sessionID: string }) {
   if (item.kind === "user") {
@@ -325,7 +668,7 @@ const Message = memo(function Message({ item, sessionID }: { item: ChatItem; ses
             ))}
           </div>
         )}
-        {item.text.trim() && <div className="chat-bubble">{item.text}</div>}
+        {item.text.trim() && <div className="chat-bubble">{withMentions(item.text)}</div>}
       </div>
     )
   }
@@ -333,17 +676,11 @@ const Message = memo(function Message({ item, sessionID }: { item: ChatItem; ses
     <div className="chat-msg assistant">
       {item.parts.map((p, n) =>
         p.type === "text" ? (
-          <div key={n} className="chat-md" dangerouslySetInnerHTML={{ __html: md.render(p.text) }} />
+          <TextPart key={n} text={p.text} />
         ) : p.type === "reasoning" ? (
-          <div key={n} className="chat-thinking">
-            Thought
-          </div>
+          <Thinking key={n} text={p.text} />
         ) : (
-          <div key={n} className={`chat-tool ${p.status}`}>
-            <span className="chat-tool-icon">{TOOL_ICONS[p.status]}</span>
-            <span className="chat-tool-name">{p.name}</span>
-            <span className="chat-tool-summary">{p.summary}</span>
-          </div>
+          <Tool key={n} part={p} />
         ),
       )}
       {item.error && <div className="chat-error">{item.error}</div>}

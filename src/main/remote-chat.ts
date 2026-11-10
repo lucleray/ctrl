@@ -24,10 +24,22 @@ export type ChatItem =
 
 export type ChatPart =
   | { type: "text"; text: string }
-  | { type: "reasoning" }
-  | { type: "tool"; name: string; summary: string; status: "running" | "done" | "error" }
+  /** text: what it thought, desktop only (`detail`) */
+  | { type: "reasoning"; text?: string }
+  | {
+      type: "tool"
+      name: string
+      summary: string
+      status: "running" | "done" | "error"
+      /** Desktop only (`detail`): the full shell command, else the summary's input in full when it was cut */
+      command?: string
+      detail?: string
+    }
 
 export type ChatPage = { items: ChatItem[]; cursor: string | null }
+
+/** A message you sent that opencode hasn't handed to the agent yet (its inbox): it steers at the next step. */
+export type ChatQueued = { id: string; text: string; images: number }
 
 /** Messages per page: the newest on open, then older ones on "Load earlier". */
 const PAGE = 40
@@ -35,23 +47,27 @@ const SUMMARY_MAX = 140
 /** Inputs that say what a tool call is about, most telling first (bash's description before its command). */
 const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name"]
 
-function summarize(input: unknown) {
-  let obj: Record<string, unknown> = {}
+function inputOf(input: unknown): Record<string, unknown> {
   if (typeof input === "string") {
     try {
-      obj = JSON.parse(input)
+      return JSON.parse(input)
     } catch {
-      return ""
+      return {}
     }
-  } else if (input && typeof input === "object") obj = input as Record<string, unknown>
+  }
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : {}
+}
+
+function summarize(obj: Record<string, unknown>) {
   for (const key of SUMMARY_KEYS) {
     const v = obj[key]
     if (typeof v === "string" && v.trim()) {
-      const line = v.trim().replace(/\s+/g, " ")
-      return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line
+      const full = v.trim()
+      const line = full.replace(/\s+/g, " ")
+      return { summary: line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line, full }
     }
   }
-  return ""
+  return { summary: "", full: "" }
 }
 
 type Message = { id: string; type: string; time: { created: number; completed?: number }; [k: string]: any }
@@ -62,7 +78,7 @@ function imagesOf(m: Message): Attachment[] {
   return ((m.files ?? []) as Attachment[]).filter((f) => typeof f.data === "string" && f.mime?.startsWith("image/"))
 }
 
-function toItem(m: Message): ChatItem | null {
+function toItem(m: Message, detail: boolean): ChatItem | null {
   if (m.type === "user") {
     const images = imagesOf(m).length
     if (!m.text?.trim() && !images) return null
@@ -75,10 +91,20 @@ function toItem(m: Message): ChatItem | null {
       if (c.text?.trim()) parts.push({ type: "text", text: c.text })
     } else if (c.type === "reasoning") {
       // One marker for a run of thinking, not one per block.
-      if (parts.at(-1)?.type !== "reasoning") parts.push({ type: "reasoning" })
+      const last = parts.at(-1)
+      const text = detail && typeof c.text === "string" ? c.text.trim() : ""
+      if (last?.type !== "reasoning") parts.push(detail ? { type: "reasoning", text } : { type: "reasoning" })
+      else if (text) last.text = last.text ? `${last.text}\n\n${text}` : text
     } else if (c.type === "tool") {
       const status = c.state?.status === "completed" ? "done" : c.state?.status === "error" ? "error" : "running"
-      parts.push({ type: "tool", name: c.name, summary: summarize(c.state?.input), status })
+      const input = inputOf(c.state?.input)
+      const { summary, full } = summarize(input)
+      const part: ChatPart = { type: "tool", name: c.name, summary, status }
+      if (detail) {
+        if (typeof input.command === "string" && input.command.trim()) part.command = input.command.trim()
+        else if (full && full !== summary) part.detail = full
+      }
+      parts.push(part)
     }
   }
   const error = m.error ? String(m.error.message ?? m.error.type ?? "Failed") : undefined
@@ -88,15 +114,32 @@ function toItem(m: Message): ChatItem | null {
 
 /**
  * The newest page of a session's messages (no cursor), or the page before `cursor`. Oldest first, so the
- * phone appends. Bounded: one request of PAGE messages, whatever the session's length.
+ * phone appends. Bounded: one request of PAGE messages, whatever the session's length. `detail` adds what
+ * only the desktop shows (thinking text, full commands), kept off the phone's refreshes.
  */
-export async function chatPage(client: Client, sessionID: string, cursor?: string): Promise<ChatPage> {
+export async function chatPage(client: Client, sessionID: string, cursor?: string, detail = false): Promise<ChatPage> {
   const res = cursor
     ? await client.message.list({ sessionID, cursor })
     : await client.message.list({ sessionID, limit: PAGE, order: "desc" })
-  const items = (res.data as unknown as Message[]).map(toItem).filter((i): i is ChatItem => !!i)
+  const items = (res.data as unknown as Message[]).map((m) => toItem(m, detail)).filter((i): i is ChatItem => !!i)
   items.sort((a, b) => a.time - b.time)
-  return { items, cursor: res.cursor.next ?? null }
+  // A short page is the whole history: no "Load earlier" for a cursor that leads nowhere.
+  const short = !cursor && res.data.length < PAGE
+  return { items, cursor: short ? null : (res.cursor.next ?? null) }
+}
+
+/** Messages waiting in the session's inbox, oldest first. */
+export async function chatInbox(client: Client, sessionID: string): Promise<ChatQueued[]> {
+  const res = (await client.session.inbox.list({ sessionID })) as unknown
+  const list = (Array.isArray(res) ? res : ((res as { data?: unknown[] })?.data ?? [])) as Array<Record<string, any>>
+  return list
+    .filter((i) => i.type === "user")
+    .sort((a, b) => a.time.created - b.time.created)
+    .map((i) => ({
+      id: String(i.id),
+      text: String(i.payload?.text ?? ""),
+      images: ((i.payload?.files ?? []) as Attachment[]).filter((f) => f.mime?.startsWith("image/")).length,
+    }))
 }
 
 /** The index-th image attached to a message you sent, for the phone's <img> (null when there's none). */
