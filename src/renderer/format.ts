@@ -15,6 +15,13 @@ export function statusText(s: SessionItem) {
   return s.status === "failed" || s.status === "unread" ? `${s.statusDetail} · ${age(s.updated)} ago` : s.statusDetail
 }
 
+/** statusText, or what still runs in the background once the turn is over */
+export function signalText(s: SessionItem) {
+  if (s.status === "idle" && s.activity && (s.activity.subagents || s.activity.shells))
+    return `Running in the background: ${activityText(s.activity)}`
+  return statusText(s)
+}
+
 /** "1 shell · 2 subagents" */
 export function activityText(a: SessionActivity) {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
