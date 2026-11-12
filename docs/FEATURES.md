@@ -47,7 +47,8 @@ where it lives.
   one per harness), instructions attached as an invisible session instruction (opencode only), ctrl
   instructions Default / On / Off
   (`src/renderer/SpaceSettings.tsx`)
-- Status rollup on a space: shows the most urgent status of its sessions (`src/renderer/StatusIcon.tsx`)
+- Status rollup on a folded space or parent session: shows the loudest signal of its sessions, background work
+  included: needs input > running > failed > unread > subagent > shell (`signalRank()` in `src/renderer/StatusIcon.tsx`)
 - Background work: a session whose turn is over but still has shells or subagents running shows a pulsing icon
   instead of its age, like the spinner for a running turn: subagent if any, else shell (the tooltip counts them). Unread and failed dots still win. A harness
   capability (`activity()` in `src/main/harness.ts`), opencode only for now
@@ -71,7 +72,7 @@ where it lives.
   tooltip names the agent and the session it ran in. Stored in `state.json` (`createdByAgent`), returned by the CLI
 - **Child sessions**: any session can have child sessions, any depth (right-click → New child session: same
   space, folder and harness). Inside a space, children nest under their parent, with a chevron to fold them
-  (folded parents show their children's most urgent status); siblings are ordered by their subtree's latest
+  (folded parents show the loudest signal of themselves and their children, background work included); siblings are ordered by their subtree's latest
   activity. Drop a session onto another one in a space to nest it (it joins that space); right-click → Open
   parent / Detach from parent. Moving a session to another space (menu, drag, CLI) takes its children along,
   except those filed in a different space. A child whose parent is in another space, or archived, stays at the top of its

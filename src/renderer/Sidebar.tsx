@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react"
 import { shortcutLabel } from "../shared/shortcuts"
-import { STATUS_RANK, type AppState, type SessionItem, type Space } from "../shared/types"
+import { type AppState, type SessionItem, type Space } from "../shared/types"
 import { Icon } from "./icons"
 import { SESSION_DRAG } from "./ReferenceDrop"
-import { activityText, age, shortPath, statusText } from "./format"
-import { ActivityIcon, StatusIcon, topStatus } from "./StatusIcon"
+import { activityText, age, shortPath, signalText, statusText } from "./format"
+import { SignalIcon, signalRank, topStatus } from "./StatusIcon"
 import { useSidebarWidth } from "./ResizeHandle"
 
 const SPACE_DRAG = "application/x-ctrl-space"
@@ -276,7 +276,10 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
     const depth = tree?.depth ?? 0
     const parentID = state.parents[s.id]
     const parentLink = tree && depth === 0 && parentID ? sessionLabel(parentID) : null
-    const status = tree?.rollup && STATUS_RANK[tree.rollup.status] > STATUS_RANK[s.status] ? tree.rollup.status : s.status
+    // Archived sessions only flag what's live (running, needs you, background work), not unread/failed.
+    const own = state.archived[s.id] && (s.status === "unread" || s.status === "failed") ? { ...s, status: "idle" as const } : s
+    // A folded parent shows the loudest of itself and its descendants.
+    const signal = tree?.rollup && signalRank(tree.rollup) > signalRank(own) ? tree.rollup : own
     return renamingSession === s.id ? (
       <NameInput
         key={s.id}
@@ -309,7 +312,7 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
           e.preventDefault()
           void window.ctrl.showSessionMenu(s.id)
         }}
-        title={[statusText(s), s.activity && `Running in the background: ${activityText(s.activity)}`, s.title, `${s.harness} · ${shortPath(s.directory)}`, parentText(s), agentText(s), tree?.rollup && `${tree.rollup.title}: ${statusText(tree.rollup)}`]
+        title={[statusText(s), s.activity && `Running in the background: ${activityText(s.activity)}`, s.title, `${s.harness} · ${shortPath(s.directory)}`, parentText(s), agentText(s), tree?.rollup && `${tree.rollup.title}: ${signalText(tree.rollup)}`]
           .filter(Boolean)
           .join("\n")}
       >
@@ -357,14 +360,10 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
         <span className="label">{s.title}</span>
         {hints?.has(s.id) ? (
           <kbd className="jump-hint">⌘{hints.get(s.id)}</kbd>
-        ) : status === "idle" && s.activity ? (
-          <ActivityIcon activity={s.activity} />
-        ) : s.status === "idle" ||
-          // Archived sessions only flag what's live (running, needs you), not unread/failed.
-          (state.archived[s.id] && (s.status === "unread" || s.status === "failed")) ? (
+        ) : signalRank(signal) === 0 ? (
           <span className="meta">{age(s.updated)}</span>
         ) : (
-          <StatusIcon status={status} />
+          <SignalIcon status={signal.status} activity={signal.activity} />
         )}
         <button
           className="icon-btn row-action"
@@ -615,8 +614,8 @@ function SpaceGroup(props: {
           <Icon name={open ? "folder-open" : "folder"} />
           <span className="label">{space.name}</span>
           {!open && rollup && (
-            <span className="rollup" title={`${rollup.title}\n${statusText(rollup) ?? ""}`}>
-              <StatusIcon status={rollup.status} />
+            <span className="rollup" title={`${rollup.title}\n${signalText(rollup) ?? ""}`}>
+              <SignalIcon status={rollup.status} activity={rollup.activity} />
             </span>
           )}
           <span className="hover-actions">
