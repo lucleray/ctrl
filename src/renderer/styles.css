@@ -3339,21 +3339,38 @@ body.resizing .terminal-pane.active {
   color: #f59e0b;
 }
 
-/* Shells and subagents still running: the count, and its list opening upward */
+/* Subagents and shells still running: a count each, and its list opening upward */
+.chat-work-all {
+  display: inline-flex;
+  gap: 14px;
+}
+
 .chat-work-wrap {
   position: relative;
 }
 
 .chat-work {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: inherit;
   color: inherit;
+}
+
+.chat-work svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.chat-work.button {
   margin: -3px -6px;
   padding: 3px 6px;
   border-radius: 6px;
 }
 
-.chat-work:hover,
-.chat-work.open {
+.chat-work.button:hover,
+.chat-work.button.open {
   background: var(--hover-strong);
   color: var(--text);
 }

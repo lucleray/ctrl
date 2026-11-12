@@ -14,7 +14,7 @@ import {
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
 import type { ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
-import { activityText, age } from "./format"
+import { age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -1020,21 +1020,31 @@ function useSettled(text: string, ms: number) {
   return shown
 }
 
+const WORK_KINDS = [
+  { kind: "subagent", icon: "subagent", stop: "Stop this subagent" },
+  { kind: "shell", icon: "terminal", stop: "Kill this shell" },
+] as const
+
 /**
- * The shells and subagents the session still has running ("1 subagent · 2 shells"). Click it for the list,
- * each with a stop button, for harnesses that can list them.
+ * The subagents and the shells the session still has running, each with its icon ("1 subagent", "2 shells").
+ * Click one for its list, each row with a stop button, for harnesses that can list them.
  */
 function Work({ sessionID, activity }: { sessionID: string; activity?: SessionActivity }) {
-  const text = useSettled(activity ? activityText(activity) : "", 1000)
+  const count = (n: number | undefined, word: string) => (n ? `${n} ${word}${n === 1 ? "" : "s"}` : "")
+  const labels = {
+    subagent: useSettled(count(activity?.subagents, "subagent"), 1000),
+    shell: useSettled(count(activity?.shells, "shell"), 1000),
+  }
+  const any = !!(labels.subagent || labels.shell)
   const [list, setList] = useState<RunningWork[] | null>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<RunningWork["kind"] | null>(null)
   const root = useRef<HTMLSpanElement>(null)
 
-  // The counts changed (something started or ended), or the list opens: read it again.
+  // The counts changed (something started or ended), or a list opens: read it again.
   useEffect(() => {
-    if (!text) {
+    if (!any) {
       setList(null)
-      setOpen(false)
+      setOpen(null)
       return
     }
     let live = true
@@ -1045,50 +1055,74 @@ function Work({ sessionID, activity }: { sessionID: string; activity?: SessionAc
     return () => {
       live = false
     }
-  }, [sessionID, text, open])
+  }, [sessionID, labels.subagent, labels.shell, open])
 
   useEffect(() => {
     if (!open) return
-    const down = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false)
+    const down = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(null)
     document.addEventListener("mousedown", down)
-    window.addEventListener("blur", () => setOpen(false), { once: true })
+    window.addEventListener("blur", () => setOpen(null), { once: true })
     return () => document.removeEventListener("mousedown", down)
   }, [open])
 
-  if (!text) return null
-  const title = "Shells and subagents this session still has running"
-  if (!list) return <span title={title}>{text}</span>
+  if (!any) return null
   const stop = (w: RunningWork) => {
     setList((l) => l && l.filter((x) => x.id !== w.id))
     void window.ctrl.chatStopWork(sessionID, w.id).catch(() => {})
   }
   return (
     <span
-      className="chat-work-wrap"
+      className="chat-work-all"
       ref={root}
       onKeyDown={(e) => {
         if (!open || e.key !== "Escape") return
         e.stopPropagation()
-        setOpen(false)
+        setOpen(null)
       }}
     >
-      <button className={`chat-work${open ? " open" : ""}`} title={title} onClick={() => setOpen((o) => !o)}>
-        {text}
-      </button>
-      {open && list.length > 0 && (
-        <div className="chat-work-menu">
-          {list.map((w) => (
-            <div key={w.id} className={`chat-work-row ${w.kind}`} title={w.title}>
-              <Icon name={w.kind === "subagent" ? "subagent" : "terminal"} />
-              <span className="chat-work-title">{w.title || w.kind}</span>
-              <span className="chat-work-age">{age(w.started)}</span>
-              <button className="chat-work-stop" title={w.kind === "shell" ? "Kill this shell" : "Stop this subagent"} onClick={() => stop(w)}>
-                <Icon name="close" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {WORK_KINDS.map((k) => {
+        const label = labels[k.kind]
+        if (!label) return null
+        const content = (
+          <>
+            <Icon name={k.icon} />
+            {label}
+          </>
+        )
+        const title = `${k.kind === "shell" ? "Shells" : "Subagents"} this session still has running`
+        if (!list)
+          return (
+            <span key={k.kind} className="chat-work" title={title}>
+              {content}
+            </span>
+          )
+        const rows = open === k.kind ? list.filter((w) => w.kind === k.kind) : []
+        return (
+          <span key={k.kind} className="chat-work-wrap">
+            <button
+              className={`chat-work button${open === k.kind ? " open" : ""}`}
+              title={title}
+              onClick={() => setOpen((o) => (o === k.kind ? null : k.kind))}
+            >
+              {content}
+            </button>
+            {rows.length > 0 && (
+              <div className="chat-work-menu">
+                {rows.map((w) => (
+                  <div key={w.id} className={`chat-work-row ${w.kind}`} title={w.title}>
+                    <Icon name={k.icon} />
+                    <span className="chat-work-title">{w.title || w.kind}</span>
+                    <span className="chat-work-age">{age(w.started)}</span>
+                    <button className="chat-work-stop" title={k.stop} onClick={() => stop(w)}>
+                      <Icon name="close" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </span>
+        )
+      })}
     </span>
   )
 }
