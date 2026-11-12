@@ -43,7 +43,10 @@ function decide(body) {
   if (shell && asked) {
     const what = said.replace(/^run\s+/i, "").replace(/[.!]$/, "") || "it"
     const args = { command: /^sleep \d+$/.test(what) ? what : `sleep 3600 # ${what}` }
-    if (shell.function.parameters?.properties?.description) args.description = `Run ${what}`
+    const params = shell.function.parameters?.properties ?? {}
+    if (params.description) args.description = `Run ${what}`
+    // opencode stops a shell the turn waits for after 2 minutes otherwise.
+    if (params.timeout) args.timeout = 0
     return { tool: { name: "shell", args } }
   }
   if (last?.role === "tool") return { text: "Done. What's next?" }
