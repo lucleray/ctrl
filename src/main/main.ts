@@ -142,6 +142,8 @@ const rebuildSessions = () => {
   sessions = harnesses().flatMap(sessionsOf).sort((a, b) => b.updated - a.updated)
 }
 const sessionByID = (id: string) => sessions.find((s) => s.id === id)
+/** Moving what holds a session's turn to the background, for harnesses that can (src/main/harness.ts). */
+const backgroundOf = (sessionID: string) => harnesses().find((h) => h.harness === harnessOf(sessionID))?.background
 
 const terms = (): TermInfo[] => [
   ...(opencodeStarted ? [{ id: OPENCODE_TERM, harness: "opencode" as const, sessionID: opencodeRoute }] : []),
@@ -512,9 +514,11 @@ const desktopChat = new DesktopChat({
   page: (sessionID) => chatPage(openCodeClient(), sessionID, undefined, true),
   pending: chatOps.pending,
   inbox: (sessionID) => chatInbox(openCodeClient(), sessionID),
+  blocking: async (sessionID) => (await backgroundOf(sessionID)?.blocking(sessionID)) ?? [],
   updated: (sessionID, items) => send("chat:update", sessionID, items),
   pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
   inboxChanged: (sessionID, inbox) => send("chat:inbox", sessionID, inbox),
+  blockingChanged: (sessionID, blocking) => send("chat:blocking", sessionID, blocking),
 })
 
 opencode.onSessionEvent = (sessionID, type) => {
@@ -1577,6 +1581,7 @@ function registerIpc() {
     await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
   })
   ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  ipcMain.handle("chat:background", (_e, sessionID: string) => backgroundOf(sessionID)?.move(sessionID))
   ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
     chatOps.reply(sessionID, requestID, decision),
   )

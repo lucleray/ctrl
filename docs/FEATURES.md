@@ -227,6 +227,14 @@ where it lives.
   line, Esc stops; paste or drop images to attach them
 - Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
   above the composer ("Steers the agent at its next step") until opencode hands them to the agent
+- A shell or subagent that holds the turn can go on in the background, like ⌃B in opencode's TUI: while one does,
+  the note under the waiting messages says what the turn waits for ("Waiting for shell: pnpm test") next to a
+  **Run in background** button, and ⌃B in the composer does the same with or without a waiting message. The turn
+  goes on, so the waiting messages are read right away. Only for harnesses that can
+  (`HarnessSource.background`, `src/main/harness.ts`): opencode's `session.background`
+- A tool call moved to the background shows ↗ and a `background` tag instead of ✓. When what it started ends, a
+  line says so (`✓ shell background finished · pnpm test`, ✕ and "failed" otherwise) right where opencode tells
+  the agent, which is what starts the next turn. The phone's chat shows both too
 - Long pastes (5+ lines or 800+ characters) go in as a highlighted `[Pasted 12 lines]` token, like opencode's TUI;
   ⌘V again right after puts the full text in its place. Backspace removes a token whole; the full text is sent
 - Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's

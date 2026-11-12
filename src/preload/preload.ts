@@ -83,6 +83,7 @@ const api: CtrlApi = {
   chatSend: (sessionID, text, images) => ipcRenderer.invoke("chat:send", sessionID, text, images),
   chatNew: (text, images) => ipcRenderer.invoke("chat:new", text, images),
   chatStop: (sessionID) => ipcRenderer.invoke("chat:stop", sessionID),
+  chatBackground: (sessionID) => ipcRenderer.invoke("chat:background", sessionID),
   chatReply: (sessionID, requestID, decision) => ipcRenderer.invoke("chat:reply", sessionID, requestID, decision),
   chatAnswer: (sessionID, formID, answer) => ipcRenderer.invoke("chat:answer", sessionID, formID, answer),
   chatImage: (sessionID, messageID, index) => ipcRenderer.invoke("chat:image", sessionID, messageID, index),
@@ -93,6 +94,7 @@ const api: CtrlApi = {
   onChatUpdate: on("chat:update"),
   onChatPending: on("chat:pending"),
   onChatInbox: on("chat:inbox"),
+  onChatBlocking: on("chat:blocking"),
 }
 
 contextBridge.exposeInMainWorld("ctrl", api)

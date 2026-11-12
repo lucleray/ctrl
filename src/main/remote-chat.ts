@@ -1,4 +1,5 @@
 import type { OpenCode } from "@opencode/client"
+import type { BlockingWork } from "../shared/types"
 
 type Client = ReturnType<typeof OpenCode.make>
 
@@ -21,6 +22,8 @@ export type ChatItem =
       parts: ChatPart[]
       error?: string
     }
+  /** A shell or subagent that ran in the background ended: what opencode tells the agent, which starts a turn. */
+  | { id: string; kind: "note"; time: number; source: BlockingWork["kind"]; failed: boolean; text: string }
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -30,7 +33,8 @@ export type ChatPart =
       type: "tool"
       name: string
       summary: string
-      status: "running" | "done" | "error"
+      /** background: it was moved to the background and its turn went on (it may have ended since) */
+      status: "running" | "background" | "done" | "error"
       /** Desktop only (`detail`): the full shell command, else the summary's input in full when it was cut */
       command?: string
       detail?: string
@@ -46,6 +50,8 @@ const PAGE = 40
 const SUMMARY_MAX = 140
 /** Inputs that say what a tool call is about, most telling first (bash's description before its command). */
 const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name"]
+/** opencode's tools that hold the turn until they're done, and that `session.background` moves to the background. */
+const BACKGROUNDABLE: Record<string, BlockingWork["kind"]> = { shell: "shell", subagent: "subagent" }
 
 function inputOf(input: unknown): Record<string, unknown> {
   if (typeof input === "string") {
@@ -84,6 +90,13 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
     if (!m.text?.trim() && !images) return null
     return { id: m.id, kind: "user", time: m.time.created, text: m.text ?? "", ...(images ? { images } : {}) }
   }
+  if (m.type === "synthetic") {
+    // Only the ones about background work: opencode also sends the agent instructions this way.
+    const source = BACKGROUNDABLE[m.metadata?.source]
+    if (!source) return null
+    const failed = m.metadata.state !== "completed" || (typeof m.metadata.exit === "number" && m.metadata.exit !== 0)
+    return { id: m.id, kind: "note", time: m.time.created, source, failed, text: summarize({ description: m.description }).summary }
+  }
   if (m.type !== "assistant") return null
   const parts: ChatPart[] = []
   for (const c of m.content ?? []) {
@@ -96,7 +109,9 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
       if (last?.type !== "reasoning") parts.push(detail ? { type: "reasoning", text } : { type: "reasoning" })
       else if (text) last.text = last.text ? `${last.text}\n\n${text}` : text
     } else if (c.type === "tool") {
-      const status = c.state?.status === "completed" ? "done" : c.state?.status === "error" ? "error" : "running"
+      // Moved to the background: the call is over for the turn, while what it started kept running.
+      const moved = c.state?.status === "completed" && c.state.metadata?.status === "running"
+      const status = moved ? "background" : c.state?.status === "completed" ? "done" : c.state?.status === "error" ? "error" : "running"
       const input = inputOf(c.state?.input)
       const { summary, full } = summarize(input)
       const part: ChatPart = { type: "tool", name: c.name, summary, status }
@@ -126,6 +141,21 @@ export async function chatPage(client: Client, sessionID: string, cursor?: strin
   // A short page is the whole history: no "Load earlier" for a cursor that leads nowhere.
   const short = !cursor && res.data.length < PAGE
   return { items, cursor: short ? null : (res.cursor.next ?? null) }
+}
+
+/** Shells and subagents the turn in progress waits for (opencode's side of HarnessSource.background). */
+export async function blockingWork(client: Client, sessionID: string): Promise<BlockingWork[]> {
+  // The turn's message is the newest, or sits just under what was added while it ran.
+  const res = await client.message.list({ sessionID, limit: 3, order: "desc" })
+  const out: BlockingWork[] = []
+  for (const m of res.data as unknown as Message[]) {
+    if (m.type !== "assistant" || m.time.completed) continue
+    for (const c of m.content ?? []) {
+      const kind = c.type === "tool" && c.state?.status === "running" ? BACKGROUNDABLE[c.name] : undefined
+      if (kind) out.push({ kind, title: summarize(inputOf(c.state.input)).summary })
+    }
+  }
+  return out
 }
 
 /** Messages waiting in the session's inbox, oldest first. */

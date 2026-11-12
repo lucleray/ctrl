@@ -1,4 +1,4 @@
-import type { Harness, SessionActivity, SessionItem } from "../shared/types"
+import type { BlockingWork, Harness, SessionActivity, SessionItem } from "../shared/types"
 
 /**
  * What ctrl reads from a harness (opencode: src/main/opencode.ts, fx: src/main/fx.ts). main merges every
@@ -28,6 +28,18 @@ export interface HarnessSource {
    * nothing runs.
    */
   activity?(sessionID: string): SessionActivity | undefined
+
+  /**
+   * Moving what holds a session's turn to the background (a shell that hasn't exited, a subagent still
+   * working): the turn goes on, and a message waiting to steer is read right away. The chat view offers it
+   * on the messages waiting to steer, and on ⌃B, while `blocking` returns something.
+   */
+  background?: {
+    /** What holds the turn right now and can go on in the background. Empty when nothing does. */
+    blocking(sessionID: string): Promise<BlockingWork[]>
+    /** Moves all of it to the background. Nothing to move is not an error. */
+    move(sessionID: string): Promise<void>
+  }
 }
 
 /** The harness's sessions, with what its optional capabilities add. */
