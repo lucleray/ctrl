@@ -105,3 +105,8 @@ node scripts/demo/capture.mjs --harness fx   # the fx versions (hero-fx.png, …
 - Change the story in `SESSIONS` (`seed.mjs`), the shots in `capture.mjs` and the crops in `media.mjs`.
 - `node scripts/demo/activity.mjs` opens a demo ctrl (visible, not headless) whose sessions have real background
   shells and subagents that never finish (a local fake model), to look at those states. Ctrl+C stops it all.
+- `node scripts/demo/background.mjs` opens a demo ctrl in chat view on a session whose turn waits for a shell
+  and a subagent, to try sending it a message (both go to the background after 3 seconds) and the list under the
+  composer. Its agent is a local fake model: "run X" makes it start a shell and wait for it ("run sleep 30" for
+  one that ends on its own), "delegate Y" a subagent that never finishes, "think" makes it take 20 seconds to
+  answer, anything else gets a short answer.

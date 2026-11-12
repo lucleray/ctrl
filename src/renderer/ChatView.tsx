@@ -13,7 +13,8 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
+import type { ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
+import { age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -86,7 +87,9 @@ function renderMarkdown(text: string) {
   return html
 }
 
-const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
+const TOOL_ICONS: Record<string, string> = { running: "◌", background: "↗", done: "✓", error: "✕", stopped: "■" }
+/** How a background shell or subagent ended → the tool row it's drawn as */
+const NOTE_STATUS = { finished: "done", failed: "error", stopped: "stopped" } as const
 const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/
 const MAX_IMAGES = 6
 
@@ -317,7 +320,7 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
               onStop={running ? stop : undefined}
             />
             <div className="chat-meta">
-              <Stats sessionID={sessionID} running={running} />
+              <Stats sessionID={sessionID} running={running} activity={session?.activity} />
               <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => composer.current?.focus()} />
             </div>
           </div>
@@ -630,6 +633,7 @@ function Tool({ part }: { part: Extract<ChatPart, { type: "tool" }> }) {
     <>
       <span className="chat-tool-icon">{TOOL_ICONS[part.status]}</span>
       <span className="chat-tool-name">{part.name}</span>
+      {part.status === "background" && <span className="chat-tool-tag">background</span>}
     </>
   )
   if (part.command) {
@@ -669,6 +673,21 @@ const Message = memo(function Message({ item, sessionID }: { item: ChatItem; ses
           </div>
         )}
         {item.text.trim() && <div className="chat-bubble">{withMentions(item.text)}</div>}
+      </div>
+    )
+  }
+  if (item.kind === "note") {
+    return (
+      <div className="chat-msg note">
+        <div className={`chat-tool ${NOTE_STATUS[item.outcome]}`}>
+          <span className="chat-tool-icon">{TOOL_ICONS[NOTE_STATUS[item.outcome]]}</span>
+          <span className="chat-tool-name">{item.source}</span>
+          <span className="chat-tool-tag">background</span>
+          <span className="chat-tool-summary">
+            {item.outcome}
+            {item.text && ` · ${item.text}`}
+          </span>
+        </div>
       </div>
     )
   }
@@ -982,8 +1001,136 @@ const STATS_RUNNING_MS = 15_000
  * Spend and context used, under the composer. Read on open, when a turn ends, when the model changes and every
  * STATS_RUNNING_MS while one runs. A failed read keeps what's shown.
  */
-function Stats({ sessionID, running }: { sessionID: string; running: boolean }) {
+/** `text` once it has lasted `ms`, gone at once: a shell that runs for a moment doesn't flash by. */
+function useSettled(text: string, ms: number) {
+  const [shown, setShown] = useState(text)
+  const showing = useRef(!!text)
+  useEffect(() => {
+    if (!text || showing.current) {
+      showing.current = !!text
+      setShown(text)
+      return
+    }
+    const timer = setTimeout(() => {
+      showing.current = true
+      setShown(text)
+    }, ms)
+    return () => clearTimeout(timer)
+  }, [text, ms])
+  return shown
+}
+
+const WORK_KINDS = [
+  { kind: "subagent", icon: "subagent", stop: "Stop this subagent" },
+  { kind: "shell", icon: "terminal", stop: "Kill this shell" },
+] as const
+
+/**
+ * The subagents and the shells the session still has running, each with its icon ("1 subagent", "2 shells").
+ * Click one for its list, each row with a stop button, for harnesses that can list them.
+ */
+function Work({ sessionID, activity }: { sessionID: string; activity?: SessionActivity }) {
+  const count = (n: number | undefined, word: string) => (n ? `${n} ${word}${n === 1 ? "" : "s"}` : "")
+  const labels = {
+    subagent: useSettled(count(activity?.subagents, "subagent"), 1000),
+    shell: useSettled(count(activity?.shells, "shell"), 1000),
+  }
+  const any = !!(labels.subagent || labels.shell)
+  const [list, setList] = useState<RunningWork[] | null>(null)
+  const [open, setOpen] = useState<RunningWork["kind"] | null>(null)
+  const root = useRef<HTMLSpanElement>(null)
+
+  // The counts changed (something started or ended), or a list opens: read it again.
+  useEffect(() => {
+    if (!any) {
+      setList(null)
+      setOpen(null)
+      return
+    }
+    let live = true
+    void window.ctrl.chatWork(sessionID).then(
+      (l) => live && setList(l),
+      () => {},
+    )
+    return () => {
+      live = false
+    }
+  }, [sessionID, labels.subagent, labels.shell, open])
+
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(null)
+    document.addEventListener("mousedown", down)
+    window.addEventListener("blur", () => setOpen(null), { once: true })
+    return () => document.removeEventListener("mousedown", down)
+  }, [open])
+
+  if (!any) return null
+  const stop = (w: RunningWork) => {
+    setList((l) => l && l.filter((x) => x.id !== w.id))
+    void window.ctrl.chatStopWork(sessionID, w.id).catch(() => {})
+  }
+  return (
+    <span
+      className="chat-work-all"
+      ref={root}
+      onKeyDown={(e) => {
+        if (!open || e.key !== "Escape") return
+        e.stopPropagation()
+        setOpen(null)
+      }}
+    >
+      {WORK_KINDS.map((k) => {
+        const label = labels[k.kind]
+        if (!label) return null
+        const content = (
+          <>
+            <Icon name={k.icon} />
+            {label}
+          </>
+        )
+        const title = `${k.kind === "shell" ? "Shells" : "Subagents"} this session still has running`
+        if (!list)
+          return (
+            <span key={k.kind} className="chat-work" title={title}>
+              {content}
+            </span>
+          )
+        const rows = open === k.kind ? list.filter((w) => w.kind === k.kind) : []
+        return (
+          <span key={k.kind} className="chat-work-wrap">
+            <button
+              className={`chat-work button${open === k.kind ? " open" : ""}`}
+              title={title}
+              onClick={() => setOpen((o) => (o === k.kind ? null : k.kind))}
+            >
+              {content}
+            </button>
+            {rows.length > 0 && (
+              <div className="chat-work-menu">
+                {rows.map((w) => (
+                  <div key={w.id} className={`chat-work-row ${w.kind}`} title={w.title}>
+                    <Icon name={k.icon} />
+                    <span className="chat-work-title">{w.title || w.kind}</span>
+                    <span className="chat-work-age">{age(w.started)}</span>
+                    <button className="chat-work-stop" title={k.stop} onClick={() => stop(w)}>
+                      <Icon name="close" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
+function Stats({ sessionID, running, activity }: { sessionID: string; running: boolean; activity?: SessionActivity }) {
   const [stats, setStats] = useState<ChatStats | null>(() => statsCache.get(sessionID) ?? null)
+  // After spend and context, so they don't move when it comes and goes.
+  const working = <Work sessionID={sessionID} activity={activity} />
   useEffect(() => {
     let live = true
     setStats(statsCache.get(sessionID) ?? null)
@@ -1004,7 +1151,7 @@ function Stats({ sessionID, running }: { sessionID: string; running: boolean }) 
       off()
     }
   }, [sessionID, running])
-  if (!stats) return <span className="chat-stats" />
+  if (!stats) return <span className="chat-stats">{working}</span>
   const ctx = stats.context
   const pct = ctx?.limit ? Math.min(100, Math.round((ctx.used / ctx.limit) * 100)) : null
   return (
@@ -1018,6 +1165,7 @@ function Stats({ sessionID, running }: { sessionID: string; running: boolean }) 
           {pct !== null ? `${pct}% context` : `${tokens(ctx.used)} tokens`}
         </span>
       )}
+      {working}
     </span>
   )
 }

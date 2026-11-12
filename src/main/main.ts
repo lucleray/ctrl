@@ -142,6 +142,8 @@ const rebuildSessions = () => {
   sessions = harnesses().flatMap(sessionsOf).sort((a, b) => b.updated - a.updated)
 }
 const sessionByID = (id: string) => sessions.find((s) => s.id === id)
+/** What ctrl reads from the harness a session belongs to (src/main/harness.ts). */
+const sourceOf = (sessionID: string) => harnesses().find((h) => h.harness === harnessOf(sessionID))
 
 const terms = (): TermInfo[] => [
   ...(opencodeStarted ? [{ id: OPENCODE_TERM, harness: "opencode" as const, sessionID: opencodeRoute }] : []),
@@ -487,13 +489,38 @@ async function contextLimit(model: ModelRef, directory: string) {
   return contextLimits.get(key) ?? null
 }
 
+/** How long a message sent mid-turn waits before what holds the turn goes to the background: most shells are done by then. */
+const BACKGROUND_GRACE_MS = 3000
+
+/**
+ * A message sent mid-turn that still waits after the grace period: a shell or subagent holds the turn, so it
+ * goes on in the background (harnesses that can: src/main/harness.ts) and the agent reads the message. A turn
+ * that's only thinking has nothing to move, and isn't interrupted.
+ */
+function backgroundIfHeld(sessionID: string, messageID: string) {
+  const harness = sourceOf(sessionID)
+  if (!harness?.background) return
+  setTimeout(async () => {
+    try {
+      const waiting = await chatInbox(openCodeClient(), sessionID)
+      if (waiting.some((q) => q.id === messageID)) await harness.background!(sessionID)
+    } catch (err) {
+      console.error("[ctrl] moving to the background failed", err)
+    }
+  }, BACKGROUND_GRACE_MS)
+}
+
 /** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
 const chatOps = {
   page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
-  // Steer, never queue: a message sent mid-turn reaches the agent at its next step.
+  // Steer, never queue: a message sent mid-turn reaches the agent at its next step. A shell or subagent the
+  // turn waits for would hold that step back, so it goes on in the background (what ⌃B does in opencode's TUI).
   send: async (sessionID: string, text: string, images: string[]) => {
     const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
+    // Before sending: the turn this message starts in an idle session is not one to cut short.
+    const midTurn = sessionByID(sessionID)?.status === "running"
     const sent = await openCodeClient().session.prompt({ sessionID, text, delivery: "steer", ...(files.length ? { files } : {}) })
+    if (midTurn && sent?.id) backgroundIfHeld(sessionID, sent.id)
     return sent?.id
   },
   image: (sessionID: string, messageID: string, index: number) => chatImage(openCodeClient(), sessionID, messageID, index),
@@ -1577,6 +1604,9 @@ function registerIpc() {
     await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
   })
   ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  // The shells and subagents under the chat's composer, for harnesses that can list them (src/main/harness.ts).
+  ipcMain.handle("chat:work", async (_e, sessionID: string) => (await sourceOf(sessionID)?.work?.list(sessionID)) ?? null)
+  ipcMain.handle("chat:work-stop", (_e, sessionID: string, id: string) => sourceOf(sessionID)?.work?.stop(sessionID, String(id)))
   ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
     chatOps.reply(sessionID, requestID, decision),
   )

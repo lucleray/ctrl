@@ -954,7 +954,7 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return defaultLink(tokens, idx, options, env, self)
 }
 
-const TOOL_ICONS: Record<string, string> = { running: "◌", done: "✓", error: "✕" }
+const TOOL_ICONS: Record<string, string> = { running: "◌", background: "↗", done: "✓", error: "✕", stopped: "■" }
 
 function showChat(id: string) {
   if (chat?.id !== id) chat = { id, items: new Map(), cursor: null, pending: [], loaded: false, loadingMore: false }
@@ -1027,6 +1027,16 @@ function itemEl(i: ChatItem) {
       { className: "msg user" },
       ...(photos.length ? [h("div", { className: "photos" }, ...photos)] : []),
       ...(i.text.trim() ? [h("div", { className: "bubble" }, i.text)] : []),
+    )
+  }
+  if (i.kind === "note") {
+    const status = i.outcome === "finished" ? "done" : i.outcome === "failed" ? "error" : "stopped"
+    return h(
+      "div",
+      { className: `tool ${status}` },
+      h("span", { className: "tool-icon" }, TOOL_ICONS[status]),
+      h("span", { className: "tool-name" }, i.source),
+      h("span", { className: "tool-summary" }, `${i.outcome} in the background${i.text ? ` · ${i.text}` : ""}`),
     )
   }
   const parts = i.parts.map((p) => {

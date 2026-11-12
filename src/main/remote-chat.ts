@@ -2,6 +2,9 @@ import type { OpenCode } from "@opencode/client"
 
 type Client = ReturnType<typeof OpenCode.make>
 
+/** What opencode moves to the background (`session.background`), and tells the agent about once it ends. */
+type Backgrounded = "shell" | "subagent"
+
 /** One message as the phone's chat view draws it (src/remote/client.ts). */
 export type ChatItem =
   | {
@@ -21,6 +24,8 @@ export type ChatItem =
       parts: ChatPart[]
       error?: string
     }
+  /** A shell or subagent that ran in the background ended: what opencode tells the agent, which starts a turn. */
+  | { id: string; kind: "note"; time: number; source: Backgrounded; outcome: "finished" | "failed" | "stopped"; text: string }
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -30,7 +35,8 @@ export type ChatPart =
       type: "tool"
       name: string
       summary: string
-      status: "running" | "done" | "error"
+      /** background: it was moved to the background and its turn went on (it may have ended since) */
+      status: "running" | "background" | "done" | "error"
       /** Desktop only (`detail`): the full shell command, else the summary's input in full when it was cut */
       command?: string
       detail?: string
@@ -46,6 +52,7 @@ const PAGE = 40
 const SUMMARY_MAX = 140
 /** Inputs that say what a tool call is about, most telling first (bash's description before its command). */
 const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name"]
+const BACKGROUNDED: Record<string, Backgrounded> = { shell: "shell", subagent: "subagent" }
 
 function inputOf(input: unknown): Record<string, unknown> {
   if (typeof input === "string") {
@@ -84,6 +91,15 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
     if (!m.text?.trim() && !images) return null
     return { id: m.id, kind: "user", time: m.time.created, text: m.text ?? "", ...(images ? { images } : {}) }
   }
+  if (m.type === "synthetic") {
+    // Only the ones about background work: opencode also sends the agent instructions this way.
+    const source = BACKGROUNDED[m.metadata?.source]
+    if (!source) return null
+    // Ended on its own, well or not; anything else was cut short (killed, cancelled, timed out).
+    const exit = typeof m.metadata.exit === "number" ? m.metadata.exit : 0
+    const outcome = m.metadata.state !== "completed" ? "stopped" : exit ? "failed" : "finished"
+    return { id: m.id, kind: "note", time: m.time.created, source, outcome, text: summarize({ description: m.description }).summary }
+  }
   if (m.type !== "assistant") return null
   const parts: ChatPart[] = []
   for (const c of m.content ?? []) {
@@ -96,7 +112,9 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
       if (last?.type !== "reasoning") parts.push(detail ? { type: "reasoning", text } : { type: "reasoning" })
       else if (text) last.text = last.text ? `${last.text}\n\n${text}` : text
     } else if (c.type === "tool") {
-      const status = c.state?.status === "completed" ? "done" : c.state?.status === "error" ? "error" : "running"
+      // Moved to the background: the call is over for the turn, while what it started kept running.
+      const moved = c.state?.status === "completed" && c.state.metadata?.status === "running"
+      const status = moved ? "background" : c.state?.status === "completed" ? "done" : c.state?.status === "error" ? "error" : "running"
       const input = inputOf(c.state?.input)
       const { summary, full } = summarize(input)
       const part: ChatPart = { type: "tool", name: c.name, summary, status }
