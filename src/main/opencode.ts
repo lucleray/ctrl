@@ -10,6 +10,7 @@ import type {
   ModelOption,
   ModelRef,
   OpencodeServer,
+  RunningWork,
   SessionActivity,
   SessionItem,
 } from "../shared/types"
@@ -21,7 +22,9 @@ const CTRL_INSTRUCTIONS_KEY = "ctrl.cli"
 const MCP_DIR = process.env.CTRL_MCP_DIR || homedir()
 
 type Client = ReturnType<typeof OpenCode.make>
-type Event = { type: string; data?: Record<string, unknown> }
+type Event = { type: string; data?: Record<string, unknown>; location?: { directory?: string } }
+/** directory: the folder opencode files the shell under, which removing it asks for */
+type Shell = { sessionID: string; command: string; directory: string; started: number }
 
 /** Cap for the full sync on launch plus loadOlder(); sessions created afterwards are added on top. */
 const MAX_SESSIONS = 1000
@@ -116,8 +119,8 @@ export class OpenCodeService implements HarnessSource {
   private running = new Set<string>()
   /** Subagent → the session that started it (opencode's parentID), learned as subagents start. */
   private subagentParents = new Map<string, string>()
-  /** Running shells → the session that started them (`metadata.sessionID`). */
-  private shells = new Map<string, string>()
+  /** Running shells, with the session that started them (`metadata.sessionID`). */
+  private shells = new Map<string, Shell>()
   /** Background activity per root session, derived in rebuild(). */
   private activityByRoot = new Map<string, SessionActivity>()
   private pending = new Map<string, Pending>()
@@ -348,19 +351,20 @@ export class OpenCodeService implements HarnessSource {
     }
   }
 
-  /** Running shells in these folders, by shell id → session id. */
+  /** Running shells in these folders, by shell id. */
   private async listShells(directories: string[]) {
-    const out = new Map<string, string>()
+    const out = new Map<string, Shell>()
     const results = await Promise.allSettled(
       directories.map((directory) => this.client!.shell.list({ location: { directory } })),
     )
-    for (const r of results) {
-      if (r.status !== "fulfilled") continue
+    results.forEach((r, i) => {
+      if (r.status !== "fulfilled") return
       for (const shell of r.value.data) {
         const sessionID = shell.metadata?.sessionID
-        if (shell.status === "running" && typeof sessionID === "string") out.set(shell.id, sessionID)
+        if (shell.status !== "running" || typeof sessionID !== "string") continue
+        out.set(shell.id, { sessionID, command: shell.command ?? "", directory: directories[i], started: shell.time?.started ?? Date.now() })
       }
-    }
+    })
     return out
   }
 
@@ -450,10 +454,22 @@ export class OpenCodeService implements HarnessSource {
       case "mcp.status.changed":
         return this.refreshMcpSoon()
       case "shell.created": {
-        const info = d.info as { id: string; status: string; metadata?: Record<string, unknown> }
+        const info = d.info as {
+          id: string
+          status: string
+          command?: string
+          cwd?: string
+          time?: { started?: number }
+          metadata?: Record<string, unknown>
+        }
         const sessionID = info.metadata?.sessionID
         if (info.status !== "running" || typeof sessionID !== "string") return
-        this.shells.set(info.id, sessionID)
+        this.shells.set(info.id, {
+          sessionID,
+          command: info.command ?? "",
+          directory: event.location?.directory ?? info.cwd ?? "",
+          started: info.time?.started ?? Date.now(),
+        })
         return this.rebuild()
       }
       case "shell.exited":
@@ -537,7 +553,7 @@ export class OpenCodeService implements HarnessSource {
       if (!a) out.set(root, (a = { shells: 0, subagents: 0 }))
       return a
     }
-    for (const sessionID of this.shells.values()) entry(this.rootOf(sessionID)).shells++
+    for (const { sessionID } of this.shells.values()) entry(this.rootOf(sessionID)).shells++
     for (const id of this.running) {
       if (!this.subagentParents.has(id)) continue
       entry(this.rootOf(id)).subagents++
@@ -545,7 +561,7 @@ export class OpenCodeService implements HarnessSource {
     this.activityByRoot = out
     // Every subagent ever seen would pile up: past a bound, forget the ones nothing runs in anymore.
     if (this.subagentParents.size > MAX_SUBAGENTS) {
-      const shellSessions = new Set(this.shells.values())
+      const shellSessions = new Set([...this.shells.values()].map((s) => s.sessionID))
       for (const id of this.subagentParents.keys())
         if (!this.running.has(id) && !shellSessions.has(id)) this.subagentParents.delete(id)
     }
@@ -553,6 +569,32 @@ export class OpenCodeService implements HarnessSource {
 
   activity(sessionID: string) {
     return this.activityByRoot.get(sessionID)
+  }
+
+  /** What activity() counts for a root session: its shells and running subagents, and those of its subagents. */
+  work = {
+    list: async (sessionID: string) => {
+      const out: RunningWork[] = []
+      for (const [id, shell] of this.shells)
+        if (this.rootOf(shell.sessionID) === sessionID) out.push({ id, kind: "shell", title: shell.command, started: shell.started })
+      const subagents = [...this.running].filter((id) => this.subagentParents.has(id) && this.rootOf(id) === sessionID)
+      const infos = await Promise.allSettled(subagents.map((id) => this.client!.session.get({ sessionID: id })))
+      infos.forEach((r, i) => {
+        const info = r.status === "fulfilled" ? r.value : undefined
+        out.push({ id: subagents[i], kind: "subagent", title: info?.title ?? "", started: info?.time?.created ?? Date.now() })
+      })
+      return out.sort((a, b) => a.started - b.started)
+    },
+    // Only what belongs to the session: the id comes from the view.
+    stop: async (sessionID: string, id: string) => {
+      const shell = this.shells.get(id)
+      if (shell) {
+        if (this.rootOf(shell.sessionID) !== sessionID) return
+        await this.client?.shell.remove({ id, location: { directory: shell.directory } })
+      } else if (this.subagentParents.has(id) && this.rootOf(id) === sessionID) {
+        await this.client?.session.interrupt({ sessionID: id })
+      }
+    },
   }
 
   /** opencode's ⌃B: shells and subagents the turn waits for go on in the background (a no-op when there's none). */

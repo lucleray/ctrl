@@ -61,6 +61,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Status: finished, unread | ✅ | ✅ | fx: read state kept by ctrl |
 | Background shells and subagents (sidebar icon once the turn is over) | ✅ | ❌ | opencode: shell events + subagent sessions; shells already running at launch are found in the folders of sessions updated in the last 6 hours · fx: doesn't expose them |
 | A message sent mid-turn moves the shell or subagent holding the turn to the background (chat view, phone) | ✅ | ❌ | opencode: `session.background`, the TUI's own ⌃B, after 3 seconds · fx: no way to do it, and no chat view |
+| List the shells and subagents still running, and stop one (chat view: click the count under the composer) | ✅ | ❌ | opencode: `shell.remove`, `session.interrupt` on the subagent · fx: doesn't expose them |
 | Background shells and subagents in the prompt footer | ✅ | ❌ | opencode's own TUI shows `1 subagent · 1 shell` before context and cost; the chat view shows them after |
 | Status of sessions that aren't open | ✅ live | ⚠️ | fx: read from files on disk |
 | Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
@@ -95,6 +96,7 @@ simply hidden for harnesses that don't implement it.
 3. **Terminal:** how a session opens on the right, like `src/main/fx-terminals.ts`.
 4. **Optional capabilities**, any time later, one by one:
    - `activity()`: background shells and subagents per session (sidebar icon).
+   - `work`: lists what `activity()` counts and stops one of them (the chat view's list under the composer).
    - `background()`: moves the shell or subagent that holds a session's turn to the background, so a message
      sent mid-turn from a chat is read without waiting for it.
 5. **Support table** above: add a column and fill in what works.

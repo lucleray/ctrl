@@ -41,7 +41,7 @@ function sessions(count) {
 
 /** Pages by offset like opencode's cursors; records every call. */
 function fakeClient(all, active = {}, { shells = [], subagents = {} } = {}) {
-  const calls = { list: [], asked: [], shells: [], backgrounded: [] }
+  const calls = { list: [], asked: [], shells: [], backgrounded: [], removed: [], interrupted: [] }
   const page = (from, limit = 50) => {
     const data = all.slice(from, from + limit)
     return { data, cursor: { next: from + limit < all.length ? String(from + limit) : undefined } }
@@ -53,13 +53,15 @@ function fakeClient(all, active = {}, { shells = [], subagents = {} } = {}) {
         return page(input.cursor ? Number(input.cursor) : 0, input.limit)
       },
       active: async () => active,
-      get: async ({ sessionID }) => ({ id: sessionID, parentID: subagents[sessionID] }),
+      get: async ({ sessionID }) => ({ id: sessionID, parentID: subagents[sessionID], title: `title of ${sessionID}`, time: { created: 5 } }),
       background: async ({ sessionID }) => void calls.backgrounded.push(sessionID),
+      interrupt: async ({ sessionID }) => void calls.interrupted.push(sessionID),
     },
     shell: {
       list: async ({ location }) => (
         calls.shells.push(location.directory), { data: shells.filter((s) => s.cwd === location.directory) }
       ),
+      remove: async ({ id, location }) => void calls.removed.push([id, location.directory]),
     },
     permission: { request: { list: async ({ location }) => (calls.asked.push(location.directory), { data: [] }) } },
     form: { list: async () => ({ data: [] }) },
@@ -153,4 +155,29 @@ test("background: asks opencode to move what holds the turn to the background", 
   const { svc, calls } = service(sessions(1))
   await svc.background("ses_0000")
   assert.deepEqual(calls.backgrounded, ["ses_0000"])
+})
+
+test("work: lists a session's shells and subagents, its subagents' included, and stops only its own", async () => {
+  const all = sessions(2).map((s, i) => ({ ...s, time: { ...s.time, updated: Date.now() - i * 60_000 } }))
+  const shells = [
+    { id: "sh_1", status: "running", cwd: "/dir/0", command: "next dev", time: { started: 1 }, metadata: { sessionID: "ses_0000" } },
+    { id: "sh_2", status: "running", cwd: "/dir/1", command: "pnpm test", time: { started: 9 }, metadata: { sessionID: "ses_sub1" } },
+  ]
+  const { svc, calls } = service(all, { ses_sub1: { type: "running" } }, { shells, subagents: { ses_sub1: "ses_0001" } })
+  await svc.sync()
+  assert.deepEqual(await svc.work.list("ses_0000"), [{ id: "sh_1", kind: "shell", title: "next dev", started: 1 }])
+  // Oldest first: the subagent, then the shell it started.
+  assert.deepEqual(await svc.work.list("ses_0001"), [
+    { id: "ses_sub1", kind: "subagent", title: "title of ses_sub1", started: 5 },
+    { id: "sh_2", kind: "shell", title: "pnpm test", started: 9 },
+  ])
+
+  // Another session's shell and subagent are left alone.
+  await svc.work.stop("ses_0000", "sh_2")
+  await svc.work.stop("ses_0000", "ses_sub1")
+  assert.deepEqual([calls.removed, calls.interrupted], [[], []])
+  await svc.work.stop("ses_0001", "sh_2")
+  await svc.work.stop("ses_0001", "ses_sub1")
+  assert.deepEqual(calls.removed, [["sh_2", "/dir/1"]])
+  assert.deepEqual(calls.interrupted, ["ses_sub1"])
 })

@@ -13,8 +13,8 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { ChatStats, ModelChoices, ModelRef, SessionActivity, SessionItem } from "../shared/types"
-import { activityText } from "./format"
+import type { ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
+import { activityText, age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -87,7 +87,9 @@ function renderMarkdown(text: string) {
   return html
 }
 
-const TOOL_ICONS: Record<string, string> = { running: "◌", background: "↗", done: "✓", error: "✕" }
+const TOOL_ICONS: Record<string, string> = { running: "◌", background: "↗", done: "✓", error: "✕", stopped: "■" }
+/** How a background shell or subagent ended → the tool row it's drawn as */
+const NOTE_STATUS = { finished: "done", failed: "error", stopped: "stopped" } as const
 const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/
 const MAX_IMAGES = 6
 
@@ -677,12 +679,12 @@ const Message = memo(function Message({ item, sessionID }: { item: ChatItem; ses
   if (item.kind === "note") {
     return (
       <div className="chat-msg note">
-        <div className={`chat-tool ${item.failed ? "error" : "done"}`}>
-          <span className="chat-tool-icon">{TOOL_ICONS[item.failed ? "error" : "done"]}</span>
+        <div className={`chat-tool ${NOTE_STATUS[item.outcome]}`}>
+          <span className="chat-tool-icon">{TOOL_ICONS[NOTE_STATUS[item.outcome]]}</span>
           <span className="chat-tool-name">{item.source}</span>
           <span className="chat-tool-tag">background</span>
           <span className="chat-tool-summary">
-            {item.failed ? "failed" : "finished"}
+            {item.outcome}
             {item.text && ` · ${item.text}`}
           </span>
         </div>
@@ -1018,15 +1020,83 @@ function useSettled(text: string, ms: number) {
   return shown
 }
 
+/**
+ * The shells and subagents the session still has running ("1 subagent · 2 shells"). Click it for the list,
+ * each with a stop button, for harnesses that can list them.
+ */
+function Work({ sessionID, activity }: { sessionID: string; activity?: SessionActivity }) {
+  const text = useSettled(activity ? activityText(activity) : "", 1000)
+  const [list, setList] = useState<RunningWork[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+
+  // The counts changed (something started or ended), or the list opens: read it again.
+  useEffect(() => {
+    if (!text) {
+      setList(null)
+      setOpen(false)
+      return
+    }
+    let live = true
+    void window.ctrl.chatWork(sessionID).then(
+      (l) => live && setList(l),
+      () => {},
+    )
+    return () => {
+      live = false
+    }
+  }, [sessionID, text, open])
+
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false)
+    document.addEventListener("mousedown", down)
+    window.addEventListener("blur", () => setOpen(false), { once: true })
+    return () => document.removeEventListener("mousedown", down)
+  }, [open])
+
+  if (!text) return null
+  const title = "Shells and subagents this session still has running"
+  if (!list) return <span title={title}>{text}</span>
+  const stop = (w: RunningWork) => {
+    setList((l) => l && l.filter((x) => x.id !== w.id))
+    void window.ctrl.chatStopWork(sessionID, w.id).catch(() => {})
+  }
+  return (
+    <span
+      className="chat-work-wrap"
+      ref={root}
+      onKeyDown={(e) => {
+        if (!open || e.key !== "Escape") return
+        e.stopPropagation()
+        setOpen(false)
+      }}
+    >
+      <button className={`chat-work${open ? " open" : ""}`} title={title} onClick={() => setOpen((o) => !o)}>
+        {text}
+      </button>
+      {open && list.length > 0 && (
+        <div className="chat-work-menu">
+          {list.map((w) => (
+            <div key={w.id} className={`chat-work-row ${w.kind}`} title={w.title}>
+              <Icon name={w.kind === "subagent" ? "subagent" : "terminal"} />
+              <span className="chat-work-title">{w.title || w.kind}</span>
+              <span className="chat-work-age">{age(w.started)}</span>
+              <button className="chat-work-stop" title={w.kind === "shell" ? "Kill this shell" : "Stop this subagent"} onClick={() => stop(w)}>
+                <Icon name="close" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function Stats({ sessionID, running, activity }: { sessionID: string; running: boolean; activity?: SessionActivity }) {
   const [stats, setStats] = useState<ChatStats | null>(() => statsCache.get(sessionID) ?? null)
   // After spend and context, so they don't move when it comes and goes.
-  const work = useSettled(activity ? activityText(activity) : "", 1000)
-  const working = work && (
-    <span title="Shells and subagents this session still has running">
-      {work}
-    </span>
-  )
+  const working = <Work sessionID={sessionID} activity={activity} />
   useEffect(() => {
     let live = true
     setStats(statsCache.get(sessionID) ?? null)

@@ -1604,6 +1604,9 @@ function registerIpc() {
     await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
   })
   ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  // The shells and subagents under the chat's composer, for harnesses that can list them (src/main/harness.ts).
+  ipcMain.handle("chat:work", async (_e, sessionID: string) => (await sourceOf(sessionID)?.work?.list(sessionID)) ?? null)
+  ipcMain.handle("chat:work-stop", (_e, sessionID: string, id: string) => sourceOf(sessionID)?.work?.stop(sessionID, String(id)))
   ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
     chatOps.reply(sessionID, requestID, decision),
   )

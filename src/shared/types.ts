@@ -105,6 +105,9 @@ export type SessionItem = {
 /** Shells and subagents a session (or any of its subagents) still has running. Counts are > 0 when set. */
 export type SessionActivity = { shells: number; subagents: number }
 
+/** One of the shells and subagents SessionActivity counts. title: the shell's command, the subagent's title */
+export type RunningWork = { id: string; kind: "shell" | "subagent"; title: string; started: number }
+
 /**
  * One terminal on the right. "opencode" is the single embedded opencode TUI, switched between
  * sessions in place. fx has no way to do that, so each open fx session gets its own process.
@@ -571,6 +574,10 @@ export type CtrlApi = {
   chatModel(sessionID: string): Promise<ModelRef | null>
   chatSetModel(sessionID: string, model: ModelRef): Promise<void>
   chatStats(sessionID: string): Promise<ChatStats>
+  /** The shells and subagents the session still has running, oldest first (null: its harness can't list them) */
+  chatWork(sessionID: string): Promise<RunningWork[] | null>
+  /** Kills that shell, or stops that subagent (id: a RunningWork's) */
+  chatStopWork(sessionID: string, id: string): Promise<void>
   /** The session's model changed (picked in the TUI, or here) */
   onChatModelChanged(cb: (sessionID: string) => void): () => void
   /** An image attached to a message you sent, as a data: URL */

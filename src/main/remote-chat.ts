@@ -25,7 +25,7 @@ export type ChatItem =
       error?: string
     }
   /** A shell or subagent that ran in the background ended: what opencode tells the agent, which starts a turn. */
-  | { id: string; kind: "note"; time: number; source: Backgrounded; failed: boolean; text: string }
+  | { id: string; kind: "note"; time: number; source: Backgrounded; outcome: "finished" | "failed" | "stopped"; text: string }
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -95,8 +95,10 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
     // Only the ones about background work: opencode also sends the agent instructions this way.
     const source = BACKGROUNDED[m.metadata?.source]
     if (!source) return null
-    const failed = m.metadata.state !== "completed" || (typeof m.metadata.exit === "number" && m.metadata.exit !== 0)
-    return { id: m.id, kind: "note", time: m.time.created, source, failed, text: summarize({ description: m.description }).summary }
+    // Ended on its own, well or not; anything else was cut short (killed, cancelled, timed out).
+    const exit = typeof m.metadata.exit === "number" ? m.metadata.exit : 0
+    const outcome = m.metadata.state !== "completed" ? "stopped" : exit ? "failed" : "finished"
+    return { id: m.id, kind: "note", time: m.time.created, source, outcome, text: summarize({ description: m.description }).summary }
   }
   if (m.type !== "assistant") return null
   const parts: ChatPart[] = []
