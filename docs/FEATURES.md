@@ -239,8 +239,9 @@ where it lives.
   the agent, which is what starts the next turn. The phone's chat shows both too
 - Long pastes (5+ lines or 800+ characters) go in as a highlighted `[Pasted 12 lines]` token, like opencode's TUI;
   ⌘V again right after puts the full text in its place. Backspace removes a token whole; the full text is sent
-- Under it: the session's spend and how full its context is (newest assistant message's tokens over the model's
-  context window) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
+- Under it: the session's spend, how full its context is (newest assistant message's tokens over the model's
+  context window) and the shells and subagents it still has running ("1 subagent · 2 shells", like the TUI's
+  prompt footer; shown once they've run for a second, harnesses with `activity()` only) on the left; model picker (same searchable list as Settings) and variant menu on the right, both opening upward.
   Picking switches the session's model for its next turns and the TUI follows, and the other way round
 - Newest 40 messages, then Load earlier; live updates while a turn streams (`src/main/desktop-chat.ts`, at most
   every 300ms). Only messages that changed are sent to the view and re-rendered, markdown is rendered once per

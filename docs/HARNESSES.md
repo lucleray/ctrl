@@ -61,7 +61,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Status: finished, unread | ✅ | ✅ | fx: read state kept by ctrl |
 | Background shells and subagents (sidebar icon once the turn is over) | ✅ | ❌ | opencode: shell events + subagent sessions; shells already running at launch are found in the folders of sessions updated in the last 6 hours · fx: doesn't expose them |
 | A message sent mid-turn moves the shell or subagent holding the turn to the background (chat view, phone) | ✅ | ❌ | opencode: `session.background`, the TUI's own ⌃B, after 3 seconds · fx: no way to do it, and no chat view |
-| Background shells and subagents in the prompt footer | ✅ | ❌ | opencode's own TUI shows `1 subagent · 1 shell` before context and cost |
+| Background shells and subagents in the prompt footer | ✅ | ❌ | opencode's own TUI shows `1 subagent · 1 shell` before context and cost; the chat view shows them after |
 | Status of sessions that aren't open | ✅ live | ⚠️ | fx: read from files on disk |
 | Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
 | Sessions open in another terminal | ✅ | ⚠️ | fx allows one process per session: shown, but ctrl can't open or delete them until that fx quits |

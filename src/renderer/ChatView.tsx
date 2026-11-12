@@ -13,7 +13,8 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
+import type { ChatStats, ModelChoices, ModelRef, SessionActivity, SessionItem } from "../shared/types"
+import { activityText } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -317,7 +318,7 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
               onStop={running ? stop : undefined}
             />
             <div className="chat-meta">
-              <Stats sessionID={sessionID} running={running} />
+              <Stats sessionID={sessionID} running={running} activity={session?.activity} />
               <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => composer.current?.focus()} />
             </div>
           </div>
@@ -998,8 +999,34 @@ const STATS_RUNNING_MS = 15_000
  * Spend and context used, under the composer. Read on open, when a turn ends, when the model changes and every
  * STATS_RUNNING_MS while one runs. A failed read keeps what's shown.
  */
-function Stats({ sessionID, running }: { sessionID: string; running: boolean }) {
+/** `text` once it has lasted `ms`, gone at once: a shell that runs for a moment doesn't flash by. */
+function useSettled(text: string, ms: number) {
+  const [shown, setShown] = useState(text)
+  const showing = useRef(!!text)
+  useEffect(() => {
+    if (!text || showing.current) {
+      showing.current = !!text
+      setShown(text)
+      return
+    }
+    const timer = setTimeout(() => {
+      showing.current = true
+      setShown(text)
+    }, ms)
+    return () => clearTimeout(timer)
+  }, [text, ms])
+  return shown
+}
+
+function Stats({ sessionID, running, activity }: { sessionID: string; running: boolean; activity?: SessionActivity }) {
   const [stats, setStats] = useState<ChatStats | null>(() => statsCache.get(sessionID) ?? null)
+  // After spend and context, so they don't move when it comes and goes.
+  const work = useSettled(activity ? activityText(activity) : "", 1000)
+  const working = work && (
+    <span title="Shells and subagents this session still has running">
+      {work}
+    </span>
+  )
   useEffect(() => {
     let live = true
     setStats(statsCache.get(sessionID) ?? null)
@@ -1020,7 +1047,7 @@ function Stats({ sessionID, running }: { sessionID: string; running: boolean }) 
       off()
     }
   }, [sessionID, running])
-  if (!stats) return <span className="chat-stats" />
+  if (!stats) return <span className="chat-stats">{working}</span>
   const ctx = stats.context
   const pct = ctx?.limit ? Math.min(100, Math.round((ctx.used / ctx.limit) * 100)) : null
   return (
@@ -1034,6 +1061,7 @@ function Stats({ sessionID, running }: { sessionID: string; running: boolean }) 
           {pct !== null ? `${pct}% context` : `${tokens(ctx.used)} tokens`}
         </span>
       )}
+      {working}
     </span>
   )
 }
