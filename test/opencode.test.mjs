@@ -40,8 +40,8 @@ function sessions(count) {
 }
 
 /** Pages by offset like opencode's cursors; records every call. */
-function fakeClient(all, active = {}, { shells = [], subagents = {}, messages = {} } = {}) {
-  const calls = { list: [], asked: [], shells: [], messages: [], backgrounded: [] }
+function fakeClient(all, active = {}, { shells = [], subagents = {} } = {}) {
+  const calls = { list: [], asked: [], shells: [], backgrounded: [] }
   const page = (from, limit = 50) => {
     const data = all.slice(from, from + limit)
     return { data, cursor: { next: from + limit < all.length ? String(from + limit) : undefined } }
@@ -55,9 +55,6 @@ function fakeClient(all, active = {}, { shells = [], subagents = {}, messages = 
       active: async () => active,
       get: async ({ sessionID }) => ({ id: sessionID, parentID: subagents[sessionID] }),
       background: async ({ sessionID }) => void calls.backgrounded.push(sessionID),
-    },
-    message: {
-      list: async ({ sessionID }) => (calls.messages.push(sessionID), { data: messages[sessionID] ?? [], cursor: {} }),
     },
     shell: {
       list: async ({ location }) => (
@@ -152,40 +149,8 @@ test("shells are only listed in the folders of recently updated sessions", async
   assert.deepEqual(calls.shells, ["/dir/0"])
 })
 
-test("background: a running turn's shells and subagents hold it, and move to the background", async () => {
-  const tool = (name, status, input, metadata = {}) => ({ type: "tool", name, state: { status, input, metadata } })
-  const messages = {
-    // Newest first, like the request asks.
-    ses_0000: [
-      { id: "msg_3", type: "synthetic", time: { created: 3 }, text: "…" },
-      {
-        id: "msg_2",
-        type: "assistant",
-        time: { created: 2 },
-        content: [
-          tool("subagent", "running", { description: "Find the breaking change", prompt: "…" }),
-          tool("shell", "running", { command: "pnpm test --watch" }),
-          tool("read", "running", { filePath: "/a.ts" }),
-          tool("shell", "streaming", { command: "ls" }),
-          // Already moved: over for the turn.
-          tool("shell", "completed", { command: "next dev" }, { status: "running", shellID: "sh_1" }),
-        ],
-      },
-      // An earlier turn's message never holds this one.
-      { id: "msg_1", type: "assistant", time: { created: 1, completed: 1 }, content: [tool("shell", "running", { command: "old" })] },
-    ],
-    ses_0001: [{ id: "msg_1", type: "assistant", time: { created: 1 }, content: [tool("shell", "running", { command: "sleep 9" })] }],
-  }
-  const { svc, calls } = service(sessions(2), { ses_0000: { type: "running" } }, { messages })
-  await svc.sync()
-  assert.deepEqual(await svc.background.blocking("ses_0000"), [
-    { kind: "subagent", title: "Find the breaking change" },
-    { kind: "shell", title: "pnpm test --watch" },
-  ])
-  // Nothing holds a turn that isn't running: not even read.
-  assert.deepEqual(await svc.background.blocking("ses_0001"), [])
-  assert.deepEqual(calls.messages, ["ses_0000"])
-
-  await svc.background.move("ses_0000")
+test("background: asks opencode to move what holds the turn to the background", async () => {
+  const { svc, calls } = service(sessions(1))
+  await svc.background("ses_0000")
   assert.deepEqual(calls.backgrounded, ["ses_0000"])
 })

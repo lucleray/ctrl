@@ -3167,20 +3167,6 @@ body.resizing .terminal-pane.active {
   color: var(--muted);
 }
 
-/* A shell or subagent holds the turn: the way to move it to the background, in the note */
-.chat-waiting-action {
-  font: inherit;
-  color: var(--text);
-}
-
-.chat-waiting-action:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-.chat-waiting-action:disabled {
-  color: inherit;
-}
-
 .chat-home {
   justify-content: center;
 }

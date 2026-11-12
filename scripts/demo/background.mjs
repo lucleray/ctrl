@@ -1,8 +1,9 @@
-// Opens a demo ctrl in chat view on a session whose turn waits for a shell, to try moving it to the
-// background: send a message (it waits above the composer), then "Run in background" (or ⌃B).
+// Opens a demo ctrl in chat view on a session whose turn waits for a shell, to try sending it a message:
+// it waits above the composer, then the shell goes to the background after 3 seconds and the agent answers.
 // The agent is a local fake model: a message starting with "run" makes it start a one hour shell and wait
-// for it ("run sleep 30": a shell that ends on its own), anything else gets a short answer. No real model,
-// no real sessions.
+// for it ("run sleep 30": a shell that ends on its own), "think" makes it take 20 seconds to answer (a turn
+// nothing holds: a message sent meanwhile just waits), anything else gets a short answer. No real model, no
+// real sessions.
 // Usage: node scripts/demo/background.mjs [demo dir] [first message]   (Ctrl+C stops ctrl, the shells and the fake model)
 import { execFileSync, spawn } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
@@ -49,6 +50,7 @@ function decide(body) {
     if (params.timeout) args.timeout = 0
     return { tool: { name: "shell", args } }
   }
+  if (/^think\b/i.test(said)) return { text: "Thought about it for 20 seconds.", after: 20_000 }
   if (last?.role === "tool") return { text: "Done. What's next?" }
   if (/^<shell\b/.test(said)) return { text: "The shell that was running in the background has ended." }
   if (/^User requested/.test(said)) return { text: "Moved it to the background: it keeps running while we go on." }
@@ -72,15 +74,18 @@ const fake = createServer((req, res) => {
         `data: ${JSON.stringify({ id: "demo", object: "chat.completion.chunk", created: 0, model: "agent", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`,
       )
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-    if (next.tool) {
-      const call = { index: 0, id: `call_${Date.now()}`, type: "function", function: { name: next.tool.name, arguments: JSON.stringify(next.tool.args) } }
-      chunk({ role: "assistant", tool_calls: [call] })
-      chunk({}, "tool_calls")
-    } else {
-      chunk({ role: "assistant", content: next.text })
-      chunk({}, "stop")
-    }
-    res.end("data: [DONE]\n\n")
+    chunk({ role: "assistant" })
+    setTimeout(() => {
+      if (next.tool) {
+        const call = { index: 0, id: `call_${Date.now()}`, type: "function", function: { name: next.tool.name, arguments: JSON.stringify(next.tool.args) } }
+        chunk({ tool_calls: [call] })
+        chunk({}, "tool_calls")
+      } else {
+        chunk({ content: next.text })
+        chunk({}, "stop")
+      }
+      res.end("data: [DONE]\n\n")
+    }, next.after ?? 0)
   })
 })
 await new Promise((r) => fake.listen(0, "127.0.0.1", r))

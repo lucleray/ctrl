@@ -13,7 +13,7 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { BlockingWork, ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
+import type { ChatStats, ModelChoices, ModelRef, SessionItem } from "../shared/types"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
 
@@ -122,15 +122,6 @@ function withMentions(text: string): ReactNode[] {
   return out
 }
 
-/** "a shell", "2 shells and a subagent": which ones is in the conversation already. */
-function blockingLabel(work: BlockingWork[]) {
-  const count = (kind: BlockingWork["kind"]) => {
-    const n = work.filter((w) => w.kind === kind).length
-    return n > 1 ? `${n} ${kind}s` : n ? `a ${kind}` : ""
-  }
-  return [count("shell"), count("subagent")].filter(Boolean).join(" and ")
-}
-
 export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessionID, session, archived }, ref) {
   const [items, setItems] = useState<Map<string, ChatItem>>(new Map())
   const [cursor, setCursor] = useState<string | null>(null)
@@ -138,10 +129,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
   const [inbox, setInbox] = useState<ChatQueued[]>([])
   /** Sent from here, shown right away until the inbox (or the message list) has them */
   const [sent, setSent] = useState<ChatQueued[]>([])
-  /** What holds the turn and can go on in the background (always empty for harnesses that can't) */
-  const [blocking, setBlocking] = useState<BlockingWork[]>([])
-  /** Asked to move it there, until `blocking` says what's left */
-  const [moving, setMoving] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -166,8 +153,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     setPending([])
     setInbox([])
     setSent([])
-    setBlocking([])
-    setMoving(false)
     setLoaded(false)
     setError(null)
     window.ctrl
@@ -179,7 +164,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
         setCursor(page.cursor)
         setPending(page.pending)
         setInbox(page.inbox)
-        setBlocking(page.blocking)
         setLoaded(true)
       })
       .catch((err) => live && setError(String(err?.message ?? err)))
@@ -197,18 +181,12 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     })
     const offPending = window.ctrl.onChatPending((id, p) => id === sessionID && setPending(p))
     const offInbox = window.ctrl.onChatInbox((id, q) => id === sessionID && setInbox(q))
-    const offBlocking = window.ctrl.onChatBlocking((id, b) => {
-      if (id !== sessionID) return
-      setBlocking(b)
-      setMoving(false)
-    })
     requestAnimationFrame(() => composer.current?.focus())
     return () => {
       live = false
       offUpdate()
       offPending()
       offInbox()
-      offBlocking()
     }
   }, [sessionID])
 
@@ -268,17 +246,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     [sessionID],
   )
   const stop = useCallback(() => void window.ctrl.chatStop(sessionID), [sessionID])
-  const background = useCallback(() => {
-    setMoving(true)
-    window.ctrl.chatBackground(sessionID).then(
-      // Nothing left to move (it ended first): `blocking` may not change, so don't wait for it forever.
-      () => setTimeout(() => setMoving(false), 2000),
-      (err) => {
-        setMoving(false)
-        setError(String(err?.message ?? err))
-      },
-    )
-  }, [sessionID])
 
   const sorted = useMemo(() => [...items.values()].sort((a, b) => a.time - b.time), [items])
   // Waiting to steer: in the inbox (or just sent), and not delivered into the conversation yet.
@@ -287,7 +254,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
     return [...inbox, ...sent.filter((q) => !ids.has(q.id))].filter((q) => !items.has(q.id))
   }, [inbox, sent, items])
   const running = session?.status === "running"
-  const held = running && blocking.length > 0
 
   return (
     <div className="chat-view">
@@ -333,16 +299,7 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                     </div>
                   </div>
                 ))}
-                {held ? (
-                  <div className="chat-waiting-note" title={blocking.map((w) => `${w.kind}: ${w.title}`).join("\n")}>
-                    Waiting for {blockingLabel(blocking)} ·{" "}
-                    <button className="chat-waiting-action" disabled={moving} onClick={background}>
-                      {moving ? "Moving…" : "Run in background ⌃B"}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="chat-waiting-note">Steers the agent at its next step</div>
-                )}
+                <div className="chat-waiting-note">Steers the agent at its next step</div>
               </div>
             )}
             {pending.map((p) =>
@@ -358,7 +315,6 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
               sendTitle={running ? "Steer (Enter)" : "Send (Enter)"}
               onSubmit={submit}
               onStop={running ? stop : undefined}
-              onBackground={held && !moving ? background : undefined}
             />
             <div className="chat-meta">
               <Stats sessionID={sessionID} running={running} />
@@ -413,8 +369,6 @@ type ComposerProps = {
   onSubmit(text: string, images: string[]): void
   /** Set while a turn runs: the button stops it when nothing's typed, and so does Esc */
   onStop?(): void
-  /** Set while a shell or subagent holds the turn: ⌃B moves it to the background */
-  onBackground?(): void
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -426,7 +380,7 @@ const lineCount = (s: string) => s.split("\n").length
  * when sent. Backspace removes a token whole; ⌘V again right after a long paste puts the full text in.
  * Its own component, so typing never re-renders the messages.
  */
-const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ placeholder, sendTitle, disabled, onSubmit, onStop, onBackground }, ref) {
+const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ placeholder, sendTitle, disabled, onSubmit, onStop }, ref) {
   const [text, setText] = useState("")
   const [images, setImages] = useState<string[]>([])
   const input = useRef<HTMLTextAreaElement>(null)
@@ -555,11 +509,6 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
                 return
               }
               if (e.key === "Escape" && onStop) return onStop()
-              // Like opencode's TUI. With nothing to move, ⌃B stays the text field's "back one character".
-              if (e.key === "b" && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && onBackground) {
-                e.preventDefault()
-                return onBackground()
-              }
               const el = e.currentTarget
               if ((e.key === "Backspace" || e.key === "Delete") && el.selectionStart === el.selectionEnd && !e.metaKey && !e.altKey) {
                 const range = tokenAt(el.selectionStart, e.key === "Backspace")

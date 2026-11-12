@@ -227,11 +227,13 @@ where it lives.
   line, Esc stops; paste or drop images to attach them
 - Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
   above the composer ("Steers the agent at its next step") until opencode hands them to the agent
-- A shell or subagent that holds the turn can go on in the background, like ⌃B in opencode's TUI: while one does,
-  the note under the waiting messages reads "Waiting for a shell · Run in background ⌃B" (the second half is the
-  button; hover for the command), and ⌃B in the composer does the same with or without a waiting message. The
-  turn goes on, so the waiting messages are read right away. Only for harnesses that can
-  (`HarnessSource.background`, `src/main/harness.ts`): opencode's `session.background`
+- A shell or subagent the turn waits for would hold a message back until it's done. When a message you sent
+  mid-turn still waits after 3 seconds, ctrl moves what holds the turn to the background (what ⌃B does in
+  opencode's TUI) and the agent reads the message; the shell or subagent keeps running, and its result still
+  reaches the agent when it ends. Quick commands finish within those 3 seconds and stay as they are, and a turn
+  that's only thinking or writing is never interrupted. Same for messages sent from the phone, not for
+  `ctrl session send`. Only for harnesses that can (`HarnessSource.background`, `src/main/harness.ts`):
+  opencode's `session.background`
 - A tool call moved to the background shows ↗ and a `background` tag instead of ✓. When what it started ends, a
   line says so (`✓ shell background finished · pnpm test`, ✕ and "failed" otherwise) right where opencode tells
   the agent, which is what starts the next turn. The phone's chat shows both too

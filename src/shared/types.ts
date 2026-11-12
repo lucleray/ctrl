@@ -105,9 +105,6 @@ export type SessionItem = {
 /** Shells and subagents a session (or any of its subagents) still has running. Counts are > 0 when set. */
 export type SessionActivity = { shells: number; subagents: number }
 
-/** Something that holds a session's turn until it's done, and can go on in the background instead. */
-export type BlockingWork = { kind: "shell" | "subagent"; title: string }
-
 /**
  * One terminal on the right. "opencode" is the single embedded opencode TUI, switched between
  * sessions in place. fx has no way to do that, so each open fx session gets its own process.
@@ -562,13 +559,11 @@ export type CtrlApi = {
   /** Stop watching (the chat view went away) */
   chatClose(): Promise<void>
   chatMore(sessionID: string, cursor: string): Promise<ChatPage>
-  /** images: data: URLs. Steers a running turn. Resolves with the message's id (it shows in the inbox until delivered) */
+  /** images: data: URLs. Steers a running turn, moving a shell or subagent that holds it to the background. Resolves with the message's id (it shows in the inbox until delivered) */
   chatSend(sessionID: string, text: string, images: string[]): Promise<string | undefined>
   /** A new opencode session in the default space, opened, with this first message */
   chatNew(text: string, images: string[]): Promise<void>
   chatStop(sessionID: string): Promise<void>
-  /** Moves what holds the turn (ChatOpened.blocking) to the background, so the turn goes on */
-  chatBackground(sessionID: string): Promise<void>
   chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
   /** Answer a question form (null: dismiss it) */
   chatAnswer(sessionID: string, formID: string, answer: FormAnswer | null): Promise<void>
@@ -585,11 +580,9 @@ export type CtrlApi = {
   onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
   /** Messages sent but not handed to the agent yet (they steer at its next step) */
   onChatInbox(cb: (sessionID: string, inbox: ChatQueued[]) => void): () => void
-  /** What holds the turn changed (empty: nothing does, or the harness can't move it to the background) */
-  onChatBlocking(cb: (sessionID: string, blocking: BlockingWork[]) => void): () => void
 }
 
-export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[]; blocking: BlockingWork[] }
+export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[] }
 
 /** Under the chat composer: spend so far (USD) and context used (limit null: unknown) */
 export type ChatStats = { cost: number; context: { used: number; limit: number | null } | null }

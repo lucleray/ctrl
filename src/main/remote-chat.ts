@@ -1,7 +1,9 @@
 import type { OpenCode } from "@opencode/client"
-import type { BlockingWork } from "../shared/types"
 
 type Client = ReturnType<typeof OpenCode.make>
+
+/** What opencode moves to the background (`session.background`), and tells the agent about once it ends. */
+type Backgrounded = "shell" | "subagent"
 
 /** One message as the phone's chat view draws it (src/remote/client.ts). */
 export type ChatItem =
@@ -23,7 +25,7 @@ export type ChatItem =
       error?: string
     }
   /** A shell or subagent that ran in the background ended: what opencode tells the agent, which starts a turn. */
-  | { id: string; kind: "note"; time: number; source: BlockingWork["kind"]; failed: boolean; text: string }
+  | { id: string; kind: "note"; time: number; source: Backgrounded; failed: boolean; text: string }
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -50,8 +52,7 @@ const PAGE = 40
 const SUMMARY_MAX = 140
 /** Inputs that say what a tool call is about, most telling first (bash's description before its command). */
 const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name"]
-/** opencode's tools that hold the turn until they're done, and that `session.background` moves to the background. */
-const BACKGROUNDABLE: Record<string, BlockingWork["kind"]> = { shell: "shell", subagent: "subagent" }
+const BACKGROUNDED: Record<string, Backgrounded> = { shell: "shell", subagent: "subagent" }
 
 function inputOf(input: unknown): Record<string, unknown> {
   if (typeof input === "string") {
@@ -92,7 +93,7 @@ function toItem(m: Message, detail: boolean): ChatItem | null {
   }
   if (m.type === "synthetic") {
     // Only the ones about background work: opencode also sends the agent instructions this way.
-    const source = BACKGROUNDABLE[m.metadata?.source]
+    const source = BACKGROUNDED[m.metadata?.source]
     if (!source) return null
     const failed = m.metadata.state !== "completed" || (typeof m.metadata.exit === "number" && m.metadata.exit !== 0)
     return { id: m.id, kind: "note", time: m.time.created, source, failed, text: summarize({ description: m.description }).summary }
@@ -141,21 +142,6 @@ export async function chatPage(client: Client, sessionID: string, cursor?: strin
   // A short page is the whole history: no "Load earlier" for a cursor that leads nowhere.
   const short = !cursor && res.data.length < PAGE
   return { items, cursor: short ? null : (res.cursor.next ?? null) }
-}
-
-/** Shells and subagents the turn in progress waits for (opencode's side of HarnessSource.background). */
-export async function blockingWork(client: Client, sessionID: string): Promise<BlockingWork[]> {
-  // The turn's message is the newest, or sits just under what was added while it ran.
-  const res = await client.message.list({ sessionID, limit: 3, order: "desc" })
-  const out: BlockingWork[] = []
-  for (const m of res.data as unknown as Message[]) {
-    if (m.type !== "assistant" || m.time.completed) continue
-    for (const c of m.content ?? []) {
-      const kind = c.type === "tool" && c.state?.status === "running" ? BACKGROUNDABLE[c.name] : undefined
-      if (kind) out.push({ kind, title: summarize(inputOf(c.state.input)).summary })
-    }
-  }
-  return out
 }
 
 /** Messages waiting in the session's inbox, oldest first. */

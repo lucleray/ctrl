@@ -14,7 +14,6 @@ import type {
   SessionItem,
 } from "../shared/types"
 import type { ChatPending, FormField } from "./remote"
-import { blockingWork } from "./remote-chat"
 
 const SPACE_INSTRUCTIONS_KEY = "ctrl.space"
 const CTRL_INSTRUCTIONS_KEY = "ctrl.cli"
@@ -556,11 +555,9 @@ export class OpenCodeService implements HarnessSource {
     return this.activityByRoot.get(sessionID)
   }
 
-  /** opencode's ⌃B (`session.background`). Nothing holds a turn that isn't running, so idle sessions cost no read. */
-  background = {
-    blocking: async (sessionID: string) =>
-      this.client && this.running.has(sessionID) ? blockingWork(this.client, sessionID) : [],
-    move: async (sessionID: string) => void (await this.client?.session.background({ sessionID })),
+  /** opencode's ⌃B: shells and subagents the turn waits for go on in the background (a no-op when there's none). */
+  async background(sessionID: string) {
+    await this.client?.session.background({ sessionID })
   }
 
   /** Derives the sidebar list from in-memory state, without touching the network. */
