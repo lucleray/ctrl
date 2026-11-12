@@ -122,9 +122,8 @@ function withMentions(text: string): ReactNode[] {
   return out
 }
 
-/** "shell: pnpm test" for one, "2 shells and a subagent" for more. */
+/** "a shell", "2 shells and a subagent": which ones is in the conversation already. */
 function blockingLabel(work: BlockingWork[]) {
-  if (work.length === 1) return work[0].title ? `${work[0].kind}: ${work[0].title}` : `a ${work[0].kind}`
   const count = (kind: BlockingWork["kind"]) => {
     const n = work.filter((w) => w.kind === kind).length
     return n > 1 ? `${n} ${kind}s` : n ? `a ${kind}` : ""
@@ -335,11 +334,10 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
                   </div>
                 ))}
                 {held ? (
-                  <div className="chat-waiting-note held">
-                    <span className="chat-waiting-held">Waiting for {blockingLabel(blocking)}</span>
+                  <div className="chat-waiting-note" title={blocking.map((w) => `${w.kind}: ${w.title}`).join("\n")}>
+                    Waiting for {blockingLabel(blocking)} ·{" "}
                     <button className="chat-waiting-action" disabled={moving} onClick={background}>
-                      {moving ? "Moving…" : "Run in background"}
-                      {!moving && <kbd>⌃B</kbd>}
+                      {moving ? "Moving…" : "Run in background ⌃B"}
                     </button>
                   </div>
                 ) : (

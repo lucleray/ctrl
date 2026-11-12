@@ -1,5 +1,5 @@
 // Opens a demo ctrl in chat view on a session whose turn waits for a shell, to try moving it to the
-// background: send a message (it waits above the composer), then "Run in background" or ⌃B.
+// background: send a message (it waits above the composer), then "Run in background" (or ⌃B).
 // The agent is a local fake model: a message starting with "run" makes it start a one hour shell and wait
 // for it ("run sleep 30": a shell that ends on its own), anything else gets a short answer. No real model,
 // no real sessions.

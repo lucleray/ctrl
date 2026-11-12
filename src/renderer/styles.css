@@ -3167,47 +3167,18 @@ body.resizing .terminal-pane.active {
   color: var(--muted);
 }
 
-/* A shell or subagent holds the turn: what it is, and the way to move it to the background */
-.chat-waiting-note.held {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-}
-
-.chat-waiting-held {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* A shell or subagent holds the turn: the way to move it to the background, in the note */
 .chat-waiting-action {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 500;
+  font: inherit;
   color: var(--text);
-  background: var(--hover-strong);
-  transition: background 0.12s;
 }
 
 .chat-waiting-action:hover:not(:disabled) {
-  background: var(--chat-code-bg);
+  text-decoration: underline;
 }
 
 .chat-waiting-action:disabled {
-  color: var(--muted);
-}
-
-.chat-waiting-action kbd {
-  font: inherit;
-  font-weight: 400;
-  color: var(--kbd);
+  color: inherit;
 }
 
 .chat-home {

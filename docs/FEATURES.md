@@ -228,9 +228,9 @@ where it lives.
 - Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
   above the composer ("Steers the agent at its next step") until opencode hands them to the agent
 - A shell or subagent that holds the turn can go on in the background, like ⌃B in opencode's TUI: while one does,
-  the note under the waiting messages says what the turn waits for ("Waiting for shell: pnpm test") next to a
-  **Run in background** button, and ⌃B in the composer does the same with or without a waiting message. The turn
-  goes on, so the waiting messages are read right away. Only for harnesses that can
+  the note under the waiting messages reads "Waiting for a shell · Run in background ⌃B" (the second half is the
+  button; hover for the command), and ⌃B in the composer does the same with or without a waiting message. The
+  turn goes on, so the waiting messages are read right away. Only for harnesses that can
   (`HarnessSource.background`, `src/main/harness.ts`): opencode's `session.background`
 - A tool call moved to the background shows ↗ and a `background` tag instead of ✓. When what it started ends, a
   line says so (`✓ shell background finished · pnpm test`, ✕ and "failed" otherwise) right where opencode tells
