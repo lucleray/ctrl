@@ -3915,9 +3915,6 @@ body.resizing .terminal-pane.active {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 .tool-scan-group {
