@@ -2,6 +2,13 @@
 
 Read `docs/ARCHITECTURE.md` first, especially **Principles** and **Notifications**.
 
+Two workflows, picked by what the user says:
+
+| The user says | Workflow |
+| --- | --- |
+| "develop this", "build this", "let's start building", "new feature", "try this" | [Working on a change](#working-on-a-change) |
+| "publish", "ship it", "release", "deploy", "roll out", "looks good, publish" | [Publishing](#publishing) |
+
 ## Working on a change
 
 When asked to build something in ctrl, unless told otherwise:
@@ -19,8 +26,25 @@ When asked to build something in ctrl, unless told otherwise:
 5. **Check before saying it's done.** `npm run typecheck`, and `npm test` when CLI code changed. Drive the
    preview with the CLI line it printed, or take a screenshot with the debug hooks.
 6. **Commit and push** the branch as you go. Open a pull request only when asked.
-7. **Clean up** when the work is merged or dropped: stop the preview, remove the worktree, and delete its
-   `ctrl-preview/<label>` folder.
+7. **Clean up** when the work is dropped: stop the preview, remove the worktree, and delete its
+   `ctrl-preview/<label>` folder. Publishing cleans up too.
+
+## Publishing
+
+When asked to publish, all the way to the user's installed app:
+
+1. **Merge to `main`.** In the branch's worktree: `git fetch origin`, `git merge origin/main` if `main` moved
+   (merge, never rebase), check again (`npm run typecheck`, `npm test`), then `git push origin HEAD:main` and
+   delete the remote branch. If the branch has a pull request, merge that instead (`gh pr merge`). Skip this
+   step when the work is already on `main`.
+2. **Bump the version** on `main`: `npm version minor --no-git-tag-version`, commit as just the version
+   (`0.30.0`), push to `main`.
+3. **Release** from that clean commit: `npm run release` (a few minutes: builds and signs arm64 + x64, then
+   creates the GitHub release; `docs/DEVELOPMENT.md` → Releasing).
+4. **Clean up:** stop the preview, remove the worktree, delete its `ctrl-preview/<label>` folder.
+5. **Update the installed app last:** `ctrl app update check`, then `ctrl app update install`. ctrl quits,
+   swaps itself and relaunches, and the agent doing it may be running inside it: make it the very last
+   command. This is the only time an agent restarts the installed app.
 
 ## Rules
 
