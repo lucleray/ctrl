@@ -3,6 +3,7 @@
 ```bash
 npm install
 npm run dev     # vite + esbuild watch + electron
+npm run preview # same, as a separate ctrl per branch on a fresh copy of your real state (see Previews)
 npm start       # production build + electron
 npm run package       # build release/mac-*/ctrl.app for this Mac (see Signing)
 npm run install-app   # build + replace /Applications/ctrl.app (restarts it if running)
@@ -38,9 +39,37 @@ otherwise. Raise it when ctrl starts using a newer API, and update the version i
 The packaged app loads your login shell's environment at startup (Finder
 launches get a bare PATH), and ships the bridge plugin unbundled in
 `Contents/Resources/bridge` since opencode can't read inside `app.asar`. The
-installed app keeps its state in `~/Library/Application Support/ctrl`; dev runs
-use `ctrl-dev` next to it (seeded from a copy of the real state on first run),
-so both can run side by side.
+installed app keeps its state in `~/Library/Application Support/ctrl`; `npm run dev`
+uses `ctrl-dev` next to it, so both can run side by side. `ctrl-dev` is copied from
+the real state only on its very first run and drifts from it after that: delete
+`ctrl-dev/state.json` to start over, or use a preview, which copies it on every launch.
+
+## Previews
+
+To try a branch on your real spaces and sessions, next to the installed app and to other branches:
+
+```bash
+npm run preview                    # labelled with the current branch, fresh copy of your state
+npm run preview -- --keep          # keep this preview's state from last time
+npm run preview -- --name <label>  # label other than the branch (also names its state folder)
+```
+
+- Each label gets its own state folder (`~/Library/Application Support/ctrl-preview/<label>`), CLI socket
+  and phone port (7340 and up, the same one every time), so previews never step on each other or on the
+  installed app.
+- The label shows next to "ctrl" in the sidebar and on the phone, so you know which window runs which branch.
+- `state.json` (spaces, assignments, settings) and `~/.config/ctrl/tools.json` are copied in fresh on every
+  launch, so edits a preview makes to them never reach the installed app. Sessions themselves are shared:
+  they live in opencode and fx, so a preview drives your real sessions.
+- Live reload like `npm run dev`: renderer changes hot-reload, main process changes restart the app. The phone
+  view rebuilds without a restart, refresh the page.
+- It prints the phone links once the remote server is up (`[ctrl] phone: …`) and a `CTRL_SOCKET=…` line to
+  drive that preview with the CLI.
+- Stop it with Ctrl+C (or by killing the script, or quitting the app). Old state folders stay until you delete
+  them.
+
+One worktree per branch (`git worktree add ../ctrl-<branch> -b <branch>`) lets several previews run at once:
+each builds into its own `dist/`.
 
 ## CLI
 
@@ -55,7 +84,7 @@ npm test           # CLI tests (test/): the launcher against a fake app socket, 
 
 ## Debug hooks
 
-Any of these runs the app headless: hidden window, no dock icon, never takes focus
+`CTRL_EVAL` and `CTRL_SCREENSHOT` run the app headless: hidden window, no dock icon, never takes focus
 (force it with `CTRL_HEADLESS=1`).
 
 - `CTRL_USER_DATA=/tmp/x` use a throwaway state dir (created if missing)
@@ -69,6 +98,9 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
   reads it too)
 - `CTRL_SOCKET_PATH=/tmp/ctrl.sock` listen for the CLI there instead of the state folder (the CLI side reads
   `CTRL_SOCKET`; a `CTRL_USER_DATA` run already gets its own socket in that folder)
+- `CTRL_REMOTE_PORT=7345` serve the phone view on that port (default 7337 installed, 7338 dev)
+- `CTRL_LABEL=my-branch` show that label next to "ctrl" in the sidebar and on the phone (`npm run preview`
+  sets it to the branch)
 - `CTRL_UPDATES=1` check for updates in dev runs too; `CTRL_UPDATE_NO_RELAUNCH=1` swaps the app on
   update without reopening it
 - `CTRL_MCP_DIR=/tmp/proj` read MCP statuses for that folder instead of `~` (put a broken server in

@@ -71,6 +71,16 @@ header {
   background: #22c55e;
 }
 
+/* Dev runs started with a label (npm run preview): which branch this ctrl runs. */
+.brand-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .notice {
   margin: 8px 14px 0;
   padding: 8px 10px;

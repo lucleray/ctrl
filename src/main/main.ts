@@ -153,8 +153,12 @@ const terms = (): TermInfo[] => [
   ...fxTerms.list(),
 ]
 
+/** Tells dev runs apart on screen (`npm run preview` sets it to the branch). */
+const LABEL = process.env.CTRL_LABEL || undefined
+
 const state = (): AppState => ({
   version: app.getVersion(),
+  label: LABEL,
   opencode: opencodeCheck,
   opencodeServer: opencode.server,
   fx: fxCheck,
@@ -421,6 +425,7 @@ const remoteSnapshot = (): RemoteSnapshot => {
   const list = [...live, ...gone]
   return {
     dark: nativeTheme.shouldUseDarkColors,
+    label: LABEL,
     spaces: spaces.map((s) => ({ id: s.id, name: s.name })),
     sessions: list.map((s) => ({
       id: s.id,
@@ -476,6 +481,7 @@ const remoteBoard = (): RemoteBoardCard[] => {
   return cards.sort((a, b) => b.last - a.last)
 }
 
+let printedRemoteURLs = ""
 // Dev runs get their own port so they can run next to the installed app.
 const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
 
@@ -630,7 +636,16 @@ const remote: RemoteServer = new RemoteServer({
     if (session.elsewhere) return "This session is open in fx in another terminal"
     return null
   },
-  onStatus: push,
+  onStatus: () => {
+    // Dev runs print the phone links (token included) for whoever started them, e.g. an agent.
+    const status = remote.status
+    if (!app.isPackaged && "urls" in status) {
+      const urls = status.urls.join("  ")
+      if (urls !== printedRemoteURLs) console.log(`[ctrl] phone: ${urls}`)
+      printedRemoteURLs = urls
+    }
+    push()
+  },
 })
 
 // ---------- opencode install, read-session skill, updates ----------

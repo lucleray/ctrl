@@ -284,6 +284,8 @@ export type OpencodeServer =
 export type AppState = {
   /** ctrl's own version */
   version: string
+  /** Shown next to the name to tell dev runs apart (CTRL_LABEL, set by `npm run preview`) */
+  label?: string
   opencode: OpencodeCheck
   opencodeServer: OpencodeServer
   fx: FxCheck
