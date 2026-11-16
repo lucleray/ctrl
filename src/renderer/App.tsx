@@ -34,7 +34,7 @@ const EMPTY: AppState = {
     resourcesCollapsed: false,
     resourcesDocked: false,
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal" },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal", cliTools: [] },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -47,7 +47,7 @@ const EMPTY: AppState = {
   bridgeConnected: false,
   terms: [],
   activeTermID: null,
-  mcp: [],
+  tools: [],
   adapters: [],
   remote: { state: "off" },
 }
@@ -118,11 +118,13 @@ export function App() {
     focusMain()
   }, [])
 
-  const fixMcp = useCallback((name: string) => {
+  const fixTool = useCallback((id: string) => {
+    // Commands and pages run in the background: only a fix-it session needs the TUI on screen.
+    if (stateRef.current.tools.find((t) => t.id === id)?.fix !== "session") return void window.ctrl.fixTool(id)
     setPalette(false)
     setSettings(false)
     setSpaceSettingsID(null)
-    void window.ctrl.fixMcp(name)
+    void window.ctrl.fixTool(id)
     focusMain()
   }, [])
 
@@ -330,7 +332,7 @@ export function App() {
         {board && !settings && !editingSpace && ready && !onboarding && (
           <Board state={state} filter={boardFilter} onFilter={setBoardFilter} onClose={closeBoard} onOpenSession={open} />
         )}
-        {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
+        {settings && <Settings state={state} onClose={closeSettings} onFixTool={fixTool} />}
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}

@@ -54,7 +54,7 @@ export const EXIT_CODES: Record<ErrorCode, number> = {
 export const ERROR_DESCRIPTIONS: Record<ErrorCode, string> = {
   INTERNAL: "A bug or an unexpected failure inside ctrl",
   USAGE: "Unknown command or flag, or a bad value (`message` says which, `hint` shows the usage)",
-  NOT_FOUND: "No session, space, setting or MCP server with that id or name",
+  NOT_FOUND: "No session, space, setting, MCP server or tool with that id or name",
   AMBIGUOUS: "A selector matched more than one thing (see `candidates`)",
   CONFLICT: "Can't be done in the current state, e.g. an fx session open in another terminal",
   APP_NOT_RUNNING: "No ctrl app answering on the socket (`hint`: ctrl app launch)",

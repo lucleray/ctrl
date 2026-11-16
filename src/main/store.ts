@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS: Settings = {
   companion: false,
   remoteControl: false,
   sessionView: "terminal",
+  cliTools: [],
 }
 
 type Persisted = {

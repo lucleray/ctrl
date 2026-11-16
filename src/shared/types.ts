@@ -179,6 +179,8 @@ export type Settings = {
   remoteControl: boolean
   /** How opencode sessions show: the embedded TUI, or a chat view like the phone's (src/renderer/ChatView.tsx) */
   sessionView: SessionView
+  /** CLIs whose access ctrl checks, with what fixes them (src/main/tools) */
+  cliTools: CliToolConfig[]
 }
 
 export type SessionView = "terminal" | "chat"
@@ -308,8 +310,8 @@ export type AppState = {
   terms: TermInfo[]
   /** The terminal on screen; null = nothing open (empty state) */
   activeTermID: string | null
-  /** MCP servers as opencode reports them for the TUI's folder (~) */
-  mcp: McpServerItem[]
+  /** Watched tools: opencode's MCP servers for the TUI's folder (~), then the CLI checks from Settings */
+  tools: ToolItem[]
   /** Resource adapters (live details for links), in Settings order */
   adapters: AdapterInfo[]
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
@@ -437,7 +439,7 @@ export type Shortcut = CommandID
  */
 export type Toast = {
   id: string
-  icon: "archive" | "trash" | "alert" | "download" | "link" | "check"
+  icon: "archive" | "trash" | "alert" | "download" | "link" | "check" | "terminal"
   message: string
   /** Show an Undo button */
   undo: boolean
@@ -458,6 +460,55 @@ export type McpServerItem = {
   error?: string
 }
 
+/** What fixes a broken CLI: run a shell command, open a page, or start a session with a fix-it prompt typed in. */
+export type ToolFix =
+  | { kind: "command"; command: string }
+  | { kind: "url"; url: string }
+  /** prompt: unset = one ctrl writes from the check and its error */
+  | { kind: "session"; prompt?: string }
+
+/** A CLI whose access ctrl watches (Settings → Tools), e.g. an AWS SSO profile that expires. */
+export type CliToolConfig = {
+  id: string
+  name: string
+  /** Shell command that exits 0 while the CLI works and is logged in */
+  check: string
+  fix: ToolFix
+  /** Fix button label, e.g. "Log in"; unset = per fix kind (Run, Open, Fix) */
+  label?: string
+  /** Minutes between checks; unset = CLI_TOOL_EVERY */
+  every?: number
+}
+
+export const CLI_TOOL_EVERY = 10
+
+/**
+ * Where a watched tool stands. broken, needs-auth and missing need you (sticky toast + Fix);
+ * pending (an MCP server reconnecting) and checking keep whatever toast is up until they settle.
+ */
+export type ToolState = "ok" | "checking" | "pending" | "disabled" | "broken" | "needs-auth" | "missing"
+
+export const TOOL_BROKEN: readonly ToolState[] = ["broken", "needs-auth", "missing"]
+
+/** One watched tool: an MCP server opencode reports, or a CLI check from Settings (src/main/tools). */
+export type ToolItem = {
+  /** "mcp:<server>" or "cli:<id>" */
+  id: string
+  kind: "mcp" | "cli"
+  name: string
+  state: ToolState
+  /** Why it's broken (the error, or the check's last line of output) */
+  detail?: string
+  /** CLIs: the check command, and when it last finished */
+  check?: string
+  checked?: number
+  fix: ToolFix["kind"]
+  /** Fix button label */
+  label: string
+  /** A fix command is running */
+  fixing?: boolean
+}
+
 export type CtrlApi = {
   getState(): Promise<AppState>
   dismissError(): Promise<void>
@@ -471,9 +522,10 @@ export type CtrlApi = {
   undo(toastID: string): Promise<void>
   /** Runs the action behind a toast's primary button */
   toastAction(toastID: string): Promise<void>
-  /** Starts a new session with a prompt to fix this MCP server, ready to send */
-  fixMcp(name: string): Promise<void>
-  reconnectMcp(name: string): Promise<void>
+  /** Runs a tool's fix: its command, its page, or a new session with a fix-it prompt ready to send (MCP servers: always that) */
+  fixTool(id: string): Promise<void>
+  /** Checks a CLI again, or reconnects an MCP server */
+  checkTool(id: string): Promise<void>
   /** While on, key presses are reported to onRecordedKey instead of running shortcuts */
   recordShortcut(on: boolean): Promise<void>
   onRecordedKey(cb: (accel: string) => void): () => void

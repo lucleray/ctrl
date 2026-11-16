@@ -24,8 +24,10 @@ import {
   type TermInfo,
   type ThemeInfo,
   type Toast,
+  type ToolItem,
   type UiState,
 } from "../shared/types"
+import { mcpTool } from "../shared/tools"
 import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
 import { setChildEnv } from "./child-env"
@@ -50,6 +52,8 @@ import { TermModes } from "./term-modes"
 import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
 import { chatImage, chatInbox, chatPage } from "./remote-chat"
 import { Store } from "./store"
+import { ToolAlerts } from "./tools/alerts"
+import { CliTools } from "./tools/cli"
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
 import { cliThemeName, listThemes } from "./themes"
@@ -173,7 +177,7 @@ const state = (): AppState => ({
   bridgeConnected,
   terms: terms(),
   activeTermID: activeTermID(),
-  mcp: opencode.mcp,
+  tools: tools(),
   adapters: adapters.adapters,
   // Without a usable opencode, the setup screen (or Settings) explains what's wrong instead.
   problem:
@@ -233,7 +237,7 @@ const sessionsChanged = () => {
 }
 
 const opencode = new OpenCodeService(() => {
-  watchMcp()
+  watchTools()
   watchServer()
   sessionsChanged()
 })
@@ -796,6 +800,7 @@ const applySettings = (patch: Partial<Settings>) => {
     // Panels re-read their resources: without an adapter that's off, with or without its details.
     send("resources:changed", null)
   }
+  if (patch.cliTools) cliTools.configure(patch.cliTools)
   if (patch.companion !== undefined && !headless) companion.setEnabled(patch.companion)
   if (patch.shortcuts && !headless) companion.updateShortcuts()
   loadThemes()
@@ -1270,40 +1275,27 @@ const restartOpencode = async () => {
   terminal.restart(opencodeRoute)
 }
 
-// ---------- MCP servers ----------
+// ---------- tools (MCP servers and CLIs) ----------
 
-const MCP_BROKEN = new Set(["failed", "needs_auth"])
-/** Open "MCP failing" toast per server, keyed by the error it shows, so the same failure doesn't re-toast. */
-const mcpAlerts = new Map<string, { error: string; toastID: string }>()
+/** Every watched tool: opencode's MCP servers, then the CLI checks from Settings → Tools. */
+const tools = (): ToolItem[] => [...opencode.mcp.map(mcpTool), ...cliTools.items()]
 
-/** Toasts once per new MCP failure (including at launch) and clears the toast when the server recovers. */
-const watchMcp = () => {
-  for (const server of opencode.mcp) {
-    const alert = mcpAlerts.get(server.name)
-    if (!MCP_BROKEN.has(server.status)) {
-      // pending = reconnecting: keep the toast until it actually settles.
-      if (alert && server.status !== "pending") {
-        dismissToast(alert.toastID)
-        mcpAlerts.delete(server.name)
-      }
-      continue
-    }
-    const error = server.error ?? server.status
-    if (alert?.error === error) continue
-    if (alert) dismissToast(alert.toastID)
-    const what = server.status === "needs_auth" ? "needs sign-in" : "is failing"
-    const toastID = toast(
-      { icon: "alert", message: `MCP “${server.name}” ${what}: ${error}` },
-      { sticky: true, action: { label: "Fix", run: () => fixMcp(server.name) } },
-    )
-    mcpAlerts.set(server.name, { error, toastID })
-  }
-  for (const [name, alert] of mcpAlerts) {
-    if (opencode.mcp.some((s) => s.name === name)) continue
-    dismissToast(alert.toastID)
-    mcpAlerts.delete(name)
-  }
-}
+const toolAlerts = new ToolAlerts(
+  {
+    toast: (message, action) => toast({ icon: "alert", message }, { sticky: true, action }),
+    dismiss: (id) => dismissToast(id),
+  },
+  (id) => fixTool(id),
+)
+
+/** Sticky toast per broken tool, cleared when it recovers (src/main/tools/alerts.ts). */
+const watchTools = () => toolAlerts.sync(tools())
+
+const cliTools = new CliTools(() => {
+  watchTools()
+  push()
+})
+cliTools.configure(store.data.settings.cliTools)
 
 const oneLine = (text: string, max: number) => {
   const flat = text.replace(/\s+/g, " ").trim()
@@ -1311,17 +1303,60 @@ const oneLine = (text: string, max: number) => {
 }
 
 /** Opens the TUI's new-session screen with a fix-it prompt typed in, not sent. */
-const fixMcp = (name: string) => {
-  const server = opencode.mcp.find((s) => s.name === name)
-  const status = server?.status ?? "failed"
-  const error = server?.error ? `, error: "${oneLine(server.error, 300)}"` : ""
-  const prompt =
-    `The "${name}" MCP server is broken in opencode (status: ${status}${error}). ` +
-    `Diagnose and fix it: check its entry in my opencode config and \`opencode mcp list\`. ` +
-    `If it only needs sign-in, tell me to run /mcps and select it instead.`
+const prefillFix = (prompt: string) => {
   showOpencodeTerm()
   terminal.prefill(prompt)
   push()
+}
+
+const mcpFixPrompt = (name: string) => {
+  const server = opencode.mcp.find((s) => s.name === name)
+  const status = server?.status ?? "failed"
+  const error = server?.error ? `, error: "${oneLine(server.error, 300)}"` : ""
+  return (
+    `The "${name}" MCP server is broken in opencode (status: ${status}${error}). ` +
+    `Diagnose and fix it: check its entry in my opencode config and \`opencode mcp list\`. ` +
+    `If it only needs sign-in, tell me to run /mcps and select it instead.`
+  )
+}
+
+const cliFixPrompt = (tool: ToolItem) => {
+  const error = tool.detail ? ` with "${oneLine(tool.detail, 300)}"` : ""
+  return (
+    `ctrl checks the "${tool.name}" CLI with \`${tool.check}\`, and it fails${error}. ` +
+    `Diagnose and fix it, usually by logging in again. If the login is interactive and you can't finish it ` +
+    `yourself, tell me exactly what to run in my terminal. Run the check again at the end to confirm.`
+  )
+}
+
+/** A tool's fix: MCP servers and "session" CLIs get a prompt, "url" opens a page, "command" runs it. */
+const fixTool = (id: string) => {
+  const tool = tools().find((t) => t.id === id)
+  if (!tool) return
+  if (tool.kind === "mcp") return prefillFix(mcpFixPrompt(tool.name))
+  const configID = id.slice("cli:".length)
+  const fix = cliTools.config(configID)?.fix
+  if (!fix) return
+  if (fix.kind === "session") return prefillFix(fix.prompt || cliFixPrompt(tool))
+  if (fix.kind === "url") {
+    // You finish in the browser: the check reruns when ctrl gets focus back.
+    toolAlerts.forget(id)
+    return openExternal(fix.url)
+  }
+  if (tool.fixing) return
+  toast({ icon: "terminal", message: `Running ${oneLine(fix.command, 80)}…` })
+  void cliTools.runFix(configID).then(({ ok, detail }) => {
+    if (ok) return toast({ icon: "check", message: `“${tool.name}” works again` })
+    toolAlerts.forget(id)
+    watchTools()
+    if (detail) toast({ icon: "alert", message: `${oneLine(fix.command, 60)} didn't fix “${tool.name}”: ${detail}` })
+  })
+}
+
+/** Checks a CLI again, or reconnects an MCP server. */
+const checkTool = async (id: string) => {
+  if (id.startsWith("mcp:")) return opencode.reconnectMcp(id.slice("mcp:".length))
+  await cliTools.check([id.slice("cli:".length)])
 }
 
 // ---------- shortcuts ----------
@@ -1448,8 +1483,8 @@ function registerIpc() {
   })
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
   ipcMain.handle("toast:action", (_e, id: string) => runToastAction(id))
-  ipcMain.handle("mcp:fix", (_e, name: string) => fixMcp(name))
-  ipcMain.handle("mcp:reconnect", (_e, name: string) => opencode.reconnectMcp(name).catch(report))
+  ipcMain.handle("tool:fix", (_e, id: string) => fixTool(id))
+  ipcMain.handle("tool:check", (_e, id: string) => checkTool(id).catch(report))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
     if (!headless) companion.pauseShortcuts(on)
@@ -1571,6 +1606,7 @@ function registerIpc() {
     cliSkill.refresh()
     cliInstall.refresh()
     push()
+    void cliTools.check(undefined, 30_000)
     return adapters.check()
   })
 
@@ -1796,6 +1832,12 @@ const cliHost: CliHost = {
   models: (harness, directory) => (harness === "fx" ? listFxModels() : opencode.listModels(directory)),
   mcp: () => opencode.mcp,
   reconnectMcp: (name) => opencode.reconnectMcp(name),
+  tools: () => tools(),
+  checkTools: (ids) => cliTools.check(ids).then(() => undefined),
+  setCliTools: (configs) => {
+    applySettings({ cliTools: configs })
+    push()
+  },
   skill: (name, action) => {
     const target = name === "ctrl" ? cliSkill : skill
     if (action === "install") target.install()
@@ -1868,7 +1910,10 @@ function createWindow() {
   })
   // Live resource details only refresh while you're looking (test runs never get focus).
   adapters.setFocused(headless || win.isFocused())
-  win.on("focus", () => adapters.setFocused(true))
+  win.on("focus", () => {
+    adapters.setFocused(true)
+    cliTools.focused()
+  })
   win.on("blur", () => adapters.setFocused(headless))
 
   // Never open Electron windows for links; hand them to the browser.
@@ -2008,6 +2053,8 @@ app.whenReady().then(async () => {
   // Both checks first: the session on screen at quit comes back, whichever harness it belongs to.
   void Promise.all([recheckOpencode(), recheckFx()]).then(restoreOpen)
   search.start()
+  // Once the window can show the toasts a broken check raises.
+  win!.webContents.once("did-finish-load", () => setTimeout(() => cliTools.start(), 2000))
   if (!headless) companion.setEnabled(store.data.settings.companion)
   refreshSkill()
   if (!store.data.ui.agentsPrompted) {
@@ -2054,5 +2101,6 @@ app.on("will-quit", () => {
   search.stop()
   companion.dispose()
   adapters.stop()
+  cliTools.stop()
   updater.stop()
 })

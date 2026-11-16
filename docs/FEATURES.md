@@ -276,8 +276,8 @@ where it lives.
 ## Settings (⌘,)
 
 - One section at a time, picked from a list on the left (General: Appearance, Sessions, Notifications, Shortcuts;
-  Integrations: Agents, MCP servers, Resource adapters, Companion; About). A red dot marks a section that needs you
-  (broken opencode service, failing MCP server or adapter, update available). Reopening comes back to the last section
+  Integrations: Agents, Tools, Resource adapters, Companion; About). A red dot marks a section that needs you
+  (broken opencode service, failing MCP server, CLI check or adapter, update available). Reopening comes back to the last section
 - Search box above the list (focused on open, ⌘F): shows the matching rows of every section, matches highlighted,
   sections without matches dimmed in the list. Enter or a section title opens that section, Esc clears
   (`filterRows()` in `src/renderer/Settings.tsx`)
@@ -293,7 +293,14 @@ where it lives.
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on
   the session on screen, so older and TUI-started sessions get it when opened; spaces can override
   (`src/shared/ctrl-instructions.ts`, `syncCtrlInstructions()` in `src/main/opencode.ts`)
-- MCP servers status, with a sticky toast + Fix button when one fails or needs auth
+- Tools: watched MCP servers and CLIs, one building block for both (`src/main/tools/`). A broken one gets a sticky
+  toast with its fix button, once per new error, cleared when it recovers; a red dot on Settings → Tools
+  - MCP servers: opencode's status for `~`, Retry reconnects, Fix types a fix-it prompt into a new session
+  - CLIs (`cliTools` setting): a check command that exits 0 while the CLI works (e.g. `aws sts get-caller-identity
+    --profile vercel` for an expiring AWS SSO login), run at launch, every 10 minutes (per check), when Settings opens
+    and on window focus (broken ones right away). Its fix runs a command (e.g. `aws sso login`, which opens the browser,
+    then checks again), opens a page, or types a fix-it prompt into a new session. Add from presets (AWS SSO, GitHub
+    CLI, Vercel CLI, Datadog pup) or from scratch, edit, remove, check now
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
 - Notifications: dock badge with sessions waiting on you, macOS notifications when a background session
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
@@ -326,6 +333,9 @@ where it lives.
 - UI: what's on screen, opencode home screen with a prefilled prompt, window show / hide / raise, resources
   panel, sidebar width, Recents / Archived folding, settings page, ⌘P palette with a query, toast
 - Search, resources, models, MCP servers, skills, app status / launch / updates, and an NDJSON `events` stream
+  (`tool.changed` when a watched tool breaks or recovers)
+- Tools: `tools list` (MCP servers and CLI checks with their state, so an agent can tell a logged-out CLI from a
+  real failure), `tools check`, `tools add` (check + fix command, page or session), `tools remove`
 - Resources with live details: `resources list` fetches what's due like the panel does (same cache policy,
   only the returned items, window focus not needed), waits up to `--wait` (5s) and marks the rest `pending`;
   `--cached` skips fetching. `resources refresh [<id|url>...]` refetches regardless of the cache, by id, URL or

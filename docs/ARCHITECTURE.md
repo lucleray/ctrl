@@ -283,8 +283,25 @@ The other channels each have a single purpose, so don't use them for anything el
 | Sound (`src/main/sound.ts`, via `attention.ts`) | speakers | the same transitions; in the background only unless **Also when ctrl is focused** is on |
 | Archived bar (`src/renderer/ArchivedBanner.tsx`) | over the terminal's prompt | the session on screen is archived, so its terminal is read-only. A state of that session, not a notification: it leaves with it |
 
-**MCP servers** (Settings → MCP servers) is the first sticky toast: when a server is `failed` or
-`needs_auth`, a toast says so and has a **Fix** button. It opens the TUI's new-session screen with a
-prompt to fix that server already typed in (not sent). The toast clears itself when the server
-reconnects, and the same error doesn't toast twice. Statuses come from `mcp.list` for `~` and
-refresh on `mcp.status.changed` events.
+**Tools** (Settings → Tools) raise the sticky toasts for things that break outside ctrl: MCP servers and
+CLIs whose login expires. Both are a `ToolItem` (`src/shared/types.ts`), and one `ToolAlerts`
+(`src/main/tools/alerts.ts`) owns their toasts: one per broken tool, raised once per new error, cleared when
+it recovers or goes away.
+
+```text
+opencode mcp.list (~) ──mcpTool()──┐
+                                   ├─► tools() ─► ToolAlerts.sync ─► sticky toast + fix button
+CliTools: sh -c <check> ───────────┘      │
+  launch · every N min · focus · Settings └─► AppState.tools ─► Settings, `ctrl tools list`, events
+```
+
+- **MCP servers:** statuses come from `mcp.list` for `~` and refresh on `mcp.status.changed` events. The fix
+  opens the TUI's new-session screen with a prompt to fix that server already typed in (not sent).
+- **CLIs** (`src/main/tools/cli.ts`, the `cliTools` setting): a check is a shell command that exits 0 while the
+  CLI works, run in `/bin/sh` with stdin closed (a CLI asking a question fails instead of hanging), 20s
+  timeout. Exit 127 means not installed; any other failure keeps the output's last line as the reason.
+  Checks are child processes on a 30s tick (due ones only), plus window focus (broken ones right away,
+  healthy ones after 2 min) and Settings opening; a running check is shared, never doubled.
+- **CLI fixes:** `command` runs in the background (5 min, for browser logins like `aws sso login`) then
+  checks again and toasts the outcome; `url` opens the page and the check reruns on focus; `session` types a
+  fix-it prompt like MCP servers do. A fix that didn't work toasts the problem again even with the same error.

@@ -72,6 +72,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | ⌘-click links, wrapped URLs | ✅ | ✅ | opencode 2.0.26+ opens clicked links itself (a plain click works too), ctrl only handles them for older versions |
 | Theme for the terminal | ✅ | ⚠️ | fx follows ctrl's light/dark; pick an fx theme in `~/.fx/settings.json` |
 | MCP server status and Fix | ✅ | ❌ | opencode's MCP servers only |
+| CLI checks (Settings → Tools) | ✅ | ✅ | ctrl runs them; a `session` fix types its prompt into the opencode TUI |
 | `/new`, `/resume` inside the terminal followed by the sidebar | ✅ | ✅ | |
 | `ctrl` CLI: list, file, archive, focus, rename, reference, read | ✅ | ✅ | [CLI.md](CLI.md) |
 | `ctrl` CLI: `self` | ✅ | ✅ | opencode: `OPENCODE_SESSION_ID` · fx: `CTRL_TERM_ID`, only in fx processes ctrl runs |
