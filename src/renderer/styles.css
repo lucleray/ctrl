@@ -3857,14 +3857,18 @@ body.resizing .terminal-pane.active {
   font-size: 12.5px;
 }
 
-.tool-rescan {
-  margin: 10px 0 0 2px;
-  font-size: 12px;
-  color: var(--muted);
+/* Above both lists: what's watched, and Scan again (it covers MCP servers and CLIs alike) */
+.tools-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 4px 2px 0;
 }
 
-.tool-scan-card {
-  margin-top: 12px;
+.tools-header .setting-desc {
+  margin: 0;
+  max-width: 420px;
 }
 
 /* Scan results (src/renderer/ToolScan.tsx), in Settings and onboarding */

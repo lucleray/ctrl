@@ -296,7 +296,7 @@ where it lives.
 - Tools: one list of the MCP servers and CLIs you watch, in `~/.config/ctrl/tools.json` (`src/main/tools/`).
   A broken one gets a sticky toast with its fix button, once per new problem, cleared when it recovers; a red dot
   on Settings → Tools
-  - Scan (onboarding's second step, Settings → Tools → Scan / Scan again, `ctrl tools scan`): finds MCP servers in
+  - Scan (onboarding's second step, Settings → Tools → Scan, or Scan again at the top of the section, `ctrl tools scan`): finds MCP servers in
     opencode's and fx's configs, AWS SSO sessions (one check per session, from `~/.aws/config`) and gh, vercel, pup,
     gcloud on PATH. Shows a summary with everything checked, Customize to uncheck. Stateless: it finds and checks
     the same things every time; unchecked ones stop being watched, CLIs added by hand are never touched

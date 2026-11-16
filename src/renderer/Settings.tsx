@@ -447,6 +447,23 @@ function ToolsSection({ tools, setUp, onFix }: { tools: ToolItem[]; setUp: boole
 
   return (
     <>
+      {scanning ? (
+        <div className="settings-card">
+          <div className="setting setting-stack">
+            <ToolScan cta="Watch" onDone={() => setScanning(false)} onCancel={() => setScanning(false)} />
+          </div>
+        </div>
+      ) : (
+        <div className="tools-header">
+          <div className="setting-desc">
+            Watching {mcp.length} MCP server{mcp.length === 1 ? "" : "s"} and {cli.length} CLI{cli.length === 1 ? "" : "s"}.
+            Scan again to pick up new ones from your harnesses and this Mac.
+          </div>
+          <button className="btn" onClick={() => setScanning(true)}>
+            Scan again
+          </button>
+        </div>
+      )}
       <h3 className="settings-subhead">MCP servers</h3>
       <div className="settings-card">
         {mcp.length ? (
@@ -508,17 +525,6 @@ function ToolsSection({ tools, setUp, onFix }: { tools: ToolItem[]; setUp: boole
           </div>
         )}
       </div>
-      {scanning ? (
-        <div className="settings-card tool-scan-card">
-          <div className="setting setting-stack">
-            <ToolScan cta="Watch" onDone={() => setScanning(false)} onCancel={() => setScanning(false)} />
-          </div>
-        </div>
-      ) : (
-        <button className="text-btn tool-rescan" onClick={() => setScanning(true)}>
-          Scan again
-        </button>
-      )}
     </>
   )
 }
