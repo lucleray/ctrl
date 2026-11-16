@@ -276,8 +276,8 @@ where it lives.
 ## Settings (⌘,)
 
 - One section at a time, picked from a list on the left (General: Appearance, Sessions, Notifications, Shortcuts;
-  Integrations: Agents, MCP servers, Resource adapters, Companion; About). A red dot marks a section that needs you
-  (broken opencode service, failing MCP server or adapter, update available). Reopening comes back to the last section
+  Integrations: Agents, Tools, Resource adapters, Companion; About). A red dot marks a section that needs you
+  (broken opencode service, failing MCP server, CLI check or adapter, update available). Reopening comes back to the last section
 - Search box above the list (focused on open, ⌘F): shows the matching rows of every section, matches highlighted,
   sections without matches dimmed in the list. Enter or a section title opens that section, Esc clears
   (`filterRows()` in `src/renderer/Settings.tsx`)
@@ -293,7 +293,24 @@ where it lives.
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on
   the session on screen, so older and TUI-started sessions get it when opened; spaces can override
   (`src/shared/ctrl-instructions.ts`, `syncCtrlInstructions()` in `src/main/opencode.ts`)
-- MCP servers status, with a sticky toast + Fix button when one fails or needs auth
+- Tools: one list of the MCP servers and CLIs you watch, in `~/.config/ctrl/tools.json` (`src/main/tools/`).
+  A broken one gets a sticky toast with its fix button, once per new problem, cleared when it recovers; a red dot
+  on Settings → Tools
+  - Scan (onboarding's second step, Settings → Tools → Scan, or Scan again at the top of the section, `ctrl tools scan`): finds MCP servers in
+    opencode's and fx's configs, AWS SSO sessions (one check per session, from `~/.aws/config`) and gh, vercel, pup,
+    gcloud on PATH. Shows a summary with everything checked, Customize to uncheck. Stateless: it finds and checks
+    the same things every time; unchecked ones stop being watched, CLIs added by hand are never touched
+  - Users onboarded before tools existed get one toast offering the scan. Until then, opencode's MCP servers are
+    watched as before
+  - MCP servers, per harness: opencode (status pushed by its service) and fx (`fx mcp list` / `fx mcp show`,
+    polled), each only while you use it: opencode once its TUI runs, fx once an fx session is open. A server
+    missing from a harness gives one "Set up" toast per harness that adds them (opencode `mcp.add`, `fx mcp add`).
+    Sign-in: opencode's `/mcps` through a fix-it prompt, `fx mcp login` run by ctrl
+  - CLIs: a check command that exits 0 while the CLI works, run at launch, every 10 minutes (per check), when
+    Settings opens and on window focus (broken ones right away). Its fix runs a command (e.g. `aws sso login`, which
+    opens the browser, then checks again), opens a page, or types a fix-it prompt into a new session. Add by hand
+    (presets or custom), edit, remove, check now
+  - tools.json can be edited by hand: ctrl watches it
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
 - Notifications: dock badge with sessions waiting on you, macOS notifications when a background session
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
@@ -326,6 +343,10 @@ where it lives.
 - UI: what's on screen, opencode home screen with a prefilled prompt, window show / hide / raise, resources
   panel, sidebar width, Recents / Archived folding, settings page, ⌘P palette with a query, toast
 - Search, resources, models, MCP servers, skills, app status / launch / updates, and an NDJSON `events` stream
+  (`tool.changed` when a watched tool breaks or recovers)
+- Tools: `tools list` (MCP servers per harness and CLI checks with their state, so an agent can tell a logged-out
+  CLI from a real failure), `tools scan [--apply]`, `tools check`, `tools add` (check + fix command, page or
+  session), `tools remove`
 - Resources with live details: `resources list` fetches what's due like the panel does (same cache policy,
   only the returned items, window focus not needed), waits up to `--wait` (5s) and marks the rest `pending`;
   `--cached` skips fetching. `resources refresh [<id|url>...]` refetches regardless of the cache, by id, URL or

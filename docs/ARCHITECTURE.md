@@ -283,8 +283,45 @@ The other channels each have a single purpose, so don't use them for anything el
 | Sound (`src/main/sound.ts`, via `attention.ts`) | speakers | the same transitions; in the background only unless **Also when ctrl is focused** is on |
 | Archived bar (`src/renderer/ArchivedBanner.tsx`) | over the terminal's prompt | the session on screen is archived, so its terminal is read-only. A state of that session, not a notification: it leaves with it |
 
-**MCP servers** (Settings → MCP servers) is the first sticky toast: when a server is `failed` or
-`needs_auth`, a toast says so and has a **Fix** button. It opens the TUI's new-session screen with a
-prompt to fix that server already typed in (not sent). The toast clears itself when the server
-reconnects, and the same error doesn't toast twice. Statuses come from `mcp.list` for `~` and
-refresh on `mcp.status.changed` events.
+**Tools** (Settings → Tools) raise the sticky toasts for things that break outside ctrl: MCP servers and
+CLIs whose login expires. Details in [Tools](#tools).
+
+## Tools
+
+One list of what you watch, `~/.config/ctrl/tools.json` (dev runs: `tools.dev.json`), owned by
+`ToolsService` (`src/main/tools/service.ts`). ctrl checks each harness you use against it.
+
+```text
+scan (detect.ts, stateless) ─► opencode config · ~/.fx/mcp.json · ~/.aws/config · PATH
+        │ apply (checked keys)
+        ▼
+tools.json { mcp: [...], cli: [...] } ◄── hand edits (watched)
+        │
+        ├─ MCP × harness you use ─► opencode: mcp.list + events (push)
+        │                          └ fx: fx mcp list / show (poll, only with an fx session open)
+        ├─ CLI checks (cli.ts) ───► sh -c <check>, launch · every N min · focus · Settings
+        ▼
+items() ─► AppState.tools, `ctrl tools list`, events
+alerts ─► ToolAlerts (alerts.ts) ─► one sticky toast per problem + fix button
+```
+
+- **The list is the only state.** Detection reads files (opencode's `config.get`, `~/.fx/mcp.json`,
+  `~/.aws/config`, PATH) and runs no CLI, and doesn't know what you watched before: the same Mac gives the
+  same answer. Applying a scan watches its checked keys (keeping your edits to ones already watched) and drops
+  its unchecked ones; what it didn't see, and CLIs added by hand (no `key`), stay. MCP servers are keyed by
+  name, so one in both opencode and fx is one entry.
+- **Before tools.json exists** (no scan yet), opencode's MCP servers are watched as they are, like before.
+- **Lazy per harness:** opencode counts once its TUI runs; fx once an fx terminal is open (`harnessesChanged()`
+  from the fx terminals, plus a 30s tick), then every 10 minutes and on focus after 2. A harness you don't use
+  shows `unused` and costs nothing. `fx mcp show` connects to the server, so at most 3 run at a time.
+- **Alerts** are computed from the items: a broken CLI; an MCP server failing or needing sign-in in one harness
+  (`mcp:x@fx`); a harness missing servers from your list (`setup@fx`, one toast for all of them). Checking and
+  reconnecting hold an open toast without raising one.
+- **Fixes:** `setup@h` and a `not-set-up` server write into the harness (opencode `mcp.add`, `fx mcp add` with
+  headers / env copied as they are); fx sign-in runs `fx mcp login` (browser); opencode sign-in and failures
+  type a fix-it prompt (the TUI's `/mcps`); CLI fixes run their command (5 min, then check again), open their
+  page (check again on focus) or type their prompt. A fix that didn't work toasts the problem again.
+- **CLI checks** run in `/bin/sh` with stdin closed (a CLI asking a question fails instead of hanging), 20s
+  timeout. Exit 127 means not installed; any other failure keeps the output's last line as the reason.
+- **tools.json** is written atomically, `0600` (commands and env can hold secrets), and re-read when it changes
+  on disk; entries it can't read are skipped, not fatal.

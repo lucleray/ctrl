@@ -24,6 +24,7 @@ import {
   type TermInfo,
   type ThemeInfo,
   type Toast,
+  type CliToolConfig,
   type UiState,
 } from "../shared/types"
 import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
@@ -36,7 +37,7 @@ import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
 import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
-import { checkFx, FxSessions, rawID, SESSIONS_DIR } from "./fx"
+import { checkFx, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { sessionsOf, type HarnessSource } from "./harness"
 import { OpenCodeService } from "./opencode"
@@ -50,6 +51,8 @@ import { TermModes } from "./term-modes"
 import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
 import { chatImage, chatInbox, chatPage } from "./remote-chat"
 import { Store } from "./store"
+import { ToolsService } from "./tools/service"
+
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
 import { cliThemeName, listThemes } from "./themes"
@@ -173,7 +176,8 @@ const state = (): AppState => ({
   bridgeConnected,
   terms: terms(),
   activeTermID: activeTermID(),
-  mcp: opencode.mcp,
+  tools: tools.items(),
+  toolsSetUp: tools.setUp,
   adapters: adapters.adapters,
   // Without a usable opencode, the setup screen (or Settings) explains what's wrong instead.
   problem:
@@ -233,7 +237,7 @@ const sessionsChanged = () => {
 }
 
 const opencode = new OpenCodeService(() => {
-  watchMcp()
+  tools.changed()
   watchServer()
   sessionsChanged()
 })
@@ -278,6 +282,8 @@ const fxTerms: FxTerminals = new FxTerminals({
   onChange: () => {
     fx.rebuild()
     saveOpen()
+    // Opening the first fx session is when fx's MCP servers get checked.
+    tools.harnessesChanged()
   },
   // A status report (turn done, waiting on you) means the session's files changed too.
   onStatus: (sessionID) => fx.readSoon(rawID(sessionID)),
@@ -1270,58 +1276,54 @@ const restartOpencode = async () => {
   terminal.restart(opencodeRoute)
 }
 
-// ---------- MCP servers ----------
+// ---------- tools (MCP servers and CLIs) ----------
 
-const MCP_BROKEN = new Set(["failed", "needs_auth"])
-/** Open "MCP failing" toast per server, keyed by the error it shows, so the same failure doesn't re-toast. */
-const mcpAlerts = new Map<string, { error: string; toastID: string }>()
-
-/** Toasts once per new MCP failure (including at launch) and clears the toast when the server recovers. */
-const watchMcp = () => {
-  for (const server of opencode.mcp) {
-    const alert = mcpAlerts.get(server.name)
-    if (!MCP_BROKEN.has(server.status)) {
-      // pending = reconnecting: keep the toast until it actually settles.
-      if (alert && server.status !== "pending") {
-        dismissToast(alert.toastID)
-        mcpAlerts.delete(server.name)
-      }
-      continue
-    }
-    const error = server.error ?? server.status
-    if (alert?.error === error) continue
-    if (alert) dismissToast(alert.toastID)
-    const what = server.status === "needs_auth" ? "needs sign-in" : "is failing"
-    const toastID = toast(
-      { icon: "alert", message: `MCP “${server.name}” ${what}: ${error}` },
-      { sticky: true, action: { label: "Fix", run: () => fixMcp(server.name) } },
-    )
-    mcpAlerts.set(server.name, { error, toastID })
-  }
-  for (const [name, alert] of mcpAlerts) {
-    if (opencode.mcp.some((s) => s.name === name)) continue
-    dismissToast(alert.toastID)
-    mcpAlerts.delete(name)
-  }
-}
-
-const oneLine = (text: string, max: number) => {
-  const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
-}
+/**
+ * The tools list (MCP servers + CLIs) ctrl watches: ~/.config/ctrl/tools.json. Dev runs use their own
+ * file, like their own state; CTRL_TOOLS_FILE is a debug hook (docs/DEVELOPMENT.md).
+ */
+const TOOLS_FILE =
+  process.env.CTRL_TOOLS_FILE ||
+  (process.env.CTRL_USER_DATA
+    ? join(app.getPath("userData"), "tools.json")
+    : join(homedir(), ".config", "ctrl", app.isPackaged ? "tools.json" : "tools.dev.json"))
 
 /** Opens the TUI's new-session screen with a fix-it prompt typed in, not sent. */
-const fixMcp = (name: string) => {
-  const server = opencode.mcp.find((s) => s.name === name)
-  const status = server?.status ?? "failed"
-  const error = server?.error ? `, error: "${oneLine(server.error, 300)}"` : ""
-  const prompt =
-    `The "${name}" MCP server is broken in opencode (status: ${status}${error}). ` +
-    `Diagnose and fix it: check its entry in my opencode config and \`opencode mcp list\`. ` +
-    `If it only needs sign-in, tell me to run /mcps and select it instead.`
+const prefillFix = (prompt: string) => {
   showOpencodeTerm()
   terminal.prefill(prompt)
   push()
+}
+
+const tools: ToolsService = new ToolsService(TOOLS_FILE, {
+  opencode: {
+    active: () => opencodeStarted,
+    servers: () => opencode.mcp,
+    configs: () => opencode.mcpConfigs(),
+    add: (server) => opencode.addMcp(server),
+    reconnect: (name) => opencode.reconnectMcp(name),
+  },
+  fx: {
+    installed: () => fxCheck.state === "ok",
+    active: () => fxTerms.list().length > 0,
+    bin: () => (fxCheck.state === "ok" ? fxCheck.bin : undefined),
+    home: FX_HOME,
+  },
+  toast: (t, opts) => toast(t, opts),
+  dismissToast: (id) => dismissToast(id),
+  prefill: prefillFix,
+  openExternal: (url) => openExternal(url),
+  changed: () => push(),
+})
+
+/** Users onboarded before tools existed get one nudge to scan. */
+const suggestTools = () => {
+  if (tools.setUp || store.data.ui.toolsPrompted || !store.data.ui.onboarded) return
+  store.setUi({ toolsPrompted: true })
+  toast(
+    { icon: "link", message: "ctrl can watch your MCP servers and CLI logins, and tell you when one needs you" },
+    { action: { label: "Set up", run: () => send("ui:settings", "tools") } },
+  )
 }
 
 // ---------- shortcuts ----------
@@ -1448,8 +1450,12 @@ function registerIpc() {
   })
   ipcMain.handle("toast:undo", (_e, id: string) => runUndo(id))
   ipcMain.handle("toast:action", (_e, id: string) => runToastAction(id))
-  ipcMain.handle("mcp:fix", (_e, name: string) => fixMcp(name))
-  ipcMain.handle("mcp:reconnect", (_e, name: string) => opencode.reconnectMcp(name).catch(report))
+  ipcMain.handle("tool:fix", (_e, id: string) => tools.fix(id).catch((err) => (report(err), false)))
+  ipcMain.handle("tool:check", (_e, id: string) => tools.check(id).catch(report))
+  ipcMain.handle("tools:scan", () => tools.scan())
+  ipcMain.handle("tools:apply-scan", (_e, checked: string[]) => tools.applyScan(checked))
+  ipcMain.handle("tools:save-cli", (_e, config: CliToolConfig) => tools.saveCli(config))
+  ipcMain.handle("tools:remove", (_e, id: string) => void tools.remove(id))
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
     if (!headless) companion.pauseShortcuts(on)
@@ -1571,6 +1577,7 @@ function registerIpc() {
     cliSkill.refresh()
     cliInstall.refresh()
     push()
+    tools.focused()
     return adapters.check()
   })
 
@@ -1796,6 +1803,15 @@ const cliHost: CliHost = {
   models: (harness, directory) => (harness === "fx" ? listFxModels() : opencode.listModels(directory)),
   mcp: () => opencode.mcp,
   reconnectMcp: (name) => opencode.reconnectMcp(name),
+  tools: () => tools.items(),
+  toolsSetUp: () => tools.setUp,
+  checkTools: (ids) => tools.checkCli(ids),
+  checkTool: (id) => tools.check(id),
+  scanTools: () => tools.scan(),
+  applyToolScan: (checked) => tools.applyScan(checked),
+  saveCliTool: (config) => tools.saveCli(config),
+  removeTool: (id) => tools.remove(id),
+  cliTools: () => tools.cliConfigs(),
   skill: (name, action) => {
     const target = name === "ctrl" ? cliSkill : skill
     if (action === "install") target.install()
@@ -1868,7 +1884,10 @@ function createWindow() {
   })
   // Live resource details only refresh while you're looking (test runs never get focus).
   adapters.setFocused(headless || win.isFocused())
-  win.on("focus", () => adapters.setFocused(true))
+  win.on("focus", () => {
+    adapters.setFocused(true)
+    tools.focused()
+  })
   win.on("blur", () => adapters.setFocused(headless))
 
   // Never open Electron windows for links; hand them to the browser.
@@ -2008,6 +2027,14 @@ app.whenReady().then(async () => {
   // Both checks first: the session on screen at quit comes back, whichever harness it belongs to.
   void Promise.all([recheckOpencode(), recheckFx()]).then(restoreOpen)
   search.start()
+  // Once the window can show the toasts a broken check raises.
+  win!.webContents.once("did-finish-load", () =>
+    setTimeout(() => {
+      tools.start()
+      // After the agents offer (3s), one thing at a time.
+      setTimeout(suggestTools, 6000)
+    }, 2000),
+  )
   if (!headless) companion.setEnabled(store.data.settings.companion)
   refreshSkill()
   if (!store.data.ui.agentsPrompted) {
@@ -2054,5 +2081,6 @@ app.on("will-quit", () => {
   search.stop()
   companion.dispose()
   adapters.stop()
+  tools.stop()
   updater.stop()
 })

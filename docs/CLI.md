@@ -64,7 +64,7 @@ ctrl <noun> <verb> [positionals] [--flags]
 ctrl help [<noun> [<verb>]] [--json]
 ```
 
-- **Nouns:** `app`, `session`, `space`, `settings`, `ui`, `resources`, `models`, `mcp`, `skill`, plus the
+- **Nouns:** `app`, `session`, `space`, `settings`, `ui`, `resources`, `models`, `mcp`, `tools`, `skill`, plus the
   top-level `search` and `events`. **Aliases:** `status`, `focus`, `ref`, `ls`.
 - **Flags:** long form only. Booleans are `--flag` / `--no-flag` (or `--flag=false`). Values are
   `--key value` or `--key=value`. Repeatable flags build a list (`--status running --status failed`).

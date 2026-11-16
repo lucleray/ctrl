@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, resolve } from "node:path"
 import { CliError, type CallerContext } from "../shared/cli/protocol"
+import { cliToolID } from "../shared/tools"
 import { describeType, formatModel, parseModel, SETTING_KEYS, type SettingType } from "../shared/cli/settings"
 import { COMMANDS as APP_COMMANDS } from "../shared/shortcuts"
 import {
@@ -14,6 +15,9 @@ import {
   type FxCheck,
   type Harness,
   type McpServerItem,
+  type CliToolConfig,
+  type DetectedTool,
+  type ToolItem,
   type ModelChoices,
   type ModelRef,
   type OpencodeCheck,
@@ -92,6 +96,20 @@ export type CliHost = {
   models(harness: Harness, directory?: string): Promise<ModelChoices>
   mcp(): McpServerItem[]
   reconnectMcp(name: string): Promise<void>
+  /** MCP servers, then CLI checks (src/main/tools) */
+  tools(): ToolItem[]
+  /** tools.json exists */
+  toolsSetUp(): boolean
+  /** Runs these CLI checks (config ids; none = all) and waits for them */
+  checkTools(ids?: string[]): Promise<void>
+  /** Checks an MCP server in every harness you use */
+  checkTool(id: string): Promise<void>
+  scanTools(): Promise<DetectedTool[]>
+  applyToolScan(checked: string[]): void
+  saveCliTool(config: CliToolConfig): void
+  removeTool(id: string): boolean
+  /** CLI checks as configured in tools.json */
+  cliTools(): CliToolConfig[]
   skill(name: "read-session" | "ctrl", action?: "install" | "uninstall"): SkillStatus
   update(action: "check" | "install"): Promise<UpdateStatus>
   digestScript(): string
@@ -655,6 +673,18 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     }
   }
 
+  // ---------- tools ----------
+
+  /** "cli:aws", "mcp:linear", or a bare id/name: CLI configs first, then MCP servers. */
+  const toolID = (raw: string) => {
+    const tools = host.tools()
+    const id = tools.some((t) => t.id === raw)
+      ? raw
+      : (tools.find((t) => t.id === `cli:${raw}`) ?? tools.find((t) => t.id === `mcp:${raw}`))?.id
+    if (!id) throw new CliError("NOT_FOUND", `No tool ${raw}`, { hint: "ctrl tools list", candidates: tools.map((t) => t.id) })
+    return id
+  }
+
   // ---------- handlers ----------
 
   const handlers: Record<string, Handler> = {
@@ -1157,6 +1187,65 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       await host.reconnectMcp(name)
       return { name }
     },
+    "tools list": () => ({ items: host.tools() }),
+    "tools check": async (args) => {
+      const given: string[] = args.id ?? []
+      const ids = given.map(toolID)
+      const mcp = ids.filter((id) => id.startsWith("mcp:"))
+      const cli = ids.filter((id) => id.startsWith("cli:")).map((id) => id.slice(4))
+      const runs = mcp.map((id) => host.checkTool(id))
+      if (!given.length || cli.length) runs.push(host.checkTools(given.length ? cli : undefined))
+      await Promise.all(runs)
+      return { items: given.length ? host.tools().filter((t) => ids.includes(t.id)) : host.tools() }
+    },
+    "tools add": async (args) => {
+      const name = String(args.name).trim()
+      const check = String(args.check).trim()
+      if (!name || !check) throw new CliError("USAGE", "--name and --check can't be empty")
+      const fixes = [args["fix-command"], args["fix-url"], args["fix-session"] || args["fix-prompt"]].filter((f) => f !== undefined && f !== false)
+      if (fixes.length !== 1)
+        throw new CliError("USAGE", "Pass exactly one fix: --fix-command, --fix-url, or --fix-session / --fix-prompt", {
+          hint: "ctrl help tools add",
+        })
+      const url = args["fix-url"]
+      if (url !== undefined && !/^https?:\/\//.test(url)) throw new CliError("USAGE", "--fix-url must be an http(s) URL")
+      if (args.every !== undefined && args.every < 1) throw new CliError("USAGE", "--every must be at least 1 (minutes)")
+      if (!host.toolsSetUp())
+        throw new CliError("CONFLICT", "No tools list yet", { hint: "ctrl tools scan --apply" })
+      const configs = host.cliTools()
+      const id = args.id ? String(args.id).replace(/^cli:/, "") : cliToolID(name, configs.map((c) => c.id))
+      if (configs.some((c) => c.id === id))
+        throw new CliError("CONFLICT", `A CLI tool with id ${id} exists already`, { hint: `ctrl tools remove ${sh(id)}` })
+      const config: CliToolConfig = {
+        id,
+        name,
+        check,
+        fix:
+          args["fix-command"] !== undefined
+            ? { kind: "command", command: String(args["fix-command"]) }
+            : url !== undefined
+              ? { kind: "url", url }
+              : { kind: "session", ...(args["fix-prompt"] ? { prompt: String(args["fix-prompt"]) } : {}) },
+        ...(args.label ? { label: String(args.label) } : {}),
+        ...(args.every !== undefined ? { every: args.every } : {}),
+      }
+      host.saveCliTool(config)
+      await host.checkTools([id])
+      return { id: `cli:${id}`, item: host.tools().find((t) => t.id === `cli:${id}`) }
+    },
+    "tools remove": (args) => {
+      const id = toolID(String(args.id))
+      if (!host.toolsSetUp())
+        throw new CliError("CONFLICT", "No tools list yet: these are opencode's MCP servers as they are", { hint: "ctrl tools scan --apply" })
+      return { id, changed: host.removeTool(id) }
+    },
+    "tools scan": async (args) => {
+      const found = await host.scanTools()
+      if (!args.apply) return { items: found, applied: false }
+      const skip = new Set<string>(args.skip ?? [])
+      host.applyToolScan(found.map((f) => f.key).filter((k) => !skip.has(k)))
+      return { items: found.map((f) => ({ ...f, watched: !skip.has(f.key) })), applied: true }
+    },
     "skill status": () => ({
       items: (["read-session", "ctrl"] as const).map((name) => ({ name, ...host.skill(name) })),
     }),
@@ -1195,6 +1284,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
           current: host.currentSessionID(),
           spaces: JSON.stringify(store.data.spaces),
           settings: JSON.stringify(store.data.settings),
+          tools: new Map(host.tools().map((t) => [t.id, t])),
         }
       }
       let prev = snapshot()
@@ -1216,6 +1306,12 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         if (next.current !== prev.current) emit({ type: "focus.changed", sessionID: next.current ?? undefined, previous: prev.current })
         if (next.spaces !== prev.spaces) emit({ type: "spaces.changed" })
         if (next.settings !== prev.settings) emit({ type: "settings.changed" })
+        for (const [id, t] of next.tools) {
+          const before = prev.tools.get(id)
+          if (before?.state !== t.state || before?.detail !== t.detail)
+            emit({ type: "tool.changed", id, state: t.state, ...(t.detail ? { detail: t.detail } : {}) })
+        }
+        for (const id of prev.tools.keys()) if (!next.tools.has(id)) emit({ type: "tool.changed", id, state: null })
         prev = next
       })
       await stream.closed

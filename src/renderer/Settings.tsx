@@ -5,8 +5,7 @@ import {
   FONT_SIZE,
   type Appearance,
   type AppState,
-  type McpServerItem,
-  type McpStatus,
+  type CliToolConfig,
   type ModelChoices,
   type AdapterInfo,
   type FxCheck,
@@ -23,11 +22,18 @@ import {
   type CliStatus,
   type SoundEvent,
   type RemoteStatus,
+  type ToolFix,
+  type ToolHarness,
+  type ToolItem,
   type UpdateStatus,
+  CLI_TOOL_EVERY,
   SOUND_EVENTS,
+  TOOL_BROKEN,
   SYSTEM_SOUNDS,
 } from "../shared/types"
-import { shortPath } from "./format"
+import { CLI_TOOL_PRESETS, cliToolID } from "../shared/tools"
+import { age, shortPath } from "./format"
+import { ToolScan } from "./ToolScan"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
 import { ShortcutSettings } from "./ShortcutSettings"
@@ -42,13 +48,6 @@ const APPEARANCES: { value: Appearance; label: string }[] = [
 
 const DEFAULT = "__default__"
 
-const MCP_LABELS: Record<McpStatus, string> = {
-  connected: "Connected",
-  pending: "Connecting…",
-  disabled: "Disabled",
-  failed: "Failed",
-  needs_auth: "Needs sign-in",
-}
 
 /** Dark modules on white with a quiet zone, so phone cameras read it in dark mode too. */
 function QrCode({ text, size = 168 }: { text: string; size?: number }) {
@@ -135,40 +134,398 @@ function RemoteRows({ remote }: { remote: RemoteStatus }) {
   )
 }
 
-function McpRow({ server, onFix }: { server: McpServerItem; onFix(): void }) {
-  const broken = server.status === "failed" || server.status === "needs_auth"
+const TOOL_DOTS: Record<ToolItem["state"], string> = {
+  ok: "connected",
+  checking: "disabled",
+  pending: "pending",
+  disabled: "disabled",
+  broken: "failed",
+  "needs-auth": "failed",
+  missing: "failed",
+}
+
+/** Status line under a tool's name. */
+function toolStatus(tool: ToolItem): string {
+  if (tool.fixing) return "Fixing…"
+  const when = tool.checked ? ` · checked ${age(tool.checked) === "now" ? "just now" : `${age(tool.checked)} ago`}` : ""
+  switch (tool.state) {
+    case "ok":
+      return tool.kind === "mcp" ? "Connected" : `Ready${when}`
+    case "checking":
+      return "Checking…"
+    case "pending":
+      return "Connecting…"
+    case "disabled":
+      return "Disabled"
+    case "needs-auth":
+      return "Needs sign-in"
+    case "missing":
+      return "Not installed"
+    default:
+      return tool.kind === "mcp" ? "Failed" : `Failing${when}`
+  }
+}
+
+const HARNESS_TEXT: Record<ToolHarness["state"], string> = {
+  ok: "ok",
+  checking: "checking…",
+  pending: "connecting…",
+  disabled: "disabled",
+  broken: "failing",
+  "needs-auth": "needs sign-in",
+  missing: "not installed",
+  "not-set-up": "not set up",
+  unused: "not in use",
+}
+
+/** Where an MCP server stands in each harness, with that harness's fix (Add, Log in, Fix). */
+function HarnessChips({ tool, onFix }: { tool: ToolItem; onFix(id: string): void }) {
+  return (
+    <div className="tool-harnesses">
+      {tool.harnesses!.map((h) => {
+        const dot = h.state === "not-set-up" ? "pending" : h.state === "unused" ? "disabled" : TOOL_DOTS[h.state]
+        return (
+          <span key={h.harness} className="tool-harness" title={h.detail}>
+            <span className={`mcp-dot ${dot}`} />
+            <span className={`adapter-status ${dot}`}>
+              {h.harness} {HARNESS_TEXT[h.state]}
+            </span>
+            {h.label && (
+              <button className="text-btn" onClick={() => onFix(`${tool.id}@${h.harness}`)}>
+                {h.label}
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** One watched tool, MCP server or CLI: its state, and Check + its fix when it's broken. */
+function ToolRow({
+  tool,
+  onFix,
+  onEdit,
+  onRemove,
+}: {
+  tool: ToolItem
+  onFix(id: string): void
+  onEdit?(): void
+  onRemove?(): void
+}) {
+  const broken = TOOL_BROKEN.includes(tool.state)
   const [busy, setBusy] = useState(false)
+  const dot = TOOL_DOTS[tool.state]
+  const chips = tool.kind === "mcp" && !!tool.harnesses?.length
   return (
     <div className="setting">
       <div className="mcp-name">
-        <span className={`mcp-dot ${server.status}`} />
-        <div>
-          <div className="setting-title">{server.name}</div>
-          {server.error && <div className="setting-desc mcp-error">{server.error}</div>}
+        <span className={`mcp-dot ${tool.fixing ? "pending" : dot}`} />
+        <div style={{ minWidth: 0 }}>
+          <div className="setting-title">{tool.name}</div>
+          {tool.check && (
+            <div className="setting-desc tool-check" title={tool.check}>
+              <code>{tool.check}</code>
+            </div>
+          )}
+          {broken && tool.detail && <div className="setting-desc mcp-error">{tool.detail}</div>}
+          {chips ? (
+            <HarnessChips tool={tool} onFix={onFix} />
+          ) : (
+            <div className={`setting-desc adapter-status ${tool.fixing ? "pending" : dot}`}>{toolStatus(tool)}</div>
+          )}
         </div>
       </div>
       <div className="mcp-actions">
-        {broken ? (
-          <>
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true)
-                void window.ctrl.reconnectMcp(server.name).finally(() => setBusy(false))
-              }}
-            >
-              {busy ? "Retrying…" : "Retry"}
-            </button>
-            <button className="btn primary" onClick={onFix}>
-              Fix
-            </button>
-          </>
-        ) : (
-          <span className="mcp-status">{MCP_LABELS[server.status]}</span>
+        {(broken || tool.kind === "cli") && (
+          <button
+            className="btn"
+            disabled={busy || tool.fixing}
+            onClick={() => {
+              setBusy(true)
+              void window.ctrl.checkTool(tool.id).finally(() => setBusy(false))
+            }}
+          >
+            {busy ? "Checking…" : tool.kind === "mcp" ? "Retry" : "Check"}
+          </button>
+        )}
+        {broken && !chips && (
+          <button className="btn primary" disabled={tool.fixing} onClick={() => onFix(tool.id)}>
+            {tool.label}
+          </button>
+        )}
+        {onEdit && (
+          <button className="icon-btn" title="Edit" onClick={onEdit}>
+            <Icon name="compose" />
+          </button>
+        )}
+        {onRemove && (
+          <button className="icon-btn" title="Stop watching" onClick={onRemove}>
+            <Icon name="trash" />
+          </button>
         )}
       </div>
     </div>
+  )
+}
+
+const FIX_KINDS: { value: ToolFix["kind"]; label: string; placeholder: string }[] = [
+  { value: "command", label: "Run a command", placeholder: "aws sso login --profile default" },
+  { value: "url", label: "Open a page", placeholder: "https://…" },
+  { value: "session", label: "Start a session", placeholder: "Prompt (optional, ctrl writes one from the error)" },
+]
+
+const fixValue = (fix: ToolFix) => (fix.kind === "command" ? fix.command : fix.kind === "url" ? fix.url : (fix.prompt ?? ""))
+
+/** Adds or edits one CLI check: what to run, and what fixes it. */
+function CliToolEditor({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: Omit<CliToolConfig, "id">
+  onSave(config: Omit<CliToolConfig, "id">): void
+  onCancel(): void
+}) {
+  const [name, setName] = useState(initial.name)
+  const [check, setCheck] = useState(initial.check)
+  const [kind, setKind] = useState<ToolFix["kind"]>(initial.fix.kind)
+  const [value, setValue] = useState(fixValue(initial.fix))
+  const [label, setLabel] = useState(initial.label ?? "")
+  const [every, setEvery] = useState(String(initial.every ?? CLI_TOOL_EVERY))
+  const fix: ToolFix =
+    kind === "command"
+      ? { kind, command: value.trim() }
+      : kind === "url"
+        ? { kind, url: value.trim() }
+        : { kind, ...(value.trim() ? { prompt: value.trim() } : {}) }
+  const minutes = Math.round(Number(every))
+  const valid =
+    !!name.trim() &&
+    !!check.trim() &&
+    (kind === "session" || !!value.trim()) &&
+    (kind !== "url" || /^https?:\/\//.test(value.trim())) &&
+    minutes >= 1
+  const save = () =>
+    valid &&
+    onSave({
+      name: name.trim(),
+      check: check.trim(),
+      fix,
+      ...(label.trim() ? { label: label.trim() } : {}),
+      ...(minutes !== CLI_TOOL_EVERY ? { every: minutes } : {}),
+    })
+  return (
+    <div
+      className="setting setting-stack tool-editor"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") save()
+        if (e.key === "Escape") (e.stopPropagation(), onCancel())
+      }}
+    >
+      <label>
+        <span>Name</span>
+        <input className="setting-input" value={name} autoFocus placeholder="AWS (vercel)" onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label>
+        <span>Check</span>
+        <input
+          className="setting-input mono"
+          value={check}
+          spellCheck={false}
+          placeholder="aws sts get-caller-identity --profile default"
+          onChange={(e) => setCheck(e.target.value)}
+        />
+      </label>
+      <div className="setting-desc wide">Exits 0 while the CLI works. Runs in a shell with no terminal, so it can't ask questions.</div>
+      <label>
+        <span>Fix</span>
+        <select value={kind} onChange={(e) => setKind(e.target.value as ToolFix["kind"])}>
+          {FIX_KINDS.map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span />
+        <input
+          className={`setting-input${kind === "command" ? " mono" : ""}`}
+          value={value}
+          spellCheck={false}
+          placeholder={FIX_KINDS.find((k) => k.value === kind)!.placeholder}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </label>
+      <label>
+        <span>Button</span>
+        <input
+          className="setting-input"
+          value={label}
+          placeholder={kind === "command" ? "Run" : kind === "url" ? "Open" : "Fix"}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+      </label>
+      <label>
+        <span>Every</span>
+        <span className="tool-every">
+          <input className="setting-input" type="number" min={1} value={every} onChange={(e) => setEvery(e.target.value)} />
+          minutes, and when ctrl gets focus
+        </span>
+      </label>
+      <div className="setting-actions tool-editor-actions">
+        <button className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={!valid} onClick={save}>
+          Save
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const CUSTOM = "__custom__"
+
+/**
+ * Settings → Tools: before tools.json exists, opencode's MCP servers and a Scan button. After, your list:
+ * MCP servers with their state per harness, CLI checks (edit, add by hand), Remove on every row, and a
+ * quiet "Scan again".
+ */
+function ToolsSection({ tools, setUp, onFix }: { tools: ToolItem[]; setUp: boolean; onFix(id: string): void }) {
+  /** CLI being edited: an existing id, or null for a new one, with its starting values */
+  const [editing, setEditing] = useState<{ id: string | null; initial: Omit<CliToolConfig, "id"> & { key?: string } } | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const mcp = tools.filter((t) => t.kind === "mcp")
+  const cli = tools.filter((t) => t.kind === "cli")
+
+  const commit = (config: Omit<CliToolConfig, "id">) => {
+    const taken = cli.map((t) => t.id.slice("cli:".length))
+    const id = editing?.id ?? cliToolID(config.name, taken)
+    void window.ctrl.saveCliTool({ ...config, ...(editing?.initial.key ? { key: editing.initial.key } : {}), id })
+    setEditing(null)
+  }
+  const remove = (id: string) => void window.ctrl.removeTool(id)
+
+  if (!setUp)
+    return (
+      <>
+        <div className="settings-card">
+          {scanning ? (
+            <div className="setting setting-stack">
+              <ToolScan onDone={() => setScanning(false)} onCancel={() => setScanning(false)} />
+            </div>
+          ) : (
+            <div className="setting">
+              <div>
+                <div className="setting-title">Watch your MCP servers and CLI logins</div>
+                <div className="setting-desc">
+                  ctrl looks at your harnesses and CLIs (AWS SSO, gh, vercel, pup…) and keeps one list. It tells you
+                  when one needs you, like an expired login, and checks each harness you use has your MCP servers.
+                </div>
+              </div>
+              <button className="btn primary" onClick={() => setScanning(true)}>
+                Scan
+              </button>
+            </div>
+          )}
+        </div>
+        <h3 className="settings-subhead">MCP servers in opencode</h3>
+        <div className="settings-card">
+          {mcp.length ? (
+            mcp.map((tool) => <ToolRow key={tool.id} tool={tool} onFix={onFix} />)
+          ) : (
+            <div className="setting">
+              <div className="setting-desc">No MCP servers configured.</div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+
+  return (
+    <>
+      {scanning ? (
+        <div className="settings-card">
+          <div className="setting setting-stack">
+            <ToolScan cta="Watch" onDone={() => setScanning(false)} onCancel={() => setScanning(false)} />
+          </div>
+        </div>
+      ) : (
+        <div className="tools-header">
+          <div className="setting-desc">
+            Watching {mcp.length} MCP server{mcp.length === 1 ? "" : "s"} and {cli.length} CLI{cli.length === 1 ? "" : "s"}.
+            Scan again to pick up new ones from your harnesses and this Mac.
+          </div>
+          <button className="btn" onClick={() => setScanning(true)}>
+            Scan again
+          </button>
+        </div>
+      )}
+      <h3 className="settings-subhead">MCP servers</h3>
+      <div className="settings-card">
+        {mcp.length ? (
+          mcp.map((tool) => <ToolRow key={tool.id} tool={tool} onFix={onFix} onRemove={() => remove(tool.id)} />)
+        ) : (
+          <div className="setting">
+            <div className="setting-desc">No MCP servers in your list. Scan again to pick them up from your harnesses.</div>
+          </div>
+        )}
+      </div>
+      <h3 className="settings-subhead">Command line tools</h3>
+      <div className="settings-card">
+        {cli.map((tool) => {
+          const config = tool.config
+          if (editing?.id && `cli:${editing.id}` === tool.id)
+            return <CliToolEditor key={tool.id} initial={editing.initial} onSave={commit} onCancel={() => setEditing(null)} />
+          return (
+            <ToolRow
+              key={tool.id}
+              tool={tool}
+              onFix={onFix}
+              onEdit={config && (() => setEditing({ id: config.id, initial: config }))}
+              onRemove={() => remove(tool.id)}
+            />
+          )
+        })}
+        {editing && !editing.id ? (
+          <CliToolEditor initial={editing.initial} onSave={commit} onCancel={() => setEditing(null)} />
+        ) : (
+          <div className="setting">
+            <div>
+              <div className="setting-title">Add a CLI</div>
+              <div className="setting-desc">
+                ctrl runs its check in the background and tells you when it stops working, with a button that fixes it.
+              </div>
+            </div>
+            <select
+              value=""
+              onChange={(e) => {
+                const preset = CLI_TOOL_PRESETS.find((p) => p.name === e.target.value)
+                setEditing({
+                  id: null,
+                  initial: preset
+                    ? { name: preset.name, check: preset.check, fix: preset.fix, ...(preset.label ? { label: preset.label } : {}) }
+                    : { name: "", check: "", fix: { kind: "command", command: "" } },
+                })
+              }}
+            >
+              <option value="" disabled>
+                Add…
+              </option>
+              {CLI_TOOL_PRESETS.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+              <option value={CUSTOM}>Custom…</option>
+            </select>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -547,7 +904,7 @@ type SectionID =
   | "notifications"
   | "shortcuts"
   | "agents"
-  | "mcp"
+  | "tools"
   | "adapters"
   | "companion"
   | "remote"
@@ -560,7 +917,7 @@ const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; ke
   { id: "notifications", label: "Notifications", icon: "bell", group: "General", keywords: "alerts" },
   { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
   { id: "agents", label: "Agents", icon: "bot", group: "Integrations", keywords: "skills" },
-  { id: "mcp", label: "MCP servers", icon: "plug", group: "Integrations" },
+  { id: "tools", label: "Tools", icon: "plug", group: "Integrations", keywords: "mcp servers cli credentials login aws" },
   { id: "adapters", label: "Resource adapters", icon: "link", group: "Integrations", keywords: "links" },
   { id: "companion", label: "Companion", icon: "panel-float", group: "Integrations" },
   { id: "remote", label: "Remote control", icon: "phone", group: "Integrations", keywords: "phone mobile tailscale" },
@@ -569,6 +926,11 @@ const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; ke
 
 /** Reopening settings comes back to the section you left. */
 let lastSection: SectionID = "appearance"
+
+/** The next time settings opens, it opens on this section (a toast's "Set up", `ui:settings` with an id). */
+export const openSettingsSection = (id: string) => {
+  if (SECTIONS.some((s) => s.id === id)) lastSection = id as SectionID
+}
 
 const HIGHLIGHT = "settings-search"
 
@@ -649,11 +1011,11 @@ function filterRows(root: HTMLElement, terms: string[]): SectionID[] {
 export function Settings({
   state,
   onClose,
-  onFixMcp,
+  onFixTool,
 }: {
   state: AppState
   onClose(): void
-  onFixMcp(name: string): void
+  onFixTool(id: string): void
 }) {
   const { settings, themes } = state
   const key = (id: Parameters<typeof shortcutLabel>[0]) => shortcutLabel(id, settings.shortcuts)
@@ -691,7 +1053,7 @@ export function Settings({
 
   const alerts: Partial<Record<SectionID, boolean>> = {
     sessions: state.opencodeServer?.state === "broken",
-    mcp: state.mcp.some((s) => s.status === "failed" || s.status === "needs_auth"),
+    tools: state.tools.some((t) => TOOL_BROKEN.includes(t.state)),
     adapters: state.adapters.some((a) => a.mode !== "off" && a.status?.state === "error"),
     about: state.update.state === "available",
   }
@@ -997,17 +1359,7 @@ export function Settings({
       </div>
     ),
 
-    mcp: (
-      <div className="settings-card">
-        {state.mcp.length === 0 ? (
-          <div className="setting">
-            <div className="setting-desc">No MCP servers configured.</div>
-          </div>
-        ) : (
-          state.mcp.map((server) => <McpRow key={server.name} server={server} onFix={() => onFixMcp(server.name)} />)
-        )}
-      </div>
-    ),
+    tools: <ToolsSection tools={state.tools} setUp={state.toolsSetUp} onFix={onFixTool} />,
 
     adapters: (
       <div className="settings-card">

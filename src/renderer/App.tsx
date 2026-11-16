@@ -9,7 +9,7 @@ import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
 import { ResourcesPanel } from "./ResourcesPanel"
-import { Settings } from "./Settings"
+import { openSettingsSection, Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
 import { TerminalStack, type TerminalHandle } from "./TerminalStack"
@@ -47,7 +47,8 @@ const EMPTY: AppState = {
   bridgeConnected: false,
   terms: [],
   activeTermID: null,
-  mcp: [],
+  tools: [],
+  toolsSetUp: true,
   adapters: [],
   remote: { state: "off" },
 }
@@ -118,12 +119,15 @@ export function App() {
     focusMain()
   }, [])
 
-  const fixMcp = useCallback((name: string) => {
-    setPalette(false)
-    setSettings(false)
-    setSpaceSettingsID(null)
-    void window.ctrl.fixMcp(name)
-    focusMain()
+  const fixTool = useCallback((id: string) => {
+    // Commands, pages and adding servers run in the background: only a fix-it prompt needs the TUI on screen.
+    void window.ctrl.fixTool(id).then((prefilled) => {
+      if (!prefilled) return
+      setPalette(false)
+      setSettings(false)
+      setSpaceSettingsID(null)
+      focusMain()
+    })
   }, [])
 
   const revealSpace = useCallback(async (spaceID: string) => {
@@ -187,7 +191,8 @@ export function App() {
         setPalette(false)
         setSpaceSettingsID(null)
         setBoard(false)
-        setSettings(open)
+        if (typeof open === "string") openSettingsSection(open)
+        setSettings(!!open)
       }),
     [],
   )
@@ -330,7 +335,7 @@ export function App() {
         {board && !settings && !editingSpace && ready && !onboarding && (
           <Board state={state} filter={boardFilter} onFilter={setBoardFilter} onClose={closeBoard} onOpenSession={open} />
         )}
-        {settings && <Settings state={state} onClose={closeSettings} onFixMcp={fixMcp} />}
+        {settings && <Settings state={state} onClose={closeSettings} onFixTool={fixTool} />}
         {editingSpace && (
           <SpaceSettings
             key={editingSpace.id}

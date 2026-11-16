@@ -16,6 +16,7 @@
 - **resources**: [`resources list`](#resources-list) · [`resources refresh`](#resources-refresh)
 - **models**: [`models list`](#models-list)
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
+- **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
 - **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
 - **events**: [`events`](#events)
 
@@ -880,6 +881,107 @@ ctrl mcp reconnect <name>
 
 **Returns:** `{name}`
 
+### tools list
+
+Watched tools: the MCP servers and CLIs in your tools list, with their state in each harness you use
+
+```text
+ctrl tools list
+```
+
+- Tell a logged-out CLI (state `broken`, e.g. an expired AWS SSO session) from a real failure: when a command fails, look here before retrying.
+- Broken tools also show as a sticky toast with a fix button in the app.
+
+**Returns:** `{items:[Tool]}`
+
+### tools check
+
+Runs CLI checks now and waits for them (MCP ids: checks the server in every harness you use)
+
+```text
+ctrl tools check [<id>...]
+```
+
+| Argument | Meaning |
+|---|---|
+| `[<id>...]` | Tool ids (`cli:aws`, or just `aws`); none = every CLI |
+
+**Returns:** `{items:[Tool]}`
+
+```bash
+ctrl tools check
+ctrl tools check aws-vercel
+```
+
+### tools scan
+
+Detects MCP servers (opencode and fx configs) and CLIs worth watching (AWS SSO sessions, gh, vercel, pup, gcloud) *(changes state)*
+
+```text
+ctrl tools scan [--apply] [--skip <skip>...]
+```
+
+- Without --apply nothing changes: `watched` says what's in the list already.
+- --apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.
+- The list lives in ~/.config/ctrl/tools.json; the first apply creates it.
+
+| Argument | Meaning |
+|---|---|
+| `--apply / --no-apply` | Watch what was found |
+| `--skip <skip>` | With --apply: keys not to watch (repeatable) · repeatable |
+
+**Returns:** `{items:[{key, kind, name, description, watched}], applied}`
+
+```bash
+ctrl tools scan
+ctrl tools scan --apply --skip gcloud
+```
+
+### tools add
+
+Watches a CLI: ctrl runs its check in the background and offers the fix when it fails *(changes state)*
+
+```text
+ctrl tools add --name <name> --check <check> [--fix-command <fix-command>] [--fix-url <fix-url>] [--fix-session] [--fix-prompt <fix-prompt>] [--label <label>] [--every <n>] [--id <id>]
+```
+
+- The check runs in /bin/sh with no terminal and must exit 0 while the CLI works.
+- Pass exactly one fix: --fix-command (ctrl runs it, e.g. a login that opens the browser), --fix-url (opens a page), or --fix-session (types a fix-it prompt into a new session; --fix-prompt to write your own).
+- Saved in ~/.config/ctrl/tools.json; the first check runs right away. Needs a tools list (`tools scan --apply`).
+
+| Argument | Meaning |
+|---|---|
+| `--name <name>` | Shown in Settings and toasts, e.g. "AWS (vercel)" · required |
+| `--check <check>` | Shell command that exits 0 while the CLI works and is logged in · required |
+| `--fix-command <fix-command>` | Fix: run this shell command, then check again |
+| `--fix-url <fix-url>` | Fix: open this http(s) page |
+| `--fix-session / --no-fix-session` | Fix: start a session with a fix-it prompt |
+| `--fix-prompt <fix-prompt>` | Fix: start a session with this prompt (implies --fix-session) |
+| `--label <label>` | Fix button label, e.g. "Log in" (default: Run, Open or Fix) |
+| `--every <n>` | Minutes between checks (default 10) |
+| `--id <id>` | Id to use (default: from the name) |
+
+**Returns:** `{id, item: Tool}`
+
+```bash
+ctrl tools add --name "AWS (vercel)" --check "aws sts get-caller-identity --profile vercel" --fix-command "aws sso login --profile vercel" --label "Log in"
+ctrl tools add --name "GitHub CLI" --check "gh auth status" --fix-session
+```
+
+### tools remove
+
+Stops watching an MCP server or CLI (a scan can find it again) *(changes state)*
+
+```text
+ctrl tools remove <id>
+```
+
+| Argument | Meaning |
+|---|---|
+| `<id>` | Tool id (`cli:aws`, `mcp:linear`, or just the name) · required |
+
+**Returns:** `{id, changed}`
+
 ### skill status
 
 ctrl's agent skills (read-session, ctrl): installed, outdated, external or missing
@@ -926,7 +1028,7 @@ Streams changes as NDJSON, one event per line, until killed *(streams)*
 ctrl events [--type <type>...] [--session <session>...]
 ```
 
-- Types: session.created, session.updated (title, space, status, archived), session.deleted, focus.changed, spaces.changed, settings.changed.
+- Types: session.created, session.updated (title, space, status, archived), session.deleted, focus.changed, spaces.changed, settings.changed, tool.changed (id, state, detail; state null = no longer watched).
 - For a single "tell me when it's done", prefer `session wait`.
 
 | Argument | Meaning |
@@ -934,7 +1036,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `--type <type>` | Only these event types (repeatable) · repeatable |
 | `--session <session>` | Only events about these sessions (repeatable) · repeatable |
 
-**Returns:** `one JSON object per line: {type, at, sessionID?, session?, changes?}`
+**Returns:** `one JSON object per line: {type, at, sessionID?, session?, changes?, id?, state?, detail?}`
 
 ## Objects
 
@@ -957,6 +1059,26 @@ ctrl events [--type <type>...] [--session <session>...]
   current: boolean           // on screen right now
   live?: boolean             // fx: has a running fx process in ctrl
   elsewhere?: boolean        // fx: open in an fx outside ctrl
+}
+```
+
+### Tool
+
+```ts
+{
+  id: string                 // "mcp:<server>" | "cli:<id>"
+  kind: "mcp" | "cli"
+  name: string
+  state: "ok" | "checking" | "pending" | "disabled" | "broken" | "needs-auth" | "missing"   // broken, needs-auth, missing need the user
+  detail?: string            // why it's broken: the error, or the check's last line of output
+  check?: string             // cli: the check command
+  checked?: number           // cli: when the check last finished (ms)
+  fix: "command" | "url" | "session"   // what its fix button does (MCP servers: session)
+  label: string              // fix button label
+  fixing?: boolean           // a fix command is running
+  harnesses?: [{harness: "opencode" | "fx", state: Tool["state"] | "not-set-up" | "unused", detail?, label?}]
+                             // MCP: per harness; unused = no session of it open, so not checked
+  custom?: boolean           // cli: added by hand (scans never touch it)
 }
 ```
 
@@ -1040,7 +1162,7 @@ ctrl events [--type <type>...] [--session <session>...]
 |---|---|---|
 | 1 | `INTERNAL` | A bug or an unexpected failure inside ctrl |
 | 2 | `USAGE` | Unknown command or flag, or a bad value (`message` says which, `hint` shows the usage) |
-| 3 | `NOT_FOUND` | No session, space, setting or MCP server with that id or name |
+| 3 | `NOT_FOUND` | No session, space, setting, MCP server or tool with that id or name |
 | 4 | `AMBIGUOUS` | A selector matched more than one thing (see `candidates`) |
 | 4 | `CONFLICT` | Can't be done in the current state, e.g. an fx session open in another terminal |
 | 5 | `APP_NOT_RUNNING` | No ctrl app answering on the socket (`hint`: ctrl app launch) |

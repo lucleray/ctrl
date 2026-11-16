@@ -667,7 +667,7 @@ export const COMMANDS: CommandSpec[] = [
     details: ["`ref` is the value to pass to --model or settings."],
   },
 
-  // ---------- mcp, skill ----------
+  // ---------- mcp, tools, skill ----------
   {
     name: "mcp list",
     summary: "opencode's MCP servers and their status",
@@ -679,6 +679,74 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Reconnects an MCP server",
     args: [{ name: "name", type: "string", positional: true, required: true, placeholder: "<name>", description: "Server name" }],
     returns: "{name}",
+    mutates: true,
+  },
+  {
+    name: "tools list",
+    summary: "Watched tools: the MCP servers and CLIs in your tools list, with their state in each harness you use",
+    details: [
+      "Tell a logged-out CLI (state `broken`, e.g. an expired AWS SSO session) from a real failure: when a command fails, look here before retrying.",
+      "Broken tools also show as a sticky toast with a fix button in the app.",
+    ],
+    args: [],
+    returns: "{items:[Tool]}",
+  },
+  {
+    name: "tools check",
+    summary: "Runs CLI checks now and waits for them (MCP ids: checks the server in every harness you use)",
+    args: [
+      { name: "id", type: "string", list: true, positional: true, placeholder: "[<id>...]", description: "Tool ids (`cli:aws`, or just `aws`); none = every CLI" },
+    ],
+    returns: "{items:[Tool]}",
+    examples: ["ctrl tools check", "ctrl tools check aws-vercel"],
+  },
+  {
+    name: "tools scan",
+    summary: "Detects MCP servers (opencode and fx configs) and CLIs worth watching (AWS SSO sessions, gh, vercel, pup, gcloud)",
+    details: [
+      "Without --apply nothing changes: `watched` says what's in the list already.",
+      "--apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.",
+      "The list lives in ~/.config/ctrl/tools.json; the first apply creates it.",
+    ],
+    args: [
+      { name: "apply", type: "bool", description: "Watch what was found" },
+      { name: "skip", type: "string", list: true, description: "With --apply: keys not to watch (repeatable)" },
+    ],
+    returns: "{items:[{key, kind, name, description, watched}], applied}",
+    examples: ["ctrl tools scan", "ctrl tools scan --apply --skip gcloud"],
+    mutates: true,
+  },
+  {
+    name: "tools add",
+    summary: "Watches a CLI: ctrl runs its check in the background and offers the fix when it fails",
+    details: [
+      "The check runs in /bin/sh with no terminal and must exit 0 while the CLI works.",
+      "Pass exactly one fix: --fix-command (ctrl runs it, e.g. a login that opens the browser), --fix-url (opens a page), or --fix-session (types a fix-it prompt into a new session; --fix-prompt to write your own).",
+      "Saved in ~/.config/ctrl/tools.json; the first check runs right away. Needs a tools list (`tools scan --apply`).",
+    ],
+    args: [
+      { name: "name", type: "string", required: true, description: "Shown in Settings and toasts, e.g. \"AWS (vercel)\"" },
+      { name: "check", type: "string", required: true, description: "Shell command that exits 0 while the CLI works and is logged in" },
+      { name: "fix-command", type: "string", description: "Fix: run this shell command, then check again" },
+      { name: "fix-url", type: "string", description: "Fix: open this http(s) page" },
+      { name: "fix-session", type: "bool", description: "Fix: start a session with a fix-it prompt" },
+      { name: "fix-prompt", type: "string", description: "Fix: start a session with this prompt (implies --fix-session)" },
+      { name: "label", type: "string", description: "Fix button label, e.g. \"Log in\" (default: Run, Open or Fix)" },
+      { name: "every", type: "int", description: "Minutes between checks (default 10)" },
+      { name: "id", type: "string", description: "Id to use (default: from the name)" },
+    ],
+    returns: "{id, item: Tool}",
+    examples: [
+      'ctrl tools add --name "AWS (vercel)" --check "aws sts get-caller-identity --profile vercel" --fix-command "aws sso login --profile vercel" --label "Log in"',
+      'ctrl tools add --name "GitHub CLI" --check "gh auth status" --fix-session',
+    ],
+    mutates: true,
+  },
+  {
+    name: "tools remove",
+    summary: "Stops watching an MCP server or CLI (a scan can find it again)",
+    args: [{ name: "id", type: "string", positional: true, required: true, placeholder: "<id>", description: "Tool id (`cli:aws`, `mcp:linear`, or just the name)" }],
+    returns: "{id, changed}",
     mutates: true,
   },
   {
@@ -711,14 +779,14 @@ export const COMMANDS: CommandSpec[] = [
     name: "events",
     summary: "Streams changes as NDJSON, one event per line, until killed",
     details: [
-      "Types: session.created, session.updated (title, space, status, archived), session.deleted, focus.changed, spaces.changed, settings.changed.",
+      "Types: session.created, session.updated (title, space, status, archived), session.deleted, focus.changed, spaces.changed, settings.changed, tool.changed (id, state, detail; state null = no longer watched).",
       "For a single \"tell me when it's done\", prefer `session wait`.",
     ],
     args: [
       { name: "type", type: "string", list: true, description: "Only these event types (repeatable)" },
       { name: "session", type: "string", list: true, description: "Only events about these sessions (repeatable)" },
     ],
-    returns: 'one JSON object per line: {type, at, sessionID?, session?, changes?}',
+    returns: 'one JSON object per line: {type, at, sessionID?, session?, changes?, id?, state?, detail?}',
     stream: true,
   },
 ]
@@ -748,6 +816,21 @@ export const OBJECTS: Record<string, string> = {
   current: boolean           // on screen right now
   live?: boolean             // fx: has a running fx process in ctrl
   elsewhere?: boolean        // fx: open in an fx outside ctrl
+}`,
+  Tool: `{
+  id: string                 // "mcp:<server>" | "cli:<id>"
+  kind: "mcp" | "cli"
+  name: string
+  state: "ok" | "checking" | "pending" | "disabled" | "broken" | "needs-auth" | "missing"   // broken, needs-auth, missing need the user
+  detail?: string            // why it's broken: the error, or the check's last line of output
+  check?: string             // cli: the check command
+  checked?: number           // cli: when the check last finished (ms)
+  fix: "command" | "url" | "session"   // what its fix button does (MCP servers: session)
+  label: string              // fix button label
+  fixing?: boolean           // a fix command is running
+  harnesses?: [{harness: "opencode" | "fx", state: Tool["state"] | "not-set-up" | "unused", detail?, label?}]
+                             // MCP: per harness; unused = no session of it open, so not checked
+  custom?: boolean           // cli: added by hand (scans never touch it)
 }`,
   Space: `{
   id: string
