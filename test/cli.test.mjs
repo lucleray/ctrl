@@ -385,6 +385,40 @@ describe("archiving", () => {
   })
 })
 
+describe("archiving resources", () => {
+  test("archived resources leave `resources list` until mentioned again; ids and URLs both work", async () => {
+    const pr = { id: "github-pr:vercel/next.js#1", type: "github-pr", url: "https://github.com/vercel/next.js/pull/1", data: { repo: "vercel/next.js", number: "1" }, mentions: 1, sessions: 1, first: 10, last: 10, sharedByYou: true }
+    const host = fakeHost({
+      resources: () => [pr],
+      resourcesByID: (ids) => (ids.includes(pr.id) ? [pr] : []),
+      setResourcesArchived: (ids, archived) => {
+        host.calls.push(["setResourcesArchived", ids, archived])
+        for (const id of ids) archived ? (host.store.data.archivedResources[id] = 20) : delete host.store.data.archivedResources[id]
+      },
+    })
+    host.store.data.archivedResources = {}
+    host.sessions().push({ id: "ses_me", harness: "opencode", title: "", directory: "/", status: "idle", updated: 1 })
+    const handlers = createHandlers(host)
+    const run = (command, args) => handlers[command](args, { v: 1, command, args, caller: { opencodeSessionID: "ses_me" } }, {})
+    const list = async (args = {}) => (await run("resources list", { cached: true, session: ["self"], ...args })).items
+
+    const out = run("resources archive", { resource: [pr.url] })
+    assert.deepEqual(out, { archived: [pr.id], changed: true, undo: `ctrl resources unarchive ${pr.id}` })
+    assert.deepEqual(await list(), [])
+    assert.equal((await list({ archived: true }))[0].archived, 20)
+    assert.equal(run("resources archive", { resource: [pr.id] }).changed, false)
+    assert.throws(() => run("resources archive", { resource: ["github-pr:nope/nope#2"] }), { code: "NOT_FOUND" })
+
+    pr.last = 30 // mentioned again after archiving
+    assert.equal((await list()).length, 1)
+    assert.equal((await list())[0].archived, undefined)
+
+    pr.last = 10
+    assert.deepEqual(run("resources unarchive", { resource: [pr.id] }), { unarchived: [pr.id], changed: true })
+    assert.equal((await list()).length, 1)
+  })
+})
+
 describe("settings set defaultDirectory", () => {
   test("expands ~ and relative paths, refuses missing folders, clears with \"\"", async () => {
     const host = fakeHost({ adapters: () => [] })

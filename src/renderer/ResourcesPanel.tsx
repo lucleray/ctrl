@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { byRank, RESOURCE_TYPES, resourceType } from "../shared/adapters"
 import type { AdapterInfo, AppState, Harness, ResourceItem, ResourceMeta } from "../shared/types"
-import { harnessOf } from "../shared/types"
+import { harnessOf, isResourceArchived } from "../shared/types"
 import { age, shortPath } from "./format"
 import { Icon } from "./icons"
 import { RESOURCE_DRAG, type ResourceDrag, sessionMention } from "./ReferenceDrop"
@@ -77,13 +77,20 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
       .map((i) => (i.type === "session" ? { ...i, meta: sessionMeta(i, state, byID.get(i.data.id), spaceName) } : i))
   }, [fetched, current, state])
   const target = current ? harnessOf(current) : "opencode"
+  // Archived until mentioned again: archiving keeps the row, in its own section at the bottom.
+  const [active, archived] = useMemo(() => {
+    const isArchived = (i: ResourceItem) => isResourceArchived(state.archivedResources, i)
+    return [items.filter((i) => !isArchived(i)), items.filter(isArchived)]
+  }, [items, state.archivedResources])
+  const [archivedOpen, setArchivedOpen] = useState(false)
   const groups = useMemo(
     () =>
-      RESOURCE_TYPES.map((type) => ({ type, items: byRank(items.filter((i) => i.type === type.id)) })).filter(
+      RESOURCE_TYPES.map((type) => ({ type, items: byRank(active.filter((i) => i.type === type.id)) })).filter(
         (g) => g.items.length,
       ),
-    [items],
+    [active],
   )
+  const sourceOf = (type: string) => state.adapters.find((a) => a.mode === "live" && a.types.includes(type))
 
   return (
     <aside
@@ -101,7 +108,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
         >
           <Icon name={docked ? (collapsed ? "chevron-left" : "chevron-right") : collapsed ? "chevron-right" : "chevron-down"} />
           <span>Resources</span>
-          {collapsed && items.length > 0 && <span className="count">{items.length}</span>}
+          {collapsed && active.length > 0 && <span className="count">{active.length}</span>}
         </button>
         <span className="resources-actions">
           <button
@@ -133,6 +140,8 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
       <div className="scroll">
         {!current ? (
           <div className="empty">Open a session to see the links shared in it.</div>
+        ) : groups.length === 0 && archived.length > 0 ? (
+          <div className="empty">Everything here is archived. Links come back when they're mentioned again.</div>
         ) : groups.length === 0 ? (
           <div className="empty">
             No links yet. Referenced sessions, PRs, repos, Notion docs, Slack threads, Linear issues and Vercel deployments shared in this{" "}
@@ -144,11 +153,32 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
               key={g.type.id}
               label={g.type.label}
               items={g.items}
-              source={state.adapters.find((a) => a.mode === "live" && a.types.includes(g.type.id))}
+              source={sourceOf(g.type.id)}
               spaceScope={scope === "space"}
               target={target}
             />
           ))
+        )}
+        {current && archived.length > 0 && (
+          <section className="section archived">
+            <button className="section-header toggle" onClick={() => setArchivedOpen((o) => !o)} aria-expanded={archivedOpen}>
+              <span>
+                Archived <span className="count">{archived.length}</span>
+              </span>
+              <Icon name={archivedOpen ? "chevron-down" : "chevron-right"} />
+            </button>
+            {archivedOpen &&
+              archived.map((item) => (
+                <ResourceRow
+                  key={item.id}
+                  item={item}
+                  source={sourceOf(item.type)}
+                  spaceScope={scope === "space"}
+                  target={target}
+                  archived
+                />
+              ))}
+          </section>
         )}
       </div>
     </aside>
@@ -238,7 +268,7 @@ function metaTooltip(meta: ResourceMeta | undefined, source: AdapterInfo | undef
   return [...(meta.details ?? []), `Updated from ${source.name} ${age(meta.fetched)} ago`]
 }
 
-function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceScope: boolean; target: Harness }) {
+function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceScope: boolean; target: Harness; archived?: boolean }) {
   const { item, source, spaceScope } = props
   const isSession = item.type === "session"
   const deleted = isSession && item.meta?.chips?.some((c) => c.text === "deleted")
@@ -293,6 +323,16 @@ function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceSco
         </span>
       </span>
       <span className="meta">{age(item.last)}</span>
+      <button
+        className="icon-btn row-action"
+        title={props.archived ? "Unarchive" : "Archive until mentioned again"}
+        onClick={(e) => {
+          e.stopPropagation()
+          void window.ctrl.setResourcesArchived([item.id], !props.archived)
+        }}
+      >
+        <Icon name={props.archived ? "unarchive" : "archive"} />
+      </button>
       <button
         className="icon-btn row-action"
         title={copied ? "Copied" : isSession ? "Copy reference" : "Copy link"}

@@ -33,6 +33,7 @@ import {
   type ThemeInfo,
   type UiState,
   type UpdateStatus,
+  isResourceArchived,
 } from "../shared/types"
 import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
@@ -90,6 +91,8 @@ export type CliHost = {
   search(query: string): SearchResult
   resources(sessionIDs: string[]): (ResourceItem & { meta?: ResourceMeta })[]
   resourcesByID(ids: string[]): (ResourceItem & { meta?: ResourceMeta })[]
+  /** No toast, like archive */
+  setResourcesArchived(ids: string[], archived: boolean): void
   /** Fetches live details like the panel would (`force`: all of them), waiting at most `wait` ms */
   fetchResources(items: ResourceItem[], opts: { force: boolean; wait: number }): Promise<RequestResult>
   resourceMeta(item: { id: string; type: string }): ResourceMeta | undefined
@@ -633,7 +636,20 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     // A session never lists itself as a reference, like the panel.
     if (ids.length === 1) items = items.filter((r) => r.type !== "session" || r.data.id !== ids[0])
     if (args.type?.length) items = items.filter((r) => args.type.includes(r.type))
+    if (!args.archived) items = items.filter((r) => !isResourceArchived(store.data.archivedResources, r))
     return byRank(items).slice(0, limitArg(args.limit))
+  }
+
+  /** Canonical ids as `resources list` returns them, or any URL of the resource. */
+  const resourcesBySelector = (sels: string[]) => {
+    const ids = [...new Set(sels.map((s) => parseResourceUrl(s)?.key ?? s))]
+    const found = host.resourcesByID(ids)
+    const unknown = ids.filter((id) => !found.some((r) => r.id === id))
+    if (unknown.length)
+      throw new CliError("NOT_FOUND", `No resource ${unknown.join(", ")} in ctrl's sessions`, {
+        hint: "ctrl resources list --space <space> shows resource ids",
+      })
+    return found
   }
 
   const resourceView = (r: ResourceItem & { meta?: ResourceMeta }, sessions: Map<string, SessionItem>, pending = false) => {
@@ -653,6 +669,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       first: r.first,
       last: r.last,
       sharedByYou: r.sharedByYou,
+      ...(isResourceArchived(store.data.archivedResources, r) ? { archived: store.data.archivedResources[r.id] } : {}),
       data: r.data,
       ...(r.meta ? { live: r.meta } : {}),
       ...(pending ? { pending: true } : {}),
@@ -1142,19 +1159,27 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       if (sels.length) {
         if (args.session !== undefined || args.space !== undefined)
           throw new CliError("USAGE", "Pass resource ids, or --session / --space, not both")
-        // Canonical ids as `resources list` returns them, or any URL of the resource.
-        const ids = [...new Set(sels.map((s) => parseResourceUrl(s)?.key ?? s))]
-        const found = host.resourcesByID(ids)
-        const unknown = ids.filter((id) => !found.some((r) => r.id === id))
-        if (unknown.length)
-          throw new CliError("NOT_FOUND", `No resource ${unknown.join(", ")} in ctrl's sessions`, {
-            hint: "ctrl resources list --space <space> shows resource ids",
-          })
-        items = found
+        items = resourcesBySelector(sels)
         if (args.type?.length) items = items.filter((r) => args.type.includes(r.type))
         items = items.slice(0, limitArg(args.limit))
       } else items = scopedResources(args, req.caller)
       return fetchedResources(items, { force: true, wait: waitArg(args.wait, 10000) })
+    },
+    "resources archive": (args) => {
+      const items = resourcesBySelector(args.resource)
+      const ids = items.map((r) => r.id)
+      const todo = items.filter((r) => !isResourceArchived(store.data.archivedResources, r)).map((r) => r.id)
+      if (todo.length) host.setResourcesArchived(todo, true)
+      return { archived: ids, changed: todo.length > 0, ...(todo.length ? { undo: `ctrl resources unarchive ${todo.join(" ")}` } : {}) }
+    },
+    "resources unarchive": (args) => {
+      const items = resourcesBySelector(args.resource)
+      const ids = items.map((r) => r.id)
+      const todo = items.filter((r) => isResourceArchived(store.data.archivedResources, r)).map((r) => r.id)
+      // Also drops stale entries (mentioned again since), so the store doesn't keep them.
+      const stale = ids.filter((id) => !todo.includes(id) && store.data.archivedResources[id])
+      if (todo.length || stale.length) host.setResourcesArchived([...todo, ...stale], false)
+      return { unarchived: ids, changed: todo.length > 0 }
     },
     "models list": async (args, req) => {
       const harness: Harness = args.harness ?? "opencode"

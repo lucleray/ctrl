@@ -64,6 +64,7 @@ const api: CtrlApi = {
   listResources: (sessionIDs) => ipcRenderer.invoke("resources:list", sessionIDs),
   onResourcesChanged: on("resources:changed"),
   listBoard: (sessionIDs) => ipcRenderer.invoke("resources:board", sessionIDs),
+  setResourcesArchived: (ids, archived) => ipcRenderer.invoke("resources:archive", ids, archived),
   onBoardOpen: on("board:open"),
   watchResources: (sessionIDs) => ipcRenderer.send("resources:watch", sessionIDs),
   onResourceMeta: on("resources:meta"),

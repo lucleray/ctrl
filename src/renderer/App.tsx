@@ -42,6 +42,7 @@ const EMPTY: AppState = {
   createdByAgent: {},
   parents: {},
   archived: {},
+  archivedResources: {},
   sessions: [],
   currentSessionID: null,
   bridgeConnected: false,

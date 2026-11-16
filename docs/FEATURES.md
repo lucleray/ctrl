@@ -105,6 +105,10 @@ where it lives.
   hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
 - Most recently mentioned first, except pull requests: open and draft ones come first, then merged, then closed
   (each type's `rank`, `src/shared/adapters`). `ctrl resources list` orders them the same way
+- Archive button on each row (hover): the resource leaves the list for a folded **Archived** section at the
+  bottom (unarchive button there), and leaves the board, until a session mentions it again, then it comes
+  back on its own. Everywhere, not per space (`archivedResources` in `state.json`). Agents use
+  `ctrl resources archive|unarchive <id|url>...`, and `resources list --archived` includes them
 - Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
   the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
   `ctrl ui resources fold|unfold`

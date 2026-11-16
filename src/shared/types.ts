@@ -301,6 +301,8 @@ export type AppState = {
   spaces: Space[]
   assignments: Record<string, string>
   archived: Record<string, number>
+  /** resource id → archived-at timestamp; see isResourceArchived */
+  archivedResources: Record<string, number>
   /** sessionID → the agent that created it */
   createdByAgent: Record<string, AgentOrigin>
   /** sessionID → parent sessionID (child sessions) */
@@ -357,6 +359,10 @@ export type ResourceItem = {
   /** Live details from its adapter, when that adapter has a live part (src/shared/adapters) */
   meta?: ResourceMeta
 }
+
+/** Archived until mentioned again: a mention newer than the archive brings the resource back. */
+export const isResourceArchived = (archivedResources: Record<string, number>, item: Pick<ResourceItem, "id" | "last">) =>
+  (archivedResources[item.id] ?? 0) >= item.last
 
 /** Colors for a resource's icon and chips. */
 export type Tone = "open" | "good" | "done" | "bad" | "warn" | "muted"
@@ -631,6 +637,8 @@ export type CtrlApi = {
   listResources(sessionIDs: string[]): Promise<ResourceItem[]>
   /** listResources() plus the sessions mentioning each one, for the board */
   listBoard(sessionIDs: string[]): Promise<ResourceItem[]>
+  /** Archives resources until they're mentioned again (state.archivedResources), or unarchives them */
+  setResourcesArchived(ids: string[], archived: boolean): Promise<void>
   /** Open the board on this space (space ⋯ menu) */
   onBoardOpen(cb: (spaceID: string) => void): () => void
   /** Resources changed in these sessions; null = possibly all */

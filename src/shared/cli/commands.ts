@@ -625,6 +625,7 @@ export const COMMANDS: CommandSpec[] = [
       { name: "limit", type: "int", default: 100, description: "Max items (max 500)" },
       { name: "cached", type: "bool", description: "Don't fetch: cached live details only, instant" },
       { name: "wait", type: "int", default: 5000, description: "Most ms to wait for live details (max 60000; raise --timeout past it)" },
+      { name: "archived", type: "bool", description: "Include archived resources (they have `archived`)" },
     ],
     returns: "{items:[Resource], errors:[{adapter, state, message, retryAt?, hint?}]}",
     examples: [
@@ -654,6 +655,25 @@ export const COMMANDS: CommandSpec[] = [
       "ctrl resources refresh https://github.com/vercel/next.js/pull/99932",
       "ctrl resources refresh --space self --type github-pr",
     ],
+  },
+  {
+    name: "resources archive",
+    summary: "Archives resources until they're mentioned again (reply has the `undo` command)",
+    details: [
+      "Archived resources leave the panel's list for its Archived section, and leave the board and `resources list` (unless --archived). Everywhere, not per space.",
+      "A mention after archiving brings the resource back on its own.",
+    ],
+    args: [{ name: "resource", type: "string", positional: true, required: true, list: true, placeholder: "<id|url>...", description: "Resource ids (as `resources list` returns them) or URLs" }],
+    returns: "{archived:[id], changed, undo?}",
+    examples: ["ctrl resources archive github-pr:vvo/review-factory#51", "ctrl resources archive https://github.com/vvo/review-factory/pull/51"],
+    mutates: true,
+  },
+  {
+    name: "resources unarchive",
+    summary: "Unarchives resources",
+    args: [{ name: "resource", type: "string", positional: true, required: true, list: true, placeholder: "<id|url>...", description: "Resource ids or URLs" }],
+    returns: "{unarchived:[id], changed}",
+    mutates: true,
   },
   {
     name: "models list",
@@ -857,6 +877,7 @@ export const OBJECTS: Record<string, string> = {
   sessions: number           // how many of the queried sessions mention it
   first: number, last: number
   sharedByYou: boolean       // pasted in a prompt (vs only mentioned by the agent)
+  archived?: number          // archived at (ms), until mentioned again; only listed with --archived
   session?: Session | null   // type "session": the referenced session (archived ones too), null once deleted
   live?: {title?, subtitle?, tone?, chips?, details?, fields?, missing?, fetched}   // live details, when its adapter has them
   // live.fields: the same details as plain values (null = unknown):

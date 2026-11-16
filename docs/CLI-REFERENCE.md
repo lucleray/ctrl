@@ -13,7 +13,7 @@
 - **settings**: [`settings list`](#settings-list) · [`settings get`](#settings-get) · [`settings set`](#settings-set) · [`settings reset`](#settings-reset)
 - **ui**: [`ui get`](#ui-get) · [`ui home`](#ui-home) · [`ui window`](#ui-window) · [`ui resources`](#ui-resources) · [`ui sidebar`](#ui-sidebar) · [`ui section`](#ui-section) · [`ui settings`](#ui-settings) · [`ui palette`](#ui-palette) · [`ui toast`](#ui-toast)
 - **search**: [`search`](#search)
-- **resources**: [`resources list`](#resources-list) · [`resources refresh`](#resources-refresh)
+- **resources**: [`resources list`](#resources-list) · [`resources refresh`](#resources-refresh) · [`resources archive`](#resources-archive) · [`resources unarchive`](#resources-unarchive)
 - **models**: [`models list`](#models-list)
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
@@ -786,7 +786,7 @@ ctrl search <query>... [--limit <n>] [--archived]
 Links shared in sessions (PRs, issues, Linear, Slack, Vercel, …) and referenced sessions, most recent first (open and draft PRs before merged, then closed ones)
 
 ```text
-ctrl resources list [--session <session>...] [--space <space>] [--type <type>...] [--limit <n>] [--cached] [--wait <n>]
+ctrl resources list [--session <session>...] [--space <space>] [--type <type>...] [--limit <n>] [--cached] [--wait <n>] [--archived]
 ```
 
 - Live details (`live`, with plain values in `live.fields`) are fetched like the resources panel does: only what's due by each adapter's cache policy (never fetched, mentioned again since, or past its max age; merged PRs never again), only for the returned items, through the service's own CLI (gh, vercel, slack-cli).
@@ -802,6 +802,7 @@ ctrl resources list [--session <session>...] [--space <space>] [--type <type>...
 | `--limit <n>` | Max items (max 500) · default: 100 |
 | `--cached / --no-cached` | Don't fetch: cached live details only, instant |
 | `--wait <n>` | Most ms to wait for live details (max 60000; raise --timeout past it) · default: 5000 |
+| `--archived / --no-archived` | Include archived resources (they have `archived`) |
 
 **Returns:** `{items:[Resource], errors:[{adapter, state, message, retryAt?, hint?}]}`
 
@@ -838,6 +839,42 @@ ctrl resources refresh github-pr:vercel/next.js#99932
 ctrl resources refresh https://github.com/vercel/next.js/pull/99932
 ctrl resources refresh --space self --type github-pr
 ```
+
+### resources archive
+
+Archives resources until they're mentioned again (reply has the `undo` command) *(changes state)*
+
+```text
+ctrl resources archive <id|url>...
+```
+
+- Archived resources leave the panel's list for its Archived section, and leave the board and `resources list` (unless --archived). Everywhere, not per space.
+- A mention after archiving brings the resource back on its own.
+
+| Argument | Meaning |
+|---|---|
+| `<id\|url>...` | Resource ids (as `resources list` returns them) or URLs · required |
+
+**Returns:** `{archived:[id], changed, undo?}`
+
+```bash
+ctrl resources archive github-pr:vvo/review-factory#51
+ctrl resources archive https://github.com/vvo/review-factory/pull/51
+```
+
+### resources unarchive
+
+Unarchives resources *(changes state)*
+
+```text
+ctrl resources unarchive <id|url>...
+```
+
+| Argument | Meaning |
+|---|---|
+| `<id\|url>...` | Resource ids or URLs · required |
+
+**Returns:** `{unarchived:[id], changed}`
 
 ### models list
 
@@ -1115,6 +1152,7 @@ ctrl events [--type <type>...] [--session <session>...]
   sessions: number           // how many of the queried sessions mention it
   first: number, last: number
   sharedByYou: boolean       // pasted in a prompt (vs only mentioned by the agent)
+  archived?: number          // archived at (ms), until mentioned again; only listed with --archived
   session?: Session | null   // type "session": the referenced session (archived ones too), null once deleted
   live?: {title?, subtitle?, tone?, chips?, details?, fields?, missing?, fetched}   // live details, when its adapter has them
   // live.fields: the same details as plain values (null = unknown):

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { adapterOf, ADAPTERS, boardPlacement, resourceType, type Placement, type Stage } from "../shared/adapters"
-import type { AppState, ResourceItem } from "../shared/types"
+import { type AppState, isResourceArchived, type ResourceItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 
@@ -106,6 +106,7 @@ export function Board(props: {
   const placed = useMemo(() => {
     const now = Date.now()
     return items
+      .filter((item) => !isResourceArchived(state.archivedResources, item))
       .map((item) => ({
         item,
         placement: boardPlacement(item, { me, now }),
@@ -113,7 +114,7 @@ export function Board(props: {
         source: adapterOf(item.type)?.id ?? "",
       }))
       .filter((c): c is Card => !!c.placement)
-  }, [items, me, state.assignments])
+  }, [items, me, state.assignments, state.archivedResources])
 
   const inSpaces = (c: Card) => c.spaces.some((s) => shows(filter.spaces, s))
   const inSources = (c: Card) => shows(filter.sources, c.source)

@@ -41,6 +41,8 @@ type Persisted = {
   assignments: Record<string, string>
   /** sessionID → archived-at timestamp */
   archived: Record<string, number>
+  /** resource id → archived-at timestamp (a mention after it brings the resource back, see isResourceArchived) */
+  archivedResources: Record<string, number>
   /** sessionID → the agent that created it through the CLI */
   createdByAgent: Record<string, AgentOrigin>
   /** sessionID → parent sessionID (child sessions, any depth; the parent can be in another space) */
@@ -73,6 +75,7 @@ export class Store {
       spaces: [],
       assignments: {},
       archived: {},
+      archivedResources: {},
       createdByAgent: {},
       parents: {},
       viewed: {},
@@ -116,6 +119,15 @@ export class Store {
     for (const id of sessionIDs) {
       if (archived) this.data.archived[id] ??= Date.now()
       else delete this.data.archived[id]
+    }
+    this.save()
+  }
+
+  /** Archiving again restarts the clock, so a resource that came back can be archived anew. */
+  setResourcesArchived(ids: string[], archived: boolean) {
+    for (const id of ids) {
+      if (archived) this.data.archivedResources[id] = Date.now()
+      else delete this.data.archivedResources[id]
     }
     this.save()
   }

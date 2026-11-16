@@ -26,6 +26,7 @@ import {
   type Toast,
   type CliToolConfig,
   type UiState,
+  isResourceArchived,
 } from "../shared/types"
 import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
@@ -169,6 +170,7 @@ const state = (): AppState => ({
   spaces: store.data.spaces,
   assignments: store.data.assignments,
   archived: store.data.archived,
+  archivedResources: store.data.archivedResources,
   createdByAgent: store.data.createdByAgent,
   parents: store.data.parents,
   ui: store.data.ui,
@@ -442,10 +444,18 @@ const remoteSnapshot = (): RemoteSnapshot => {
   }
 }
 
+function setResourcesArchived(ids: string[], archived: boolean) {
+  store.setResourcesArchived(ids, archived)
+  push()
+  remote.boardChanged()
+}
+
 /** The Board for phones: same cards as src/renderer/Board.tsx, flattened to what the phone draws. */
 const remoteBoard = (): RemoteBoardCard[] => {
   const ids = [...new Set([...sessions.map((s) => s.id), ...Object.keys(store.data.assignments)])]
-  const items = search.resourcesWithSessions(ids).filter((r) => adapters.shows(r.type))
+  const items = search
+    .resourcesWithSessions(ids)
+    .filter((r) => adapters.shows(r.type) && !isResourceArchived(store.data.archivedResources, r))
   const me = adapters.adapters.find((a) => a.id === "github")?.status?.account
   const now = Date.now()
   const spaceNames = new Map(store.data.spaces.map((s) => [s.id, s.name]))
@@ -1451,6 +1461,7 @@ function registerIpc() {
     store.setArchived([sessionID], false)
     push()
   })
+  ipcMain.handle("resources:archive", (_e, ids: string[], archived: boolean) => setResourcesArchived(ids, archived))
   ipcMain.handle("session:archive-current", () => {
     const current = currentSessionID()
     if (current) archive([current])
@@ -1813,6 +1824,7 @@ const cliHost: CliHost = {
       .resourcesByID(ids)
       .filter((r) => adapters.shows(r.type))
       .map((r) => ({ ...r, meta: adapters.get(r) })),
+  setResourcesArchived,
   fetchResources: (items, opts) => adapters.request(items, opts),
   resourceMeta: (item) => adapters.get(item),
   models: (harness, directory) => (harness === "fx" ? listFxModels() : opencode.listModels(directory)),

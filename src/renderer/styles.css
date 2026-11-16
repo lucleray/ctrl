@@ -2159,6 +2159,14 @@ body.resizing .terminal-pane.active {
   display: none;
 }
 
+.resources .section.archived .row.resource {
+  opacity: 0.6;
+}
+
+.resources .section.archived .row.resource:hover {
+  opacity: 1;
+}
+
 /* Live details from resource adapters (src/main/adapters): tones color the icon and chips. */
 .resource-icon {
   display: inline-flex;
