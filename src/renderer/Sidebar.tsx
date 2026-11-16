@@ -384,7 +384,14 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
       {handle}
       <div className="sidebar-drag" />
       <div className="brand">
-        <span>ctrl</span>
+        <span className="brand-name">
+          ctrl
+          {state.label && (
+            <span className="brand-label" title={state.label}>
+              {state.label}
+            </span>
+          )}
+        </span>
         <span className="brand-actions">
           <button className="icon-btn" title={withShortcut("Settings", shortcutLabel("settings", state.settings.shortcuts))} onClick={onSettings}>
             <Icon name="settings" />

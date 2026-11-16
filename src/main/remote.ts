@@ -39,6 +39,8 @@ export type FormAnswer = Record<string, string | number | boolean | string[]>
 export type RemoteSnapshot = {
   /** ctrl's appearance, which the phone follows */
   dark: boolean
+  /** Shown next to the name to tell dev runs apart (CTRL_LABEL) */
+  label?: string
   spaces: { id: string; name: string }[]
   sessions: {
     id: string

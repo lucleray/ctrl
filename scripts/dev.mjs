@@ -23,6 +23,13 @@ const restart = () => {
   app = spawn(electron, ["."], { stdio: "inherit", env: { ...devEnv, VITE_DEV_URL: url } })
   app.on("exit", () => process.exit(0))
 }
+// Stopping this script (Ctrl+C, or kill from an agent's background shell) takes the app with it.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => {
+    app?.kill()
+    process.exit(0)
+  })
+}
 
 let timer
 const restartPlugin = {

@@ -515,7 +515,13 @@ function homeHeader() {
   return h(
     "header",
     {},
-    h("span", { className: "brand" }, "ctrl", h("span", { className: `conn ${connected ? "on" : ""}` })),
+    h(
+      "span",
+      { className: "brand" },
+      "ctrl",
+      h("span", { className: `conn ${connected ? "on" : ""}` }),
+      ...(snapshot.label ? [h("span", { className: "brand-label" }, snapshot.label)] : []),
+    ),
     h("nav", { className: "tabs" }, tab("Sessions", "#/", !onBoard()), tab("Board", "#/board", onBoard())),
   )
 }

@@ -1,11 +1,12 @@
 {
   "name": "ctrl",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "preview": "node scripts/preview.mjs",
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",

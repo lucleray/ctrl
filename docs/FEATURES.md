@@ -406,5 +406,9 @@ where it lives.
   (`scripts/sign.mjs`)
 - Folder access alerts explain why ctrl asks (`build.mac.extendInfo` in `package.json`, copied into the dev app)
 - Dev runs use a separate `ctrl-dev` state dir, so dev and installed app run side by side
+- Previews (`npm run preview`): one dev ctrl per branch, each on a fresh copy of your real state with its own
+  state folder, socket and phone port, labelled with the branch in the sidebar and on the phone (`CTRL_LABEL`)
+- Dev runs print their phone links (`[ctrl] phone: …`), and stopping `npm run dev` or `npm run preview` quits
+  the app too
 - Headless mode and debug hooks for test runs: no window, no focus steal (`CTRL_*` env vars, see `docs/DEVELOPMENT.md`)
 - README screenshots and GIF regenerated from a throwaway demo opencode, and fx versions from throwaway fx sessions shown next to them (`scripts/demo/`, `--harness fx`, `CTRL_FRAMES` hook)
