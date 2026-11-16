@@ -8,6 +8,7 @@ import {
   type OpencodeCheck,
 } from "../shared/types"
 import { Icon } from "./icons"
+import { ToolScan } from "./ToolScan"
 import logo from "../../build/icon.png"
 
 type Card = {
@@ -72,6 +73,8 @@ export function Onboarding({
   const installed = list.filter((c) => c.ok)
   const [picked, setPicked] = useState<Harness>(defaultHarness)
   const [busy, setBusy] = useState(false)
+  /** Second step: what ctrl found to watch (MCP servers, CLI logins) */
+  const [tools, setTools] = useState(false)
   const choice = installed.length === 1 ? installed[0].id : picked
   const choiceName = list.find((c) => c.id === choice)!.name
 
@@ -97,6 +100,29 @@ export function Onboarding({
       : installed.length === 1
         ? "You can add the other one any time. Both kinds of session live side by side."
         : "You can change it any time in Settings, or per space."
+
+  if (tools)
+    return (
+      <div className="onboarding">
+        <div className="onboarding-card">
+          <img className="onboarding-logo" src={logo} alt="" draggable={false} />
+          <h1>Your tools</h1>
+          <p className="onboarding-intro">
+            ctrl keeps one list of your MCP servers and CLI logins, tells you when one needs you, and checks each
+            agent you use has them set up.
+          </p>
+          <div className="onboarding-tools">
+            <ToolScan cta="Watch" onDone={() => onDone(choice)} />
+          </div>
+          <p className="onboarding-note">
+            Change it any time in Settings → Tools.{" "}
+            <a href="#" onClick={(e) => (e.preventDefault(), onDone(choice))}>
+              Skip for now
+            </a>
+          </p>
+        </div>
+      </div>
+    )
 
   return (
     <div className="onboarding">
@@ -145,7 +171,7 @@ export function Onboarding({
             {busy ? "Checking…" : "Check again"}
           </button>
         ) : (
-          <button className="btn primary onboarding-cta" onClick={() => onDone(choice)}>
+          <button className="btn primary onboarding-cta" onClick={() => setTools(true)}>
             Start with {choiceName}
           </button>
         )}

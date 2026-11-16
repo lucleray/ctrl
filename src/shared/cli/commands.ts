@@ -683,7 +683,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "tools list",
-    summary: "Watched tools: opencode's MCP servers and the CLI checks from Settings → Tools, with their state",
+    summary: "Watched tools: the MCP servers and CLIs in your tools list, with their state in each harness you use",
     details: [
       "Tell a logged-out CLI (state `broken`, e.g. an expired AWS SSO session) from a real failure: when a command fails, look here before retrying.",
       "Broken tools also show as a sticky toast with a fix button in the app.",
@@ -693,7 +693,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "tools check",
-    summary: "Runs CLI checks now and waits for them (MCP ids: reconnects the server)",
+    summary: "Runs CLI checks now and waits for them (MCP ids: checks the server in every harness you use)",
     args: [
       { name: "id", type: "string", list: true, positional: true, placeholder: "[<id>...]", description: "Tool ids (`cli:aws`, or just `aws`); none = every CLI" },
     ],
@@ -701,12 +701,28 @@ export const COMMANDS: CommandSpec[] = [
     examples: ["ctrl tools check", "ctrl tools check aws-vercel"],
   },
   {
+    name: "tools scan",
+    summary: "Detects MCP servers (opencode and fx configs) and CLIs worth watching (AWS SSO sessions, gh, vercel, pup, gcloud)",
+    details: [
+      "Without --apply nothing changes: `watched` says what's in the list already.",
+      "--apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.",
+      "The list lives in ~/.config/ctrl/tools.json; the first apply creates it.",
+    ],
+    args: [
+      { name: "apply", type: "bool", description: "Watch what was found" },
+      { name: "skip", type: "string", list: true, description: "With --apply: keys not to watch (repeatable)" },
+    ],
+    returns: "{items:[{key, kind, name, description, watched}], applied}",
+    examples: ["ctrl tools scan", "ctrl tools scan --apply --skip gcloud"],
+    mutates: true,
+  },
+  {
     name: "tools add",
     summary: "Watches a CLI: ctrl runs its check in the background and offers the fix when it fails",
     details: [
       "The check runs in /bin/sh with no terminal and must exit 0 while the CLI works.",
       "Pass exactly one fix: --fix-command (ctrl runs it, e.g. a login that opens the browser), --fix-url (opens a page), or --fix-session (types a fix-it prompt into a new session; --fix-prompt to write your own).",
-      "Saved in the cliTools setting; the first check runs right away.",
+      "Saved in ~/.config/ctrl/tools.json; the first check runs right away. Needs a tools list (`tools scan --apply`).",
     ],
     args: [
       { name: "name", type: "string", required: true, description: "Shown in Settings and toasts, e.g. \"AWS (vercel)\"" },
@@ -728,8 +744,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "tools remove",
-    summary: "Stops watching a CLI",
-    args: [{ name: "id", type: "string", positional: true, required: true, placeholder: "<id>", description: "CLI tool id (`cli:aws` or `aws`)" }],
+    summary: "Stops watching an MCP server or CLI (a scan can find it again)",
+    args: [{ name: "id", type: "string", positional: true, required: true, placeholder: "<id>", description: "Tool id (`cli:aws`, `mcp:linear`, or just the name)" }],
     returns: "{id, changed}",
     mutates: true,
   },
@@ -812,6 +828,9 @@ export const OBJECTS: Record<string, string> = {
   fix: "command" | "url" | "session"   // what its fix button does (MCP servers: session)
   label: string              // fix button label
   fixing?: boolean           // a fix command is running
+  harnesses?: [{harness: "opencode" | "fx", state: Tool["state"] | "not-set-up" | "unused", detail?, label?}]
+                             // MCP: per harness; unused = no session of it open, so not checked
+  custom?: boolean           // cli: added by hand (scans never touch it)
 }`,
   Space: `{
   id: string

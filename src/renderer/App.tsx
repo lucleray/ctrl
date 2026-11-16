@@ -9,7 +9,7 @@ import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
 import { ReferenceDrop } from "./ReferenceDrop"
 import { ResourcesPanel } from "./ResourcesPanel"
-import { Settings } from "./Settings"
+import { openSettingsSection, Settings } from "./Settings"
 import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
 import { TerminalStack, type TerminalHandle } from "./TerminalStack"
@@ -34,7 +34,7 @@ const EMPTY: AppState = {
     resourcesCollapsed: false,
     resourcesDocked: false,
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal", cliTools: [] },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal" },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -48,6 +48,7 @@ const EMPTY: AppState = {
   terms: [],
   activeTermID: null,
   tools: [],
+  toolsSetUp: true,
   adapters: [],
   remote: { state: "off" },
 }
@@ -119,13 +120,14 @@ export function App() {
   }, [])
 
   const fixTool = useCallback((id: string) => {
-    // Commands and pages run in the background: only a fix-it session needs the TUI on screen.
-    if (stateRef.current.tools.find((t) => t.id === id)?.fix !== "session") return void window.ctrl.fixTool(id)
-    setPalette(false)
-    setSettings(false)
-    setSpaceSettingsID(null)
-    void window.ctrl.fixTool(id)
-    focusMain()
+    // Commands, pages and adding servers run in the background: only a fix-it prompt needs the TUI on screen.
+    void window.ctrl.fixTool(id).then((prefilled) => {
+      if (!prefilled) return
+      setPalette(false)
+      setSettings(false)
+      setSpaceSettingsID(null)
+      focusMain()
+    })
   }, [])
 
   const revealSpace = useCallback(async (spaceID: string) => {
@@ -189,7 +191,8 @@ export function App() {
         setPalette(false)
         setSpaceSettingsID(null)
         setBoard(false)
-        setSettings(open)
+        if (typeof open === "string") openSettingsSection(open)
+        setSettings(!!open)
       }),
     [],
   )

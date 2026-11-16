@@ -34,7 +34,6 @@ const DEFAULT_SETTINGS: Settings = {
   companion: false,
   remoteControl: false,
   sessionView: "terminal",
-  cliTools: [],
 }
 
 type Persisted = {
@@ -98,6 +97,8 @@ export class Store {
       },
     }
     delete (this.data.settings as { disabledAdapters?: unknown }).disabledAdapters
+    // CLI checks live in tools.json now (src/main/tools/config.ts).
+    delete (this.data.settings as { cliTools?: unknown }).cliTools
     if (!loaded.viewedSince) this.save()
   }
 

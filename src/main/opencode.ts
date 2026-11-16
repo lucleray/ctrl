@@ -5,6 +5,7 @@ import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import type { HarnessSource } from "./harness"
 import type {
+  McpServerConfig,
   McpServerItem,
   ModelChoices,
   ModelOption,
@@ -324,6 +325,32 @@ export class OpenCodeService implements HarnessSource {
     } catch (err) {
       console.error("[ctrl] mcp list failed", err)
     }
+  }
+
+  /** MCP servers as opencode's config defines them for ~ (later documents win), disabled ones left out. */
+  async mcpConfigs(): Promise<McpServerConfig[]> {
+    if (!this.client) return []
+    const entries = await this.client.config.get({ location: { directory: MCP_DIR } })
+    const servers = new Map<string, McpServerConfig | null>()
+    for (const entry of entries) {
+      if (entry.type !== "document") continue
+      for (const [name, s] of Object.entries(entry.info.mcp?.servers ?? {})) {
+        if (s.disabled) servers.set(name, null)
+        else if (s.type === "remote") servers.set(name, { name, type: "remote", url: s.url, ...(s.headers ? { headers: s.headers } : {}) })
+        else servers.set(name, { name, type: "local", command: s.command, ...(s.environment ? { env: s.environment } : {}) })
+      }
+    }
+    return [...servers.values()].filter((s): s is McpServerConfig => !!s)
+  }
+
+  /** Adds an MCP server to opencode's config for ~ and connects it. */
+  async addMcp(server: McpServerConfig) {
+    const config =
+      server.type === "remote"
+        ? { type: "remote" as const, url: server.url, ...(server.headers ? { headers: server.headers } : {}) }
+        : { type: "local" as const, command: server.command, ...(server.env ? { environment: server.env } : {}) }
+    await this.client!.mcp.add({ server: server.name, location: { directory: MCP_DIR }, config })
+    await this.refreshMcp()
   }
 
   async reconnectMcp(server: string) {

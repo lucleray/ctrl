@@ -73,6 +73,9 @@ Any of these runs the app headless: hidden window, no dock icon, never takes foc
   update without reopening it
 - `CTRL_MCP_DIR=/tmp/proj` read MCP statuses for that folder instead of `~` (put a broken server in
   its `opencode.json` to test the failing-MCP toast)
+- `CTRL_TOOLS_FILE=/tmp/tools.json` use that tools list instead of `~/.config/ctrl/tools.json`. Dev runs use
+  `~/.config/ctrl/tools.dev.json`, `CTRL_USER_DATA` runs a `tools.json` in that folder. Delete it to see the
+  scan (and the one-time toast, with `toolsPrompted` removed from `ui` in state.json) again
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load
 - `CTRL_SCREENSHOT=/tmp/shot.png CTRL_SCREENSHOT_DELAY=8000` capture the window
 - `CTRL_SEND='["space:settings","spc_x"]'` send a main → renderer event 2s after load

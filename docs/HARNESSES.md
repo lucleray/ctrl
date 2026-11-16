@@ -71,7 +71,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Drag a resource onto the terminal | ✅ | ✅ | Pastes its link, or its session mention |
 | ⌘-click links, wrapped URLs | ✅ | ✅ | opencode 2.0.26+ opens clicked links itself (a plain click works too), ctrl only handles them for older versions |
 | Theme for the terminal | ✅ | ⚠️ | fx follows ctrl's light/dark; pick an fx theme in `~/.fx/settings.json` |
-| MCP server status and Fix | ✅ | ❌ | opencode's MCP servers only |
+| MCP servers: scan, status, set up, sign in | ✅ | ✅ | opencode: its service pushes status, sign-in through `/mcps`. fx: `fx mcp list` / `show` polled only while an fx session is open, `fx mcp add` / `login` run by ctrl |
 | CLI checks (Settings → Tools) | ✅ | ✅ | ctrl runs them; a `session` fix types its prompt into the opencode TUI |
 | `/new`, `/resume` inside the terminal followed by the sidebar | ✅ | ✅ | |
 | `ctrl` CLI: list, file, archive, focus, rename, reference, read | ✅ | ✅ | [CLI.md](CLI.md) |

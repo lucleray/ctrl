@@ -135,6 +135,8 @@ export type UiState = {
   collapsedSessions?: string[]
   /** The welcome screen (pick a harness) was completed; Settings → About can show it again */
   onboarded?: boolean
+  /** The "watch your tools" toast was shown once already (users onboarded before tools existed) */
+  toolsPrompted?: boolean
 }
 
 export type Appearance = "system" | "light" | "dark"
@@ -179,8 +181,6 @@ export type Settings = {
   remoteControl: boolean
   /** How opencode sessions show: the embedded TUI, or a chat view like the phone's (src/renderer/ChatView.tsx) */
   sessionView: SessionView
-  /** CLIs whose access ctrl checks, with what fixes them (src/main/tools) */
-  cliTools: CliToolConfig[]
 }
 
 export type SessionView = "terminal" | "chat"
@@ -310,8 +310,10 @@ export type AppState = {
   terms: TermInfo[]
   /** The terminal on screen; null = nothing open (empty state) */
   activeTermID: string | null
-  /** Watched tools: opencode's MCP servers for the TUI's folder (~), then the CLI checks from Settings */
+  /** Watched tools: the MCP servers and CLIs in tools.json (before it exists: opencode's MCP servers) */
   tools: ToolItem[]
+  /** tools.json exists: you went through the tools scan (onboarding or Settings) */
+  toolsSetUp: boolean
   /** Resource adapters (live details for links), in Settings order */
   adapters: AdapterInfo[]
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
@@ -470,6 +472,8 @@ export type ToolFix =
 /** A CLI whose access ctrl watches (Settings → Tools), e.g. an AWS SSO profile that expires. */
 export type CliToolConfig = {
   id: string
+  /** Detection key, e.g. "aws:sso:vercel"; unset = added by hand, never touched by a scan */
+  key?: string
   name: string
   /** Shell command that exits 0 while the CLI works and is logged in */
   check: string
@@ -482,11 +486,43 @@ export type CliToolConfig = {
 
 export const CLI_TOOL_EVERY = 10
 
+/** An MCP server in ctrl's list, written into each harness its own way (opencode: mcp.add, fx: fx mcp add). */
+export type McpServerConfig =
+  | { name: string; type: "remote"; url: string; headers?: Record<string, string> }
+  | { name: string; type: "local"; command: string[]; env?: Record<string, string> }
+
+/** ~/.config/ctrl/tools.json: the MCP servers and CLIs you watch. Only what's in it is watched. */
+export type ToolsConfig = { version: 1; mcp: McpServerConfig[]; cli: CliToolConfig[] }
+
+/** One thing a scan found. `watched`: already in your list (a scan keeps your edits to it). */
+export type DetectedTool = {
+  key: string
+  kind: "mcp" | "cli"
+  name: string
+  /** e.g. "opencode, fx" or "aws sts get-caller-identity --profile vercel" */
+  description: string
+  watched: boolean
+}
+
 /**
  * Where a watched tool stands. broken, needs-auth and missing need you (sticky toast + Fix);
  * pending (an MCP server reconnecting) and checking keep whatever toast is up until they settle.
  */
 export type ToolState = "ok" | "checking" | "pending" | "disabled" | "broken" | "needs-auth" | "missing"
+
+/**
+ * An MCP server in one harness. not-set-up: in your list but not in that harness's config (fix: add it) ·
+ * unused: you have no session of that harness open, so ctrl doesn't check it (lazy)
+ */
+export type ToolHarnessState = ToolState | "not-set-up" | "unused"
+
+export type ToolHarness = {
+  harness: Harness
+  state: ToolHarnessState
+  detail?: string
+  /** Fix button for this harness, when it needs one ("Add", "Log in", "Fix"); fixTool(`${tool.id}@${harness}`) */
+  label?: string
+}
 
 export const TOOL_BROKEN: readonly ToolState[] = ["broken", "needs-auth", "missing"]
 
@@ -507,6 +543,12 @@ export type ToolItem = {
   label: string
   /** A fix command is running */
   fixing?: boolean
+  /** MCP servers: where it stands in each harness ctrl knows. The item's state is the worst of the used ones */
+  harnesses?: ToolHarness[]
+  /** CLIs added by hand (no detection key) */
+  custom?: boolean
+  /** CLIs: the whole entry from tools.json (what Edit starts from) */
+  config?: CliToolConfig
 }
 
 export type CtrlApi = {
@@ -522,10 +564,21 @@ export type CtrlApi = {
   undo(toastID: string): Promise<void>
   /** Runs the action behind a toast's primary button */
   toastAction(toastID: string): Promise<void>
-  /** Runs a tool's fix: its command, its page, or a new session with a fix-it prompt ready to send (MCP servers: always that) */
-  fixTool(id: string): Promise<void>
-  /** Checks a CLI again, or reconnects an MCP server */
+  /**
+   * Runs a fix by id: `cli:x`, `mcp:x`, `mcp:x@fx` (that harness), `setup@fx` (add every missing server).
+   * Resolves to true when it typed a fix-it prompt into the TUI (so the TUI should come on screen).
+   */
+  fixTool(id: string): Promise<boolean>
+  /** Checks a CLI again, or an MCP server in every harness you use (opencode: reconnects it) */
   checkTool(id: string): Promise<void>
+  /** Runs detection: MCP servers in your harnesses' configs, CLIs installed. Nothing changes until applyToolScan */
+  scanTools(): Promise<DetectedTool[]>
+  /** Watches the checked keys of the last scan and stops watching its unchecked ones (writes tools.json) */
+  applyToolScan(checked: string[]): Promise<void>
+  /** Adds (new id) or replaces a CLI check */
+  saveCliTool(config: CliToolConfig): Promise<void>
+  /** Stops watching an MCP server or CLI (a scan can find it again) */
+  removeTool(id: string): Promise<void>
   /** While on, key presses are reported to onRecordedKey instead of running shortcuts */
   recordShortcut(on: boolean): Promise<void>
   onRecordedKey(cb: (accel: string) => void): () => void
@@ -542,7 +595,8 @@ export type CtrlApi = {
   renameSpace(id: string, name: string): Promise<void>
   onSpaceSettings(cb: (spaceID: string) => void): () => void
   /** The CLI opens (true) or closes (false) the settings page */
-  onUiSettings(cb: (open: boolean) => void): () => void
+  /** The CLI opens (true) or closes (false) the settings page; a section id opens it on that section */
+  onUiSettings(cb: (open: boolean | string) => void): () => void
   /** The CLI opens the search palette with this query */
   onUiPalette(cb: (query: string) => void): () => void
   updateSpace(id: string, patch: SpacePatch): Promise<void>

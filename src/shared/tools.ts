@@ -1,10 +1,10 @@
-import type { CliToolConfig, McpServerItem, ToolFix, ToolItem, ToolState } from "./types"
+import type { CliToolConfig, McpServerItem, ToolFix, ToolState } from "./types"
 
 /** Fix button label when the config doesn't set one. */
 export const fixLabel = (fix: ToolFix, label?: string) =>
   label || (fix.kind === "command" ? "Run" : fix.kind === "url" ? "Open" : "Fix")
 
-const MCP_STATES: Record<McpServerItem["status"], ToolState> = {
+export const MCP_STATES: Record<McpServerItem["status"], ToolState> = {
   connected: "ok",
   pending: "pending",
   disabled: "disabled",
@@ -12,18 +12,7 @@ const MCP_STATES: Record<McpServerItem["status"], ToolState> = {
   needs_auth: "needs-auth",
 }
 
-/** An MCP server as a watched tool: its fix is always a session (sign-in happens in the TUI's /mcps). */
-export const mcpTool = (server: McpServerItem): ToolItem => ({
-  id: `mcp:${server.name}`,
-  kind: "mcp",
-  name: server.name,
-  state: MCP_STATES[server.status],
-  ...(server.error ? { detail: server.error } : {}),
-  fix: "session",
-  label: "Fix",
-})
-
-/** Starting points for Settings → Tools → Add. Edit the profile, account or command after adding. */
+/** Starting points for Settings → Tools → Add a CLI. Edit the profile, account or command after adding. */
 export const CLI_TOOL_PRESETS: (Omit<CliToolConfig, "id"> & { description: string })[] = [
   {
     name: "AWS SSO",

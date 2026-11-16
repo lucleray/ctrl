@@ -16,6 +16,7 @@ import {
   type Harness,
   type McpServerItem,
   type CliToolConfig,
+  type DetectedTool,
   type ToolItem,
   type ModelChoices,
   type ModelRef,
@@ -97,9 +98,18 @@ export type CliHost = {
   reconnectMcp(name: string): Promise<void>
   /** MCP servers, then CLI checks (src/main/tools) */
   tools(): ToolItem[]
+  /** tools.json exists */
+  toolsSetUp(): boolean
   /** Runs these CLI checks (config ids; none = all) and waits for them */
   checkTools(ids?: string[]): Promise<void>
-  setCliTools(configs: CliToolConfig[]): void
+  /** Checks an MCP server in every harness you use */
+  checkTool(id: string): Promise<void>
+  scanTools(): Promise<DetectedTool[]>
+  applyToolScan(checked: string[]): void
+  saveCliTool(config: CliToolConfig): void
+  removeTool(id: string): boolean
+  /** CLI checks as configured in tools.json */
+  cliTools(): CliToolConfig[]
   skill(name: "read-session" | "ctrl", action?: "install" | "uninstall"): SkillStatus
   update(action: "check" | "install"): Promise<UpdateStatus>
   digestScript(): string
@@ -1181,9 +1191,9 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "tools check": async (args) => {
       const given: string[] = args.id ?? []
       const ids = given.map(toolID)
-      const mcp = ids.filter((id) => id.startsWith("mcp:")).map((id) => id.slice(4))
+      const mcp = ids.filter((id) => id.startsWith("mcp:"))
       const cli = ids.filter((id) => id.startsWith("cli:")).map((id) => id.slice(4))
-      const runs = mcp.map((name) => host.reconnectMcp(name))
+      const runs = mcp.map((id) => host.checkTool(id))
       if (!given.length || cli.length) runs.push(host.checkTools(given.length ? cli : undefined))
       await Promise.all(runs)
       return { items: given.length ? host.tools().filter((t) => ids.includes(t.id)) : host.tools() }
@@ -1200,7 +1210,9 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const url = args["fix-url"]
       if (url !== undefined && !/^https?:\/\//.test(url)) throw new CliError("USAGE", "--fix-url must be an http(s) URL")
       if (args.every !== undefined && args.every < 1) throw new CliError("USAGE", "--every must be at least 1 (minutes)")
-      const configs = store.data.settings.cliTools
+      if (!host.toolsSetUp())
+        throw new CliError("CONFLICT", "No tools list yet", { hint: "ctrl tools scan --apply" })
+      const configs = host.cliTools()
       const id = args.id ? String(args.id).replace(/^cli:/, "") : cliToolID(name, configs.map((c) => c.id))
       if (configs.some((c) => c.id === id))
         throw new CliError("CONFLICT", `A CLI tool with id ${id} exists already`, { hint: `ctrl tools remove ${sh(id)}` })
@@ -1217,17 +1229,22 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         ...(args.label ? { label: String(args.label) } : {}),
         ...(args.every !== undefined ? { every: args.every } : {}),
       }
-      host.setCliTools([...configs, config])
+      host.saveCliTool(config)
       await host.checkTools([id])
       return { id: `cli:${id}`, item: host.tools().find((t) => t.id === `cli:${id}`) }
     },
     "tools remove": (args) => {
       const id = toolID(String(args.id))
-      const configs = store.data.settings.cliTools
-      if (!id.startsWith("cli:")) throw new CliError("USAGE", "Only CLI tools can be removed; MCP servers live in your opencode config")
-      const next = configs.filter((c) => `cli:${c.id}` !== id)
-      if (next.length !== configs.length) host.setCliTools(next)
-      return { id, changed: next.length !== configs.length }
+      if (!host.toolsSetUp())
+        throw new CliError("CONFLICT", "No tools list yet: these are opencode's MCP servers as they are", { hint: "ctrl tools scan --apply" })
+      return { id, changed: host.removeTool(id) }
+    },
+    "tools scan": async (args) => {
+      const found = await host.scanTools()
+      if (!args.apply) return { items: found, applied: false }
+      const skip = new Set<string>(args.skip ?? [])
+      host.applyToolScan(found.map((f) => f.key).filter((k) => !skip.has(k)))
+      return { items: found.map((f) => ({ ...f, watched: !skip.has(f.key) })), applied: true }
     },
     "skill status": () => ({
       items: (["read-session", "ctrl"] as const).map((name) => ({ name, ...host.skill(name) })),

@@ -21,15 +21,19 @@ type Entry = {
 
 export type ShellResult = { code: number | null; output: string; timedOut: boolean }
 
+/** Quotes a value for /bin/sh. */
+export const shq = (value: string) => (/^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`)
+
 /**
  * Runs a shell command with no terminal: stdin is closed, so a CLI that asks a question fails instead of
  * hanging. The whole process group is killed on timeout.
  */
-export const runShell = (command: string, timeout: number) =>
+export const runShell = (command: string, timeout: number, cwd?: string) =>
   new Promise<ShellResult>((resolve) => {
     const child = spawn("/bin/sh", ["-c", command], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
+      ...(cwd ? { cwd } : {}),
       env: { ...process.env, NO_COLOR: "1", AWS_PAGER: "", GH_PROMPT_DISABLED: "1" },
     })
     let output = ""

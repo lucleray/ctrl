@@ -16,7 +16,7 @@
 - **resources**: [`resources list`](#resources-list) · [`resources refresh`](#resources-refresh)
 - **models**: [`models list`](#models-list)
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
-- **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
+- **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
 - **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
 - **events**: [`events`](#events)
 
@@ -883,7 +883,7 @@ ctrl mcp reconnect <name>
 
 ### tools list
 
-Watched tools: opencode's MCP servers and the CLI checks from Settings → Tools, with their state
+Watched tools: the MCP servers and CLIs in your tools list, with their state in each harness you use
 
 ```text
 ctrl tools list
@@ -896,7 +896,7 @@ ctrl tools list
 
 ### tools check
 
-Runs CLI checks now and waits for them (MCP ids: reconnects the server)
+Runs CLI checks now and waits for them (MCP ids: checks the server in every harness you use)
 
 ```text
 ctrl tools check [<id>...]
@@ -913,6 +913,30 @@ ctrl tools check
 ctrl tools check aws-vercel
 ```
 
+### tools scan
+
+Detects MCP servers (opencode and fx configs) and CLIs worth watching (AWS SSO sessions, gh, vercel, pup, gcloud) *(changes state)*
+
+```text
+ctrl tools scan [--apply] [--skip <skip>...]
+```
+
+- Without --apply nothing changes: `watched` says what's in the list already.
+- --apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.
+- The list lives in ~/.config/ctrl/tools.json; the first apply creates it.
+
+| Argument | Meaning |
+|---|---|
+| `--apply / --no-apply` | Watch what was found |
+| `--skip <skip>` | With --apply: keys not to watch (repeatable) · repeatable |
+
+**Returns:** `{items:[{key, kind, name, description, watched}], applied}`
+
+```bash
+ctrl tools scan
+ctrl tools scan --apply --skip gcloud
+```
+
 ### tools add
 
 Watches a CLI: ctrl runs its check in the background and offers the fix when it fails *(changes state)*
@@ -923,7 +947,7 @@ ctrl tools add --name <name> --check <check> [--fix-command <fix-command>] [--fi
 
 - The check runs in /bin/sh with no terminal and must exit 0 while the CLI works.
 - Pass exactly one fix: --fix-command (ctrl runs it, e.g. a login that opens the browser), --fix-url (opens a page), or --fix-session (types a fix-it prompt into a new session; --fix-prompt to write your own).
-- Saved in the cliTools setting; the first check runs right away.
+- Saved in ~/.config/ctrl/tools.json; the first check runs right away. Needs a tools list (`tools scan --apply`).
 
 | Argument | Meaning |
 |---|---|
@@ -946,7 +970,7 @@ ctrl tools add --name "GitHub CLI" --check "gh auth status" --fix-session
 
 ### tools remove
 
-Stops watching a CLI *(changes state)*
+Stops watching an MCP server or CLI (a scan can find it again) *(changes state)*
 
 ```text
 ctrl tools remove <id>
@@ -954,7 +978,7 @@ ctrl tools remove <id>
 
 | Argument | Meaning |
 |---|---|
-| `<id>` | CLI tool id (`cli:aws` or `aws`) · required |
+| `<id>` | Tool id (`cli:aws`, `mcp:linear`, or just the name) · required |
 
 **Returns:** `{id, changed}`
 
@@ -1052,6 +1076,9 @@ ctrl events [--type <type>...] [--session <session>...]
   fix: "command" | "url" | "session"   // what its fix button does (MCP servers: session)
   label: string              // fix button label
   fixing?: boolean           // a fix command is running
+  harnesses?: [{harness: "opencode" | "fx", state: Tool["state"] | "not-set-up" | "unused", detail?, label?}]
+                             // MCP: per harness; unused = no session of it open, so not checked
+  custom?: boolean           // cli: added by hand (scans never touch it)
 }
 ```
 
