@@ -233,7 +233,7 @@ Settings → Remote control serves `dist/remote` (built from `src/remote/`) to y
 ```text
 phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: snapshot of spaces + sessions
       ◄──ws /ws─┤                                     ├─► board: cards built like Board.tsx
-                └ token → HttpOnly cookie, Origin check└─► chat: opencode client (remote-chat.ts)
+                └ token → HttpOnly cookie, Origin check└─► chat: chat.ts → the harness's chat
 ```
 
 - **Listens only on the Tailscale interface** (100.64.0.0/10), or localhost without one, rechecked every 15s.
@@ -244,6 +244,11 @@ phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: sn
   (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
   (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
   phones on the board and only when it changed.
+- **Chat, per harness:** the phone and the desktop's chat view both call `src/main/chat.ts`, which sends each
+  call to the session's harness (`HarnessSource.chat`, `src/main/harness.ts`) and keeps what's common: a
+  message sent mid-turn that still waits after 3s moves what holds the turn to the background. Each harness
+  translates its own messages into ctrl's chat items (`ChatItem`); only opencode has one so far
+  (`src/main/opencode-chat.ts`).
 - **Chat view (opencode):** `src/main/remote-chat.ts` reads one page of `message.list` (newest 40, older ones
   by cursor) and flattens it (text, thinking markers, tool one-liners). Any event about a session someone is
   chatting in re-reads the newest page, at most every 300ms, and the phone patches messages by id. Sending is

@@ -103,4 +103,8 @@ simply hidden for harnesses that don't implement it.
    - `work`: lists what `activity()` counts and stops one of them (the chat view's list under the composer).
    - `background()`: moves the shell or subagent that holds a session's turn to the background, so a message
      sent mid-turn from a chat is read without waiting for it.
+   - `chat`: its sessions as a chat, on the desktop (Settings → Appearance) and the phone. A `HarnessChat`
+     reads pages of messages as ctrl's chat items, sends, stops and answers permissions; inbox, question forms,
+     images, model and stats are optional. `src/main/opencode-chat.ts` is the example, `src/main/chat.ts`
+     routes the chat views to it.
 5. **Support table** above: add a column and fill in what works.

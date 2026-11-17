@@ -16,7 +16,7 @@ fakes:
 
 | Layer | What runs | Talks to | Files |
 | --- | --- | --- | --- |
-| Pure logic | store, adapters, shortcuts, chat items, tool alerts… | nothing, or a temp folder | `store`, `adapters`, `shared`, `remote-chat`, `tools`, `opencode` |
+| Pure logic | store, adapters, shortcuts, chat items and routing, tool alerts… | nothing, or a temp folder | `store`, `adapters`, `shared`, `remote-chat`, `chat`, `tools`, `opencode` |
 | CLI handlers | `createHandlers()`, the code behind every `ctrl` command | a fake host + a real `Store` | `handlers`, `cli`, `worktrees` |
 | CLI launcher | `bin/ctrl` + `dist/cli/cli.cjs` as a real process | a fake app socket | `cli` (`ctrl launcher`) |
 | UI | React components in happy-dom (`loadUi()`) | a fake `window.ctrl` | `ui` |

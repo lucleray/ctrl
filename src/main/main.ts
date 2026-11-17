@@ -13,7 +13,6 @@ import {
   type Harness,
   type ModelChoices,
   type ModelOption,
-  type ChatStats,
   type ModelRef,
   type OpencodeCheck,
   type SessionItem,
@@ -25,7 +24,6 @@ import {
   type ThemeInfo,
   type Toast,
   type CliToolConfig,
-  type ChatAttachment,
   type UiState,
   type ResourceItem,
   type ResourceMeta,
@@ -54,7 +52,7 @@ import { loadShellEnv } from "./shell-env"
 import { DesktopChat } from "./desktop-chat"
 import { TermModes } from "./term-modes"
 import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type RemoteSnapshot } from "./remote"
-import { chatImage, chatInbox, chatPage } from "./remote-chat"
+import { createChat } from "./chat"
 import { Store } from "./store"
 import { ToolsService } from "./tools/service"
 import { WorktreeService, type SessionState } from "./worktrees/service"
@@ -525,89 +523,30 @@ let printedRemoteURLs = ""
 // Dev runs get their own port so they can run next to the installed app.
 const REMOTE_PORT = Number(process.env.CTRL_REMOTE_PORT) || (app.isPackaged ? 7337 : 7338)
 
-const openCodeClient = () => {
-  if (!opencode.client) throw new Error("The opencode service isn't connected")
-  return opencode.client
-}
-/** Context window per model ("provider::id"), read once per run: model.list is too heavy to call per stats. */
-const contextLimits = new Map<string, number | null>()
-async function contextLimit(model: ModelRef, directory: string) {
-  const key = `${model.providerID}::${model.id}`
-  if (!contextLimits.has(key)) {
-    const list = await openCodeClient().model.list({ location: { directory } }).catch(() => null)
-    for (const m of list?.data ?? []) contextLimits.set(`${m.providerID}::${m.id}`, m.limit?.context || null)
-    if (!contextLimits.has(key)) return null
-  }
-  return contextLimits.get(key) ?? null
-}
-
-/** How long a message sent mid-turn waits before what holds the turn goes to the background: most shells are done by then. */
-const BACKGROUND_GRACE_MS = 3000
-
-/**
- * A message sent mid-turn that still waits after the grace period: a shell or subagent holds the turn, so it
- * goes on in the background (harnesses that can: src/main/harness.ts) and the agent reads the message. A turn
- * that's only thinking has nothing to move, and isn't interrupted.
- */
-function backgroundIfHeld(sessionID: string, messageID: string) {
-  const harness = sourceOf(sessionID)
-  if (!harness?.background) return
-  setTimeout(async () => {
-    try {
-      const waiting = await chatInbox(openCodeClient(), sessionID)
-      if (waiting.some((q) => q.id === messageID)) await harness.background!(sessionID)
-    } catch (err) {
-      console.error("[ctrl] moving to the background failed", err)
-    }
-  }, BACKGROUND_GRACE_MS)
-}
-
-/** opencode sessions as a chat: remote control's phone view and the desktop's chat view share these. */
-const chatOps = {
-  page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
-  // Steer, never queue: a message sent mid-turn reaches the agent at its next step. A shell or subagent the
-  // turn waits for would hold that step back, so it goes on in the background (what ⌃B does in opencode's TUI).
-  send: async (sessionID: string, text: string, attachments: ChatAttachment[]) => {
-    const files = attachments.map(({ uri, label }, i) => {
-      const pdf = uri.startsWith("data:application/pdf;")
-      const name = pdf ? `document-${i + 1}.pdf` : `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}`
-      // Where its placeholder sits in the text, like opencode's TUI sends it.
-      const start = label ? text.indexOf(label) : -1
-      return { uri, name, ...(start >= 0 ? { mention: { start, end: start + label!.length, text: label! } } : {}) }
-    })
-    // Before sending: the turn this message starts in an idle session is not one to cut short.
-    const midTurn = sessionByID(sessionID)?.status === "running"
-    const sent = await openCodeClient().session.prompt({ sessionID, text, delivery: "steer", ...(files.length ? { files } : {}) })
-    if (midTurn && sent?.id) backgroundIfHeld(sessionID, sent.id)
-    return sent?.id
-  },
-  image: (sessionID: string, messageID: string, index: number) => chatImage(openCodeClient(), sessionID, messageID, index),
-  stop: async (sessionID: string) => void (await openCodeClient().session.interrupt({ sessionID })),
-  reply: (sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
-    openCodeClient().permission.reply({ sessionID, requestID, decision }),
-  answer: (sessionID: string, formID: string, answer: FormAnswer | null) =>
-    answer
-      ? openCodeClient().session.form.reply({ sessionID, formID, answer })
-      : openCodeClient().session.form.cancel({ sessionID, formID }),
-  pending: (sessionID: string) => opencode.pendingFor(sessionID),
-  title: (sessionID: string) => sessionByID(sessionID)?.title,
-}
+/** Sessions as a chat, routed to each session's harness (src/main/chat.ts): the phone and the desktop share it. */
+const chat = createChat({
+  source: (sessionID) => sourceOf(sessionID),
+  status: (sessionID) => sessionByID(sessionID)?.status,
+  title: (sessionID) => sessionByID(sessionID)?.title,
+})
 
 const desktopChat = new DesktopChat({
-  page: (sessionID) => chatPage(openCodeClient(), sessionID, undefined, true),
-  pending: chatOps.pending,
-  inbox: (sessionID) => chatInbox(openCodeClient(), sessionID),
+  page: (sessionID) => chat.page(sessionID, undefined, true),
+  pending: chat.pending,
+  inbox: chat.inbox,
   updated: (sessionID, items) => send("chat:update", sessionID, items),
   pendingChanged: (sessionID, pending) => send("chat:pending", sessionID, pending),
   inboxChanged: (sessionID, inbox) => send("chat:inbox", sessionID, inbox),
 })
 
-opencode.onSessionEvent = (sessionID, type) => {
+/** Something happened in a session of a harness with a chat: chats showing it (phone, desktop) re-read it. */
+function chatChanged(sessionID: string, modelChanged: boolean) {
   remote.sessionEvent(sessionID)
   desktopChat.sessionEvent(sessionID)
   // Picked in the TUI (or another client): the chat view's model picker follows.
-  if (type === "session.model.selected") send("chat:model-changed", sessionID)
+  if (modelChanged) send("chat:model-changed", sessionID)
 }
+for (const source of harnesses()) if (source.chat) source.chat.onChange = chatChanged
 
 const remote: RemoteServer = new RemoteServer({
   port: REMOTE_PORT,
@@ -622,7 +561,7 @@ const remote: RemoteServer = new RemoteServer({
       .filter((r) => cards.has(r.id))
     void adapters.request(items, { force: false, wait: 0 }).catch(() => {})
   },
-  chat: chatOps,
+  chat,
   // Like ⌘N in that space, without touching what the desktop shows. Resolves once the sidebar lists it.
   create: async (spaceID, parentID) => {
     const space = spaceID && store.space(spaceID) ? spaceID : null
@@ -1799,65 +1738,35 @@ function registerIpc() {
 
   // The opencode TUI repaints itself, so a re-attached xterm only needs live output from here on.
   ipcMain.handle("chat:open", (_e, sessionID: string) => {
-    if (typeof sessionID !== "string" || harnessOf(sessionID) !== "opencode") throw new Error("Not an opencode session")
+    if (typeof sessionID !== "string" || !chat.can(sessionID)) throw new Error("This session can't open as a chat")
     return desktopChat.open(sessionID)
   })
   ipcMain.handle("chat:close", () => desktopChat.close())
-  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chatPage(openCodeClient(), sessionID, cursor, true))
+  ipcMain.handle("chat:more", (_e, sessionID: string, cursor: string) => chat.page(sessionID, cursor, true))
   ipcMain.handle("chat:send", (_e, sessionID: string, text: string, images: unknown) =>
-    chatOps.send(sessionID, String(text ?? ""), cleanImages(images)),
+    chat.send(sessionID, String(text ?? ""), cleanImages(images)),
   )
   // The chat view's empty state: a new opencode session in the default space, started with this message.
   ipcMain.handle("chat:new", async (_e, text: string, images: unknown) => {
     const created = await newSession(defaultSpaceID(), undefined, "opencode")
     if (!("id" in created)) return
-    await chatOps.send(created.id, String(text ?? ""), cleanImages(images))
+    await chat.send(created.id, String(text ?? ""), cleanImages(images))
   })
-  ipcMain.handle("chat:stop", (_e, sessionID: string) => chatOps.stop(sessionID))
+  ipcMain.handle("chat:stop", (_e, sessionID: string) => chat.stop(sessionID))
   // The shells and subagents under the chat's composer, for harnesses that can list them (src/main/harness.ts).
   ipcMain.handle("chat:work", async (_e, sessionID: string) => (await sourceOf(sessionID)?.work?.list(sessionID)) ?? null)
   ipcMain.handle("chat:work-stop", (_e, sessionID: string, id: string) => sourceOf(sessionID)?.work?.stop(sessionID, String(id)))
   ipcMain.handle("chat:reply", (_e, sessionID: string, requestID: string, decision: "once" | "always" | "reject") =>
-    chatOps.reply(sessionID, requestID, decision),
+    chat.reply(sessionID, requestID, decision),
   )
   ipcMain.handle("chat:answer", (_e, sessionID: string, formID: string, answer: FormAnswer | null) =>
-    chatOps.answer(sessionID, formID, answer),
+    chat.answer(sessionID, formID, answer),
   )
-  // The session's model, else what opencode would use in its folder (a session that never picked one).
-  ipcMain.handle("chat:model", async (_e, sessionID: string) => {
-    const client = openCodeClient()
-    const session = await client.session.get({ sessionID })
-    if (session.model) return { providerID: session.model.providerID, id: session.model.id, variant: session.model.variant }
-    const fallback = await client.model.default({ location: { directory: session.location.directory } }).catch(() => null)
-    return fallback?.data ? { providerID: fallback.data.providerID, id: fallback.data.id } : null
-  })
-  // Spend so far and how full the context is, from the newest assistant message that reports tokens.
-  ipcMain.handle("chat:stats", async (_e, sessionID: string): Promise<ChatStats> => {
-    const client = openCodeClient()
-    const [session, recent] = await Promise.all([
-      client.session.get({ sessionID }),
-      client.message.list({ sessionID, limit: 20, order: "desc" }),
-    ])
-    type Assistant = { type: string; model?: ModelRef; tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }
-    const used = (m: Assistant) => {
-      const t = m.tokens
-      return t ? t.input + t.output + t.reasoning + t.cache.read + t.cache.write : 0
-    }
-    // Interrupted or failed steps report zero tokens: skip back to the newest one that used some.
-    const last = (recent.data as unknown as Assistant[]).find((m) => m.type === "assistant" && m.model && used(m) > 0)
-    const context: ChatStats["context"] = last?.model
-      ? { used: used(last), limit: await contextLimit(last.model, session.location.directory) }
-      : null
-    return { cost: session.cost ?? 0, context }
-  })
-  ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) =>
-    openCodeClient().session.switchModel({
-      sessionID,
-      model: { providerID: String(model.providerID), id: String(model.id), ...(model.variant ? { variant: String(model.variant) } : {}) },
-    }),
-  )
+  ipcMain.handle("chat:model", (_e, sessionID: string) => chat.model(sessionID))
+  ipcMain.handle("chat:stats", (_e, sessionID: string) => chat.stats(sessionID))
+  ipcMain.handle("chat:set-model", (_e, sessionID: string, model: ModelRef) => chat.setModel(sessionID, model))
   ipcMain.handle("chat:image", async (_e, sessionID: string, messageID: string, index: number) => {
-    const found = await chatOps.image(sessionID, messageID, index).catch(() => null)
+    const found = await chat.image(sessionID, messageID, index).catch(() => null)
     return found ? `data:${found.mime};base64,${found.body.toString("base64")}` : null
   })
   ipcMain.handle("pty:attach", (_e, termID: string) =>
