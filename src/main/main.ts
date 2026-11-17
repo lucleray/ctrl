@@ -41,11 +41,12 @@ import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
 import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
+import { fxProfile, syncFxProfiles, type FxInstructions } from "./fx-profiles"
 import { checkFx, FX_ENV, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { sessionsOf, type HarnessSource } from "./harness"
 import { OpenCodeService } from "./opencode"
-import { checkOpencode } from "./opencode-bin"
+import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
@@ -208,6 +209,23 @@ const changeListeners = new Set<() => void>()
 const ctrlInstructionsOn = (spaceID: string | null | undefined) =>
   (spaceID ? store.space(spaceID)?.ctrlInstructions : undefined) ?? store.data.settings.ctrlInstructions
 
+/** What a new fx session in this space is told (src/main/fx-profiles.ts). */
+const fxInstructionsFor = (spaceID: string | null): FxInstructions => {
+  const space = spaceID ? store.space(spaceID) : undefined
+  return { spaceID: space?.id ?? null, spaceName: space?.name, instructions: space?.instructions, ctrl: ctrlInstructionsOn(spaceID) }
+}
+
+let fxProfilesKey = ""
+/** Every push: rewrites the fx profiles of spaces whose instructions changed. Free unless one did. */
+const syncFxSpaceProfiles = () => {
+  if (!fxStarted) return
+  const spaces = store.data.spaces.map((s) => fxInstructionsFor(s.id))
+  const key = JSON.stringify(spaces)
+  if (key === fxProfilesKey) return
+  fxProfilesKey = key
+  syncFxProfiles(spaces)
+}
+
 /** Every push: opening a session, moving it, or changing the setting all end here. Free unless it changed. */
 const syncCtrlInstructions = () => {
   const id = currentSessionID()
@@ -221,6 +239,7 @@ const push = () => {
   queueMicrotask(() => {
     pushQueued = false
     syncCtrlInstructions()
+    syncFxSpaceProfiles()
     attention.refreshBadge(sessions)
     send("state", state())
     companion.changed()
@@ -312,6 +331,8 @@ const fxTerms: FxTerminals = new FxTerminals({
 if (store.data.termSize) fxTerms.size = store.data.termSize
 
 let fxCheck: FxCheck = { state: "checking" }
+/** fx 0.0.17 added agent profiles (`--profile`) and a first prompt as an argument (`fx "<prompt>"`). */
+const fxModern = () => fxCheck.state === "ok" && compareVersions(fxCheck.version, "0.0.17") >= 0
 let fxStarted = false
 
 /** fx is optional: its sessions show up once it's installed. */
@@ -976,6 +997,9 @@ const newSession = async (
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
     const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
+    // Space instructions and the ctrl instruction go in through an agent profile, kept when fx resumes it.
+    const profile = fxModern() ? fxProfile(fxInstructionsFor(spaceID)) : undefined
+    if (profile) args.push("--profile", profile)
     const promptArg = fxPromptArg(prompt)
     if (focus) showFxTerm()
     // The session joins the space once fx reports its id (onOwner). fx ≥ 0.0.17 creates it at the first prompt.
@@ -1877,7 +1901,7 @@ const fxTermFor = async (sessionID: string) => {
  * fx takes a first prompt as its last argument (`fx "<prompt>"`, `fx --resume <id> "<prompt>"`), so it's sent
  * without typing it in and waiting for fx to be ready. One that looks like a flag is typed in instead.
  */
-const fxPromptArg = (prompt?: string) => (prompt?.trim() && !prompt.startsWith("-") ? [prompt] : [])
+const fxPromptArg = (prompt?: string) => (fxModern() && prompt?.trim() && !prompt.startsWith("-") ? [prompt] : [])
 
 /** Sends a prompt to an fx session: typed into its running fx, or passed to a new one (fxPromptArg). */
 const promptFx = async (sessionID: string, text: string) => {
