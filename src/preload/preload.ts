@@ -27,6 +27,7 @@ const api: CtrlApi = {
   saveCliTool: (config) => ipcRenderer.invoke("tools:save-cli", config),
   removeTool: (id) => ipcRenderer.invoke("tools:remove", id),
   configureWorktreeRepo: (source, patch) => ipcRenderer.invoke("worktrees:configure", source, patch),
+  addWorktreeRepo: () => ipcRenderer.invoke("worktrees:add"),
   forgetWorktreeRepo: (source) => ipcRenderer.invoke("worktrees:forget", source),
   runWorktreeJob: (id) => ipcRenderer.invoke("worktrees:run-job", id),
   pickWorktreeRoot: () => ipcRenderer.invoke("worktrees:pick-root"),

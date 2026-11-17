@@ -336,6 +336,8 @@ where it lives.
   A session can hold several, of one repo or many, and isn't tied to any of them: it works in them by path
 - Repos register themselves the first time a worktree of one is taken: base branch from origin, setup command
   from the lockfile (pnpm, yarn, bun, npm, cargo, go). A path anywhere inside the repo, or its name, works
+- Add a repo by hand too: Settings → Worktrees → Add a repository (folder picker, then its settings open), or
+  `ctrl worktree config <path>`. One added by hand keeps a warm worktree for its first 30 days, used or not
 - Pool miss: the worktree is built on the spot (`cold: true`). The build belongs to the app, not to the CLI call:
   a call that times out or is killed leaves it running, and the session's next `up` waits for it or gets its result
 - A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
@@ -383,7 +385,9 @@ where it lives.
   with hints. Principles and conventions in [CLI.md](CLI.md), every command in [CLI-REFERENCE.md](CLI-REFERENCE.md)
   (`src/cli/cli.ts`, `src/shared/cli/`)
 - Worktrees: `worktree up` (take one for a session), `down`, `list` (the session's by default, `--all`), `config`
-  (every repo with pool and usage, or add / change / forget one), `prewarm`, `cleanup` (dry run unless `--apply`)
+  (every repo with pool and usage, or add / change / forget one), `prewarm`, `cleanup` (dry run unless `--apply`),
+  `update` (run the update job now). Everything in Settings → Worktrees has a command: the folder and the job
+  toggles are settings (`worktreeRoot`, `worktreePoolAuto`, `worktreeCleanup`, `worktreeUpdateRepos`)
 - Sessions: list / filter / page, get, new (space settings apply, `--prompt`, background unless `--focus`,
   always replies within 12s: a stuck harness gives a `TIMEOUT` that says whether the session was created),
   focus, rename, move, archive / unarchive, send, wait for a status, stop, `ref`,

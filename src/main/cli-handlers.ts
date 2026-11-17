@@ -118,7 +118,7 @@ export type CliHost = {
   /** The worktree pool (src/main/worktrees) */
   worktrees: Pick<
     WorktreeService,
-    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup"
+    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup" | "update"
   >
   /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
   rootSession(sessionID: string): Promise<string | null>
@@ -1479,6 +1479,14 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "worktree prewarm": async (args, req) =>
       worktreeCall(() => host.worktrees.prewarm(String(args.repo), args.count === undefined ? undefined : Number(args.count), req.caller.cwd)),
     "worktree cleanup": async (args) => ({ ...(await host.worktrees.cleanup({ apply: !!args.apply })), applied: !!args.apply }),
+    "worktree update": async () => {
+      const summary = await host.worktrees.update()
+      const repos = host.worktrees
+        .view()
+        .repos.filter((r) => r.updated)
+        .map((r) => ({ repo: r.label, source: r.source, result: r.updated!.result, at: r.updated!.at }))
+      return { summary, repos }
+    },
 
     // ----- events -----
     events: async (args, req, stream) => {

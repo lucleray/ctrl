@@ -213,14 +213,19 @@ export function WorktreeSettings({ state }: { state: AppState }) {
               <RepoRow key={repo.source} repo={repo} onEdit={() => setEditing(repo.source)} />
             ),
           )
-        ) : (
-          <div className="setting">
+        ) : null}
+        <div className="setting">
+          <div>
+            <div className="setting-title">Add a repository</div>
             <div className="setting-desc">
-              No repos yet. A repo is added, with its base branch and setup command detected, the first time an agent
-              takes a worktree of it.
+              Pick a git checkout on this Mac. Agents also add a repo on their own the first time they take a worktree
+              of it.
             </div>
           </div>
-        )}
+          <button className="btn" onClick={() => void window.ctrl.addWorktreeRepo().then((source) => source && setEditing(source))}>
+            Add…
+          </button>
+        </div>
       </div>
 
       <h3 className="settings-subhead">Background jobs</h3>

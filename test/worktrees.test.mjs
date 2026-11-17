@@ -262,6 +262,16 @@ describe("WorktreeService", () => {
     service.stop()
   })
 
+  test("a repo added by hand gets a warm worktree right away, one an agent brings along only once it's used", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    const { repo, changed } = await service.configure(source, {})
+    assert.deepEqual([changed, repo.target, repo.usage.taken], [true, 1, 0])
+    await until(() => ready(service, source).length === 1, "a warm worktree")
+    assert.equal((await service.configure(source, {})).changed, false)
+    service.stop()
+  })
+
   test("a folder another ctrl owns is never used: this one falls back to its own", async () => {
     const shared = mkdtempSync(join(tmp, "shared-"))
     const a = makeService({ root: shared })
@@ -382,6 +392,10 @@ describe("worktree handlers", () => {
     assert.equal((await call("worktree list", { repo: "app" })).items[0].branch, "feature")
     writeFileSync(join(mine.path, "x.txt"), "x\n")
     await assert.rejects(call("worktree down", {}, { opencodeSessionID: "ses_a", cwd: mine.path }), (err) => err.code === "CONFLICT" && /--force/.test(err.extra.hint))
+    // The checkout worktrees come from is on main with nothing to pull.
+    const updated = await call("worktree update")
+    assert.equal(updated.summary, "1 already up to date")
+    assert.deepEqual(updated.repos.map((r) => [r.repo, r.result]), [["app", "Up to date"]])
     const down = await call("worktree down", { force: true }, { opencodeSessionID: "ses_a", cwd: mine.path })
     assert.deepEqual([down.id, down.released, down.forced, down.branch], [mine.id, true, true, "feature"])
     assert.equal((await call("worktree down", { worktree: theirs.path })).id, theirs.id)

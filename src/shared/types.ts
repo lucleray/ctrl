@@ -606,6 +606,8 @@ export type CtrlApi = {
   removeTool(id: string): Promise<void>
   /** Changes a repo's worktree settings (Settings → Worktrees); null clears name / setup, or sizes the pool from usage */
   configureWorktreeRepo(source: string, patch: Partial<Pick<WorktreeRepoConfig, "baseBranch" | "maxTotal">> & { name?: string | null; setup?: string | null; warm?: number | null }): Promise<void>
+  /** Picks a git checkout and adds it as a repo (Settings → Worktrees); resolves to its path, or null if canceled or not a repo */
+  addWorktreeRepo(): Promise<string | null>
   /** Stops managing a repo and removes its idle worktrees */
   forgetWorktreeRepo(source: string): Promise<void>
   /** Runs a worktree background job now */

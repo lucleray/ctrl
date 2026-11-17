@@ -253,6 +253,13 @@ ctrl session read ses_abc | jq -r .data.digest
 new=$(ctrl session new --focus --raise | jq -r .data.id)
 ctrl session reference ses_abc --into "$new" --text "continue this for the WA drain"
 
+# Worktrees: add a repo, pin its pool, turn the background jobs on or off, run one now
+ctrl worktree config ~/code/acme-app --name app
+ctrl worktree config app --warm 3
+ctrl settings set worktreeCleanup false
+ctrl settings set worktreeUpdateRepos true
+ctrl worktree update
+
 # Settings
 ctrl settings set appearance dark
 ctrl settings set defaultModel "vercel/anthropic/claude-haiku-4.5"

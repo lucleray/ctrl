@@ -18,7 +18,7 @@
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
 - **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
-- **worktree**: [`worktree up`](#worktree-up) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup)
+- **worktree**: [`worktree up`](#worktree-up) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup) · [`worktree update`](#worktree-update)
 - **events**: [`events`](#events)
 
 Aliases: `status` = `app status` · `focus` = `session focus` · `ref` = `session ref` · `ls` = `session list`
@@ -1142,14 +1142,15 @@ ctrl worktree list --all --status attached
 
 ### worktree config
 
-Worktree settings: every repo ctrl manages, or one repo (add it, or change how its worktrees are made) *(changes state)*
+Worktree settings: every repo ctrl manages, or one repo (add it, change how its worktrees are made, or forget it) *(changes state)*
 
 ```text
 ctrl worktree config [<repo>] [--name <name>] [--base <base>] [--setup <setup>] [--warm <warm>] [--max-total <n>] [--forget]
 ```
 
 - Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.
-- With <repo>: that repo, registered if it's new. Flags change it.
+- With <repo>: that repo. A new one is added (base branch and setup command detected) and gets a warm worktree right away. Flags change it; --forget removes it.
+- Everything in Settings → Worktrees has a command: the folder and the background jobs are settings (`ctrl settings set worktreeRoot <path>`, `worktreePoolAuto`, `worktreeCleanup`, `worktreeUpdateRepos` true|false), and `worktree cleanup --apply` and `worktree update` run the jobs now.
 - The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.
 
 | Argument | Meaning |
@@ -1166,6 +1167,7 @@ ctrl worktree config [<repo>] [--name <name>] [--base <base>] [--setup <setup>] 
 
 ```bash
 ctrl worktree config
+ctrl worktree config ~/code/acme-app
 ctrl worktree config ~/code/acme-app --name app --setup "pnpm install --frozen-lockfile"
 ctrl worktree config app --warm 3
 ctrl worktree config app --warm auto
@@ -1204,6 +1206,19 @@ ctrl worktree cleanup [--apply]
 | `--apply / --no-apply` | Do it (default: only list) |
 
 **Returns:** `{released:[{id, path, sessionID, reason}], dropped:[{id, path}], removed:[path], applied:boolean}`
+
+### worktree update
+
+Fetches the repos worktrees come from and fast-forwards your own checkouts, now *(changes state)*
+
+```text
+ctrl worktree update
+```
+
+- What the hourly job does when the worktreeUpdateRepos setting is on: every repo a worktree was taken from in the last 30 days is fetched, and your checkout of it is fast-forwarded only when it's on its base branch with nothing uncommitted.
+- `repos[].result` says what happened to each checkout: Updated to <commit>, Up to date, On <branch>, Has uncommitted changes…
+
+**Returns:** `{summary:string, repos:[{repo, source, result, at}]}`
 
 ### events
 

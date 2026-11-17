@@ -64,6 +64,8 @@ export class WorktreeError extends Error {
 }
 
 type RepoState = WorktreeRepoConfig & {
+  /** Added by hand (Settings, `ctrl worktree config`): it keeps one warm worktree for 30 days even if never used */
+  addedAt?: number
   /** Why the last build failed, and when (warm builds wait BACKOFF_MS before trying again) */
   error?: string
   failedAt?: number
@@ -353,8 +355,8 @@ export class WorktreeService {
     return { source, repo: this.data.repos[source] }
   }
 
-  /** The repo for a token, registered with detected settings the first time it's seen. */
-  private async ensureRepo(token: string, cwd?: string): Promise<RepoState> {
+  /** The repo for a token, registered with detected settings the first time it's seen (`added`: by hand). */
+  private async ensureRepo(token: string, cwd?: string, added = false): Promise<RepoState> {
     const { source, repo } = await this.resolveSource(token, cwd)
     if (repo) return repo
     const created: RepoState = {
@@ -363,6 +365,7 @@ export class WorktreeService {
       setup: suggestSetup(source),
       warm: null,
       maxTotal: WORKTREE_DEFAULTS.maxTotal,
+      ...(added ? { addedAt: Date.now() } : {}),
     }
     this.data.repos[source] = created
     this.touch()
@@ -375,8 +378,9 @@ export class WorktreeService {
     patch: { name?: string | null; baseBranch?: string; setup?: string | null; warm?: number | null; maxTotal?: number },
     cwd?: string,
   ): Promise<{ repo: WorktreeRepoView; changed: boolean }> {
-    const repo = await this.ensureRepo(token, cwd)
-    const before = JSON.stringify(repo)
+    const isNew = !(await this.resolveSource(token, cwd)).repo
+    const repo = await this.ensureRepo(token, cwd, true)
+    const before = isNew ? "" : JSON.stringify(repo)
     if (patch.name !== undefined) {
       const name = patch.name?.trim()
       if (name && Object.values(this.data.repos).some((r) => r !== repo && r.name === name))
@@ -432,7 +436,10 @@ export class WorktreeService {
     if (repo.warm !== null) return repo.warm
     if (!this.host.settings().poolAuto) return 1
     const ups = this.data.events.filter((e) => e.repo === repo.source && e.type === "up").map((e) => e.t)
-    return poolTarget(ups, Date.now(), this.buildMs(repo.source) ?? POOL.buildMs, repo.maxTotal)
+    const now = Date.now()
+    // Added by hand: one stays warm for its first 30 days, used or not.
+    const floor = repo.addedAt && now - repo.addedAt <= POOL.dormant ? 1 : 0
+    return Math.max(poolTarget(ups, now, this.buildMs(repo.source) ?? POOL.buildMs, repo.maxTotal), floor)
   }
 
   // ---------- git, serialized per repo ----------
@@ -839,6 +846,11 @@ export class WorktreeService {
       }
     }
     await this.release(wt)
+  }
+
+  /** Runs the update job now: fetches the repos in use and fast-forwards your checkouts where it's safe. */
+  update() {
+    return this.runJob("update")
   }
 
   /** Builds warm worktrees now, at least `count` (default: the repo's pool size, and never less than one). */

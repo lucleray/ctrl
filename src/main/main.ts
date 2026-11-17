@@ -1594,6 +1594,22 @@ function registerIpc() {
   ipcMain.handle("worktrees:configure", (_e, source: string, patch: Parameters<WorktreeService["configure"]>[1]) =>
     worktrees.configure(source, patch).then(() => undefined, report),
   )
+  ipcMain.handle("worktrees:add", async () => {
+    if (!win) return null
+    const res = await dialog.showOpenDialog(win, {
+      title: "Add a repository",
+      message: "Pick a git checkout: worktrees are created from it",
+      properties: ["openDirectory"],
+      defaultPath: homedir(),
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    try {
+      return (await worktrees.configure(res.filePaths[0], {})).repo.source
+    } catch (err) {
+      toast({ icon: "alert", message: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  })
   ipcMain.handle("worktrees:forget", (_e, source: string) => worktrees.forget(source).then(() => undefined, report))
   ipcMain.handle("worktrees:run-job", (_e, id: WorktreeJobID) => worktrees.runJob(id).then(() => undefined, report))
   ipcMain.handle("worktrees:pick-root", async () => {
