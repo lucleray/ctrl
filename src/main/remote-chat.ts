@@ -51,10 +51,11 @@ export type ChatQueued = { id: string; text: string; images: number }
 const PAGE = 40
 const SUMMARY_MAX = 140
 /** Inputs that say what a tool call is about, most telling first (bash's description before its command). */
-const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name"]
+const SUMMARY_KEYS = ["description", "command", "filePath", "path", "pattern", "url", "query", "prompt", "id", "name", "message", "open", "run", "search"]
 const BACKGROUNDED: Record<string, Backgrounded> = { shell: "shell", subagent: "subagent" }
 
-function inputOf(input: unknown): Record<string, unknown> {
+/** A tool call's input as an object, from the object or JSON string a harness reports. */
+export function inputOf(input: unknown): Record<string, unknown> {
   if (typeof input === "string") {
     try {
       return JSON.parse(input)
@@ -65,7 +66,8 @@ function inputOf(input: unknown): Record<string, unknown> {
   return input && typeof input === "object" ? (input as Record<string, unknown>) : {}
 }
 
-function summarize(obj: Record<string, unknown>) {
+/** A tool call's one-liner: its most telling input, on one line, cut at SUMMARY_MAX; `full` is that input whole. */
+export function summarize(obj: Record<string, unknown>) {
   for (const key of SUMMARY_KEYS) {
     const v = obj[key]
     if (typeof v === "string" && v.trim()) {

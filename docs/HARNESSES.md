@@ -19,6 +19,8 @@ opencode: 1 TUI ◄── bridge plugin "navigate to ses_x" ──► opencode s
           (switched in place)                              (owns sessions + running turns)
 fx:       1 pty per open session: `fx --resume <id>`, up to 12 live
           (no server, no plugin API: ctrl reads ~/.fx/sessions, asks `fx sessions --live`)
+fx chat:  1 `fx acp` process per open session (Agent Client Protocol over its stdio), same cap
+          (ctrl sends prompts and answers permissions; fx streams the reply; src/main/fx-chat.ts)
 ```
 
 The difference comes from the harnesses themselves. opencode has a background service and a plugin API,
@@ -83,8 +85,12 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | `ctrl session send` | ✅ background | ⚠️ | fx: typed into its running fx process, or passed to a new one (`fx --resume <id> "<prompt>"`, in the background); CONFLICT when open in another terminal |
 | `ctrl` typing without sending (`--no-submit`, `reference`) | ⚠️ | ✅ | opencode: one TUI, so the session must be on screen (`--focus`) |
 | `ctrl session stop` | ✅ | ⚠️ | fx: Escape to its fx process, only for sessions open in ctrl |
-| Remote control: chat on the phone | ✅ | ❌ | fx sessions are listed (rename, move, archive) but open on the Mac only |
-| Chat view on the desktop (Settings → Appearance) | ✅ | ❌ | fx has no chat API: fx sessions keep their terminal |
+| Remote control: chat on the phone | ✅ | ⚠️ | fx: sessions created as a chat open on the phone like opencode ones; terminal ones are listed (rename, move, archive) but open on the Mac only |
+| Chat view on the desktop (Settings → Appearance) | ✅ | ⚠️ | opencode: any session, switched any time, the TUI underneath. fx: a session is a chat one or a terminal one for good, picked by the setting when it's created (`fx acp` holds the session like a terminal would, so it can't be both) |
+| Chat: queued messages (inbox) | ✅ | ⚠️ | fx: a message sent mid-turn steers; it waits in the inbox until fx takes it (fx has no queue yet: vercel-labs/fx#1786) |
+| Chat: question forms | ✅ | ❌ | fx 0.0.17 asks its questions in plain text over ACP (vercel-labs/fx#1879 brings forms) |
+| Chat: cost and context under the composer | ✅ | ⚠️ | fx: context from its `usage_update`, no cost |
+| Chat: PDFs attached to a message | ✅ | ⚠️ | fx: sent as an embedded resource, untested with fx 0.0.17 |
 | Welcome screen | ✅ | ✅ | First launch: shows what's installed, lets you pick when both are, install commands when neither is |
 
 ## Adding a harness
@@ -105,6 +111,8 @@ simply hidden for harnesses that don't implement it.
      sent mid-turn from a chat is read without waiting for it.
    - `chat`: its sessions as a chat, on the desktop (Settings → Appearance) and the phone. A `HarnessChat`
      reads pages of messages as ctrl's chat items, sends, stops and answers permissions; inbox, question forms,
-     images, model and stats are optional. `src/main/opencode-chat.ts` is the example, `src/main/chat.ts`
-     routes the chat views to it.
+     images, model and stats are optional, and `handles()` says which sessions are chat ones when not all are.
+     `src/main/opencode-chat.ts` reads opencode's client; `src/main/fx-chat.ts` runs `fx acp` and builds the
+     items from its updates (`src/main/acp/`, reusable for any agent that speaks ACP). `src/main/chat.ts`
+     routes the chat views to them.
 5. **Support table** above: add a column and fill in what works.

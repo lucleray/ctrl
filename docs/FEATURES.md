@@ -187,14 +187,14 @@ where it lives.
 ## Remote control (experimental)
 
 - Settings → Remote control (off by default) serves a web app on this Mac's Tailscale address (port 7337,
-  7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and shows the Board
+  7338 for dev runs), so your phone lists spaces and sessions, chats in opencode ones and fx chat ones, and shows the Board
   (`src/main/remote.ts`, `src/remote/`)
 - Settings shows a QR code of the link to scan with the phone's camera ("Can't scan? Show the link" reveals
   it with a Copy button), the MagicDNS name when there is one
 - The link carries a secret token that becomes an HttpOnly cookie on first visit; without Tailscale it only
   listens on localhost, and it follows Tailscale connecting or changing address (rechecked every 15s)
-- fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping one
-  says so. There's no terminal view on the phone
+- Terminal fx sessions are listed (with an fx tag, long press menu included) but open on the Mac only: tapping
+  one says so. fx sessions created as a chat open like opencode ones. There's no terminal view on the phone
 - Phone screens: Sessions and Board (the four columns stacked, one space at a time or all, saved on the
   phone; tap a card for its link, a session chip to open it). The top bar shows the connection dot (green
   when connected, red otherwise) right after "ctrl", and the Sessions / Board tabs on the right; it stays pinned while the list scrolls.
@@ -209,7 +209,7 @@ where it lives.
 - Long press a session (or ⋯ in its chat header) for its menu: open, new child
   session, rename, move to a space, open parent, detach from parent, archive (unarchive in Archived). Long press a space (or the ⋯ on an open one)
   for new session, fold and its board. Right-click does the same in a desktop browser
-- opencode sessions open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
+- opencode sessions, and fx sessions created as a chat, open as a chat: your messages as bubbles, the agent's replies as rendered markdown,
   tool calls as one-line summaries, updated live while a turn runs; Load earlier for older messages; a
   composer (Return = new line, ↑ sends, ■ stops the turn; opening the keyboard keeps the latest messages in
   view above it); permissions as Allow / Always / Deny; photos: + in the composer (camera or library) or
@@ -225,9 +225,21 @@ where it lives.
 
 ## Chat view (experimental)
 
-- Settings → Appearance → opencode sessions: Terminal (default) or Chat. Chat shows the opencode session on
+- Settings → Appearance → Sessions: Terminal (default) or Chat. Chat shows the opencode session on
   screen as a chat, like remote control's phone view, with the same reads (`src/main/remote-chat.ts`): your
   messages, the assistant's markdown, what it thought and its tool calls (`src/renderer/ChatView.tsx`)
+- fx sessions as a chat (fx ≥ 0.0.17): with the setting on Chat, a new fx session (⌘N, ⌘T, the space menu,
+  `ctrl session new`) is created over `fx acp` and runs as a chat for good, on the desktop and on the phone;
+  with the setting on Terminal it gets a terminal for good. Existing sessions keep what they were created
+  with. Each open chat session has its own `fx acp` process, which ctrl starts when the session opens or gets
+  a message and stops like a terminal's (closing the pane, the cap of 12 live fx processes, quitting); the
+  session is restored at launch like terminal ones. Space instructions and the ctrl instruction go in as the
+  session's system prompt. A message sent mid-turn steers the turn (shown in the inbox until fx takes it);
+  one with an image waits for the turn. Permissions are answered in the chat (Allow / Always / Deny); questions
+  come as plain text (fx has no forms over ACP yet). A session fx holds elsewhere (a terminal) can't open as
+  a chat. fx's startup notices are kept out of the reply (`src/main/fx-chat.ts`, `src/main/acp/`)
+- `ctrl session send` to an fx chat session sends through the chat; `--no-submit` is refused (nothing to type
+  into); `ctrl session stop` cancels its turn
 - Thinking and shell commands show in full in a box clamped to its first 3 lines: click it to unfold, click again
   to fold it back. Other tool calls are one line, or their full input clamped the same way when it's long
 - The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,

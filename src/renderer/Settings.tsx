@@ -1085,10 +1085,10 @@ export function Settings({
 
         <div className="setting">
           <div>
-            <div className="setting-title">opencode sessions</div>
+            <div className="setting-title">Sessions</div>
             <div className="setting-desc">
-              Show them in the TUI, or as a chat like on your phone. The TUI keeps running underneath. fx sessions
-              always use their terminal.
+              Show them in their terminal, or as a chat like on your phone. opencode sessions switch any time, with
+              the TUI running underneath. New fx sessions start as whichever is picked, and keep it.
             </div>
           </div>
           <div className="segmented">
