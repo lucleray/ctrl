@@ -374,6 +374,12 @@ where it lives.
   to the pool 10 minutes after it's ready; `ctrl worktree list` in the session makes it the session's for good
 - A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
   the error shows on the repo, and warm builds of that repo wait 30 minutes
+- `up --skip-setup`: when it has to be built, a checkout in seconds without running the setup command
+  (`setupSkipped`, a "no deps" chip in the resources panel, a line in the hint). A retry with it doesn't wait on a
+  full build, these builds don't count toward the pool's build time, and recycling installs them like any other
+- `ctrl worktree setup [<id|path>]` runs the repo's setup command in a worktree you hold (skipped or failed setup)
+  and clears the marker; a run outlives the call (90s timeout, run it again to keep waiting), shows a "setting up"
+  chip, and pauses warm builds of that repo while it runs
 - `ctrl worktree down` releases one: refused while it has uncommitted files, commits no remote has, or commits on
   a detached HEAD (`--force` discards; detached commits get a ref under `refs/ctrl/rescue/`)
 - Released worktrees are recycled (reset to the base branch, untracked files removed, setup run again, moved to

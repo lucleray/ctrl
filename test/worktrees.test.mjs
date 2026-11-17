@@ -58,6 +58,13 @@ function fakePool() {
     ofSession: (id) => worktrees.filter((w) => w.sessionID === id),
     name: (w) => w.repo.split("/").pop(),
     delivered: (wts) => calls.push(["delivered", wts.map((w) => w.id)]),
+    settingUp: (w) => !!w.settingUp,
+    setup: async (wt) => {
+      calls.push(["setup", wt.id])
+      if (wt.failing) return { worktree: { ...wt, setupFailed: true }, ran: true, detail: "ERR_PNPM_X\nlockfile is out of date" }
+      delete wt.setupSkipped
+      return { worktree: wt, ran: true }
+    },
     describe: async (w) => ({ ...w, name: pool.name(w), branch: w.branch ?? null, commit: "abc1234" }),
     find: (selector, cwd) => {
       const wt = worktrees.find((w) => w.id === selector || w.path === (selector ?? cwd))
@@ -151,6 +158,37 @@ describe("worktree handlers", () => {
     assert.equal(alive(), false)
     building({ worktree: { id: "w1", repo: "/src/app", path: "/wt/app/w1", status: "attached", sessionID: "ses_a" }, cold: true })
     await call
+  })
+
+  test("up with --skip-setup says what's missing, and its TIMEOUT suggests --skip-setup otherwise", async () => {
+    const { pool, run } = setup()
+    pool.up = async (repo, sessionID) => {
+      const wt = { id: "w1", repo: `/src/${repo}`, path: `/wt/${repo}/w1`, status: "attached", sessionID, baseCommit: "abc", warmedAt: Date.now(), attachedAt: Date.now(), since: 1, setupSkipped: true }
+      pool.worktrees.push(wt)
+      return { worktree: wt, cold: true }
+    }
+    const up = await run("worktree up", { repo: "app", "skip-setup": true })
+    assert.equal(up.setupSkipped, true)
+    assert.match(up.hint, /Dependencies aren't installed \(--skip-setup\).*run ctrl worktree setup w1/)
+    pool.up = () => new Promise(() => {})
+    await fails(run("worktree up", { repo: "app", timeout: 5 }), "TIMEOUT", /Add --skip-setup/)
+    await assert.rejects(run("worktree up", { repo: "app", timeout: 5, "skip-setup": true }), (err) => err.code === "TIMEOUT" && !/Add --skip-setup/.test(err.extra.hint))
+  })
+
+  test("setup installs in the worktree you name or are in, says when it failed, and times out like up", async () => {
+    const { pool, run } = setup()
+    const a = await run("worktree up", { repo: "app" })
+    pool.worktrees[0].setupSkipped = true
+    const done = await run("worktree setup", { worktree: a.id })
+    assert.deepEqual([done.ran, done.setupSkipped, done.id], [true, undefined, "w1"])
+    assert.match(done.hint, /Set up \(npm ci\): dependencies are installed/)
+    pool.worktrees[0].failing = true
+    const failed = await run("worktree setup", {}, { opencodeSessionID: "ses_a", cwd: a.path })
+    assert.equal(failed.setupFailed, true)
+    assert.match(failed.hint, /failed \(npm ci\): ERR_PNPM_X \| lockfile is out of date/)
+    pool.setup = () => new Promise(() => {})
+    await fails(run("worktree setup", { worktree: a.id, timeout: 5 }), "TIMEOUT", /run the same command again/)
+    await fails(run("worktree setup", { worktree: "nope" }), "NOT_FOUND")
   })
 
   test("list shows the session's worktrees by default, everything with --all or outside a session", async () => {

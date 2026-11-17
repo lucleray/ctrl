@@ -816,7 +816,7 @@ export const COMMANDS: CommandSpec[] = [
     args: [
       { name: "repo", type: "string", positional: true, required: true, placeholder: "<repo>", description: "Path of a git checkout, the name of a repo ctrl manages (`ctrl worktree config`), or owner/repo on GitHub" },
       { name: "session", type: "string", description: "Session that holds it (selectors as for <session>); default `self`" },
-      { name: "skip-setup", type: "bool", description: "When it has to be built: don't run the repo's setup command (e.g. offline)" },
+      { name: "skip-setup", type: "bool", description: "When it has to be built: don't run the repo's setup command, for a checkout in seconds (reading, reviewing, editing); `ctrl worktree setup` installs later" },
       { name: "timeout", type: "int", default: 90000, description: "Give up waiting for a build after this many ms (TIMEOUT); the build goes on, run the same command again to keep waiting" },
     ],
     returns: "Worktree & {cold:boolean, hint?:string}",
@@ -824,8 +824,25 @@ export const COMMANDS: CommandSpec[] = [
       "ctrl worktree up ~/code/acme-app",
       'cd "$(ctrl worktree up ~/code/acme-app | jq -r .data.path)" && git switch -c my-feature',
       "ctrl worktree up vercel/next.js",
+      "ctrl worktree up ~/code/acme-app --skip-setup",
       "ctrl worktree up acme-app --fields id,path,branch",
     ],
+    mutates: true,
+  },
+  {
+    name: "worktree setup",
+    summary: "Runs the repo's setup command (installs dependencies) in a worktree you hold",
+    details: [
+      "For a worktree taken with --skip-setup (`setupSkipped`), or whose setup failed (`setupFailed`). Clears those once it succeeds.",
+      "Waits for the command. A run outlives this call: after a TIMEOUT (90s by default) or a killed command, run the same command again to keep waiting for it.",
+      "While it runs, no warm build of that repo starts, so nothing competes with it.",
+    ],
+    args: [
+      { name: "worktree", type: "string", positional: true, placeholder: "[<id|path>]", description: "Worktree id or path (default: the worktree the current folder is in)" },
+      { name: "timeout", type: "int", default: 90000, description: "Give up waiting after this many ms (TIMEOUT); the command goes on, run this again to keep waiting" },
+    ],
+    returns: "Worktree & {ran:boolean, hint:string}",
+    examples: ["ctrl worktree setup k3x9qd", "ctrl worktree setup"],
     mutates: true,
   },
   {
@@ -1004,6 +1021,8 @@ export const OBJECTS: Record<string, string> = {
   warmedAt: number | null    // when it was last brought up to the base branch (ms)
   attachedAt: number | null
   setupFailed?: true         // the repo's setup command failed in it: run it yourself
+  setupSkipped?: true        // taken with --skip-setup: dependencies not installed (ctrl worktree setup)
+  settingUp?: true           // ctrl worktree setup is running in it
 }`,
   WorktreeRepo: `{
   source: string             // your own checkout: worktrees are created from it

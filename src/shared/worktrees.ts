@@ -28,6 +28,8 @@ export type Worktree = {
   undelivered?: boolean
   /** Its setup command failed (cold builds are handed out anyway, so the agent can fix the install) */
   setupFailed?: boolean
+  /** Built with --skip-setup: the repo's setup command hasn't run in it yet (`ctrl worktree setup` runs it) */
+  setupSkipped?: boolean
 }
 
 export type WorktreeRepoConfig = {
@@ -51,8 +53,8 @@ export const WORKTREE_DEFAULTS = {
 export type WorktreeEvent =
   /** A worktree was taken. warm: straight from the pool; ms: how long `up` took */
   | { t: number; repo: string; type: "up"; warm: boolean; ms: number }
-  /** A worktree was built or recycled in ms */
-  | { t: number; repo: string; type: "build" | "reset"; ms: number; ok: boolean }
+  /** A worktree was built or recycled in ms. skipped: built without the setup command, so not a build time to size the pool by */
+  | { t: number; repo: string; type: "build" | "reset"; ms: number; ok: boolean; skipped?: true }
 
 export type WorktreeJobID = "pool" | "cleanup" | "update"
 

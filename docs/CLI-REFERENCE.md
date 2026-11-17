@@ -18,7 +18,7 @@
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
 - **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
-- **worktree**: [`worktree up`](#worktree-up) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup) · [`worktree update`](#worktree-update)
+- **worktree**: [`worktree up`](#worktree-up) · [`worktree setup`](#worktree-setup) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup) · [`worktree update`](#worktree-update)
 - **events**: [`events`](#events)
 
 Aliases: `status` = `app status` · `focus` = `session focus` · `ref` = `session ref` · `ls` = `session list`
@@ -1079,7 +1079,7 @@ ctrl worktree up <repo> [--session <session>] [--skip-setup] [--timeout <n>]
 |---|---|
 | `<repo>` | Path of a git checkout, the name of a repo ctrl manages (`ctrl worktree config`), or owner/repo on GitHub · required |
 | `--session <session>` | Session that holds it (selectors as for <session>); default `self` |
-| `--skip-setup / --no-skip-setup` | When it has to be built: don't run the repo's setup command (e.g. offline) |
+| `--skip-setup / --no-skip-setup` | When it has to be built: don't run the repo's setup command, for a checkout in seconds (reading, reviewing, editing); `ctrl worktree setup` installs later |
 | `--timeout <n>` | Give up waiting for a build after this many ms (TIMEOUT); the build goes on, run the same command again to keep waiting · default: 90000 |
 
 **Returns:** `Worktree & {cold:boolean, hint?:string}`
@@ -1088,7 +1088,32 @@ ctrl worktree up <repo> [--session <session>] [--skip-setup] [--timeout <n>]
 ctrl worktree up ~/code/acme-app
 cd "$(ctrl worktree up ~/code/acme-app | jq -r .data.path)" && git switch -c my-feature
 ctrl worktree up vercel/next.js
+ctrl worktree up ~/code/acme-app --skip-setup
 ctrl worktree up acme-app --fields id,path,branch
+```
+
+### worktree setup
+
+Runs the repo's setup command (installs dependencies) in a worktree you hold *(changes state)*
+
+```text
+ctrl worktree setup [<id|path>] [--timeout <n>]
+```
+
+- For a worktree taken with --skip-setup (`setupSkipped`), or whose setup failed (`setupFailed`). Clears those once it succeeds.
+- Waits for the command. A run outlives this call: after a TIMEOUT (90s by default) or a killed command, run the same command again to keep waiting for it.
+- While it runs, no warm build of that repo starts, so nothing competes with it.
+
+| Argument | Meaning |
+|---|---|
+| `[<id\|path>]` | Worktree id or path (default: the worktree the current folder is in) |
+| `--timeout <n>` | Give up waiting after this many ms (TIMEOUT); the command goes on, run this again to keep waiting · default: 90000 |
+
+**Returns:** `Worktree & {ran:boolean, hint:string}`
+
+```bash
+ctrl worktree setup k3x9qd
+ctrl worktree setup
 ```
 
 ### worktree down
@@ -1304,6 +1329,8 @@ ctrl events [--type <type>...] [--session <session>...]
   warmedAt: number | null    // when it was last brought up to the base branch (ms)
   attachedAt: number | null
   setupFailed?: true         // the repo's setup command failed in it: run it yourself
+  setupSkipped?: true        // taken with --skip-setup: dependencies not installed (ctrl worktree setup)
+  settingUp?: true           // ctrl worktree setup is running in it
 }
 ```
 
