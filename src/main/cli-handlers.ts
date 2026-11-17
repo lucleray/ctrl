@@ -68,6 +68,8 @@ export type CliHost = {
   }): Promise<{ id: string } | { pending: true; terminal: string; prompted?: boolean }>
   openSession(sessionID: string): void
   renameSession(sessionID: string, title: string): Promise<void>
+  /** fx: a rename waits to be written into the session's own files (fx ≤ 0.0.16); false when ctrl keeps it */
+  fxTitleWaits?(sessionID: string): boolean
   /** Moves it with the descendants that shared its space; returns those descendants. */
   move(sessionID: string, spaceID: string | null): string[]
   /** No toast: the CLI returns an undo command instead (principle 8) */
@@ -912,7 +914,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       if (!title) throw new CliError("USAGE", "Title can't be empty")
       const changed = s.title !== title
       if (changed) await host.renameSession(s.id, title)
-      const pending = s.harness === "fx" && !!store.data.titles[s.id]
+      const pending = s.harness === "fx" && !!store.data.titles[s.id] && (host.fxTitleWaits?.(s.id) ?? true)
       return { ...sessionView(byID(s.id) ?? s), title, changed, ...(pending ? { pending } : {}) }
     },
     "session move": (args, req) => {

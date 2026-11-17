@@ -60,8 +60,9 @@ When asked to publish, all the way to the user's installed app:
 - ctrl runs two harnesses, opencode and fx: keep [docs/HARNESSES.md](docs/HARNESSES.md)'s support table current
   when a feature works differently (or not at all) for one of them.
 - The `ctrl` CLI is for agents: follow the principles in [docs/CLI.md](docs/CLI.md) for every command you add.
-- fx refuses session files others can read: anything written under `~/.fx/sessions` must stay `0600`.
-- Test runs must not leave fx sessions behind in `~/.fx/sessions` (fx has no profile override); delete the ones
-  you create.
+- fx refuses session files others can read: anything written under `~/.fx/sessions` or `~/.fx/agents` must
+  stay `0600`.
+- Test runs must not leave fx sessions behind in `~/.fx/sessions`: run them with `CTRL_FX_HOME` (ctrl passes it
+  to fx as `FX_HOME`), or delete the ones you create. fx reads agent profiles from `~/.fx/agents` either way.
 - Add tests for what you change. They must stay fast (`npm test` well under a second) and never flaky: follow
   [docs/TESTING.md](docs/TESTING.md).

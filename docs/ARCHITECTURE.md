@@ -21,7 +21,7 @@ How ctrl works inside. For what it does, see [FEATURES.md](FEATURES.md); for run
 │ node-pty         ──► `opencode` TUI (one process)       │
 │ ws://127.0.0.1:N ◄─► bridge plugin inside the TUI       │
 │ ~/.fx/sessions   ──► fx sessions (scan + fs watcher)    │
-│ node-pty         ──► `fx resume` (one per open session) │
+│ node-pty         ──► `fx --resume` (one per session)    │
 └─────────────────────────────────────────────────────────┘
         ▲ IPC                                  │ navigate / route
 ┌─ renderer ─────────────┐               ┌─ bridge/tui.ts ──────┐
@@ -59,34 +59,46 @@ supports: [HARNESSES.md](HARNESSES.md).
 
 ## fx
 
-fx has no server and no plugin API, so ctrl works from its files and its terminal output.
+fx has no server and no plugin API, so ctrl works from its files, its CLI and its terminal output.
 
 ```text
-~/.fx/sessions/<id>/ ── session.json (title, folder) ┐
-                     ── events.jsonl (last line)     ├─► src/main/fx.ts ─► sidebar
-                     ── recovery.json (turn running) │
-                     ── owner.live (pid)             ┘
-fx process in a pty ── OSC 7501 status reports ─────────► running / needs you / failed
+~/.fx/sessions/v2/index.jsonl ── session list (title, folder) ┐
+~/.fx/sessions/v2/<id>/log.jsonl ── turn lines at its end     ├─► src/main/fx.ts ─► sidebar
+`fx sessions --live --json` + lsof on <id>/lock ── who has it ┘
+fx process in a pty ── OSC 7501 status reports ─────────────────► running / needs you / failed
 ```
 
-- **List:** one scan on launch, then a recursive fs watcher re-reads just the session folder that changed.
-  Sessions fx creates but never uses stay hidden.
-- **Polling live sessions:** fx keeps `events.jsonl` open while it runs, and macOS only reports those
-  appends once the file is closed. So sessions with a live fx process (`owner.live`) are also checked on a
-  timer, one stat each (2s in main, 5s in the indexer), and re-read when their log grew.
+- **Two layouts** (`src/main/fx-store.ts`): fx 0.0.17 keeps sessions in `v2/` (an index with one line per
+  change, and one append-only log per session, written step by step). Older sessions sit in per-session
+  folders (`session.json`, `events.jsonl`, `recovery.json`, `owner.live`) until fx opens them once and
+  converts them to `v2/` under the same id. ctrl reads both; the v2 copy wins.
+- **List:** one scan on launch, then a recursive fs watcher re-reads just the session that changed. Subagent
+  sessions (`role: child`) are skipped.
+- **Polling:** fx keeps its logs and v2's index open and appends to them, and macOS only reports those writes
+  once the file is closed. So a 2s timer stats the index and the logs of sessions an fx process has open, and
+  re-reads what grew (the indexer does the same every 5s).
+- **Who has a session open:** v2 has no pid file, only a flock on `<id>/lock`. `fx sessions --live --json`
+  lists the open sessions and their subagents, and one `lsof` on those lock files says which process holds
+  each. Both run off the main thread, only while something may be live (an fx ctrl runs, a session that was
+  open, or the index changed). That's how `/new` and `/resume` inside fx move the sidebar highlight
+  (`claim()`), how a new session joins the space it was started from, and how sessions open in another
+  terminal are marked.
 - **Status:** OSC 7501 (Program Status Protocol) reports from the processes ctrl runs give running, needs you
-  and failed (fx 0.0.13 sends none). Otherwise `recovery.json` says a turn is in progress: fx writes a turn
-  to `events.jsonl` only once it ends, and keeps the one in flight in `recovery.json` until then (the poller
-  also notices that file appearing or going away). Read state is
-  ctrl's own (`viewed` in `state.json`); turns that ended before ctrl first saw fx count as read.
-- **Processes:** `src/main/fx-terminals.ts` runs one `fx resume --id <id>` per open session, up to 12, and
-  closes the least recently used idle ones past that. `owner.live` tells which session a process has, so
-  `/new` and `/resume` inside fx move the sidebar highlight (`claim()`), and a new session joins the space it
-  was started from once fx reports its id.
+  and failed. Otherwise a turn line with no end (`turn_started`, `item`) in a session some process has open is
+  running. Read state is ctrl's own (`viewed` in `state.json`); turns that ended before ctrl first saw fx count
+  as read.
+- **Processes:** `src/main/fx-terminals.ts` runs one `fx --resume <id>` per open session, up to 12, and
+  closes the least recently used idle ones past that. A first prompt goes in as an argument (`fx "<prompt>"`),
+  since fx creates a session only at its first prompt.
+- **Instructions:** fx takes none per session, so new sessions start in an agent profile (`fx --profile`)
+  that ctrl writes to `~/.fx/agents` with the space's instructions and the ctrl instruction
+  (`src/main/fx-profiles.ts`). fx keeps a session's profile when it resumes it and rereads the files each time.
 - **Quit and relaunch:** fx processes die with ctrl. The open ones are saved (`open` in `state.json`) and
-  resumed at launch, one at a time in the background.
-- **Writes:** renames go into `session.json` (kept `0600`, fx refuses files others can read) only once no
-  fx process has the session, since fx rewrites it while it runs. Deletes move the folder to the Trash.
+  resumed at launch, one at a time in the background; fx sends an interrupted request again on its own.
+- **Writes:** v1 renames go into `session.json` (kept `0600`, fx refuses files others can read) only once no
+  fx process has the session. v2 keeps titles in its checksummed log, which only fx writes, so ctrl keeps the
+  rename in `state.json`. Deletes move the session folder (and a v2 session's subagent folders) to the Trash;
+  fx drops a v2 session whose folder is gone from its list on its own.
 
 ## Search
 
@@ -97,11 +109,12 @@ opencode ──events──► indexer (utility process) ──writes──► s
    ▲   └─ messages newer than each session's watermark            │
    └────────────── session.list on launch (catch-up)              ▼
 fx ──fs watcher──► (same indexer)   main: read-only connection ◄── ⌘P query (~1ms)
-   └─ events.jsonl from each session's byte offset
+   └─ each session's log from its byte offset
 ```
 
-- **fx:** fx only appends to `events.jsonl`, so each session keeps a byte offset (`sessions.offset`) and a
-  pass reads only the new lines. A log that shrank is reindexed from scratch.
+- **fx:** fx only appends to a session's log, so each session keeps a byte offset (`sessions.offset`, and
+  which layout it counts in `sessions.watermark`) and a pass reads only the new lines. A log that shrank, or a
+  session fx converted to v2, is reindexed from scratch.
 
 - **Indexer** (`src/indexer/indexer.ts`) runs in an Electron utility process with its own opencode client and event
   stream. On launch it lists root sessions and indexes the ones whose `updated` moved since their last pass. Live,

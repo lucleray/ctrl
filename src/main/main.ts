@@ -1070,8 +1070,8 @@ const saveOpen = () => {
 
 /**
  * fx has no background service, so its processes die with ctrl. Bring back the fx sessions that
- * were open, in the background one at a time, and whichever session was on screen. `fx resume`
- * reprints each conversation.
+ * were open, in the background one at a time, and whichever session was on screen. `fx --resume`
+ * reprints each conversation, and fx 0.0.17+ sends a request that quitting interrupted again on its own.
  */
 const restoreOpen = () => {
   const { sessions: open, current } = store.data.open
@@ -1944,6 +1944,7 @@ const cliHost: CliHost = {
     newSession(spaceID, directory, harness, { focus, model, parentID, prompt }),
   openSession,
   renameSession,
+  fxTitleWaits: (id) => fx.canWriteTitle(id),
   move: (id, spaceID) => {
     const moved = store.assignTree(id, spaceID)
     if (store.data.archived[id]) store.setArchived([id], false)

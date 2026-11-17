@@ -154,12 +154,13 @@ Wherever a command takes a session or a space, it also takes a selector:
 - **`session new` always replies within 12s,** under the default `--timeout`: creating, renaming and
   prompting share one budget. If the harness is stuck, the `TIMEOUT` error's `hint` says whether the session
   was created and what to run next, instead of the CLI waiting silently.
-- **New fx sessions:** fx only reports a session id once its process is up, so `session new` waits for it.
-  If it doesn't come within that budget, `data` is `{pending:true, terminal}`.
-- **fx turns:** fx writes a turn to `events.jsonl` only when it ends, and keeps the turn in progress in
-  `recovery.json`. ctrl reads that file, so a prompted fx session shows `running` within a second or two,
-  `session wait --for done` works, and `session read` shows `Turn N · running`. fx 0.0.13 sends no OSC 7501
-  status reports, so `needs-input` and `failed` never show: a turn waiting on a permission stays `running`.
+- **New fx sessions:** fx (0.0.17+) creates a session at its first prompt, so `session new --prompt` passes
+  the prompt to fx as an argument and waits for the id (a second or two). Without `--prompt`, or if the id
+  doesn't come within that budget, `data` is `{pending:true, terminal}`.
+- **fx turns:** fx 0.0.17 logs each step of a turn as it happens, so a prompted fx session shows `running`
+  within a second or two, `session wait --for done` works, and `session read` shows the turn so far.
+  `needs-input` and `failed` come from fx's OSC 7501 status reports, so only for sessions open in ctrl: a
+  session open in another terminal that waits on a permission stays `running`.
 - **No session deletes:** agents archive (`session archive`, `space archive-all`). To delete, the user
   right-clicks the session in the sidebar.
 

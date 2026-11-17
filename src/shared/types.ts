@@ -38,7 +38,7 @@ export type Space = {
   fxModel?: ModelRef
   /** Off: the space doesn't set a model and the app default applies. Unset = on, for older state. */
   modelEnabled?: boolean
-  /** Extra instructions attached to every new opencode session in this space (fx has no way to take them) */
+  /** Extra instructions attached to every new session in this space (fx: through an agent profile, src/main/fx-profiles.ts) */
   instructions?: string
   /** ctrl instruction (CTRL_INSTRUCTIONS) on this space's opencode sessions; unset = the app setting */
   ctrlInstructions?: boolean
