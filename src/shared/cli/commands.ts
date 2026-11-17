@@ -897,7 +897,7 @@ export const COMMANDS: CommandSpec[] = [
   {
     name: "worktree prewarm",
     summary: "Starts building warm worktrees for a repo now, without waiting for them",
-    details: ["Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way."],
+    details: ["Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way, and `waiting` says why more aren't yet (e.g. queued behind other repos' builds)."],
     args: [
       { name: "repo", type: "string", positional: true, required: true, placeholder: "<repo>", description: "Path of a git checkout, or a managed repo's name" },
       { name: "count", type: "int", description: "Warm worktrees to have" },
@@ -1015,6 +1015,7 @@ export const OBJECTS: Record<string, string> = {
   maxTotal: number
   counts: {ready, attached, building, released, total}
   usage: {taken, instant, buildMs, lastTaken}   // last 7 days: worktrees taken, share that came warm (0-1), median build time
+  waiting?: string           // why it's short of warm worktrees with none being built (queued, backoff, cap)
   error?: string             // why the last build failed
   updated?: {at, result}     // what the update job last did to the checkout
 }`,

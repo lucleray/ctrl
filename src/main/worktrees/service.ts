@@ -492,6 +492,8 @@ export class WorktreeService {
     const work = this.build(repo, wt, skipSetup).finally(() => {
       this.builds.delete(wt.id)
       if (pooled) this.tasks--
+      // Other repos' `waiting` depends on the free slots.
+      this.cached = undefined
       this.rebalanceAll()
     })
     this.builds.set(wt.id, work)
@@ -558,6 +560,7 @@ export class WorktreeService {
       .catch(() => {})
       .finally(() => {
         this.tasks--
+        this.cached = undefined
         this.rebalanceAll()
       })
     this.touch()
@@ -692,6 +695,21 @@ export class WorktreeService {
       }
       return
     }
+  }
+
+  /** Why the pool is short of its target and rebalance can't add to it yet (mirrors its checks), if it is. */
+  private waiting(repo: RepoState): string | undefined {
+    const all = this.of(repo.source)
+    const inflight = all.filter((w) => (w.status === "building" && !w.sessionID) || w.status === "resetting").length
+    const warm = all.filter((w) => w.status === "ready").length + inflight
+    if (warm >= Math.max(this.target(repo), this.floors.get(repo.source) ?? 0) || inflight >= POOL.parallel) return
+    if (this.tasks >= MAX_TASKS)
+      return `Queued: ${MAX_TASKS} warm builds are already running (at most ${MAX_TASKS} at a time), it starts when one ends`
+    if (repo.failedAt && Date.now() - repo.failedAt < BACKOFF_MS)
+      return `Paused after a failed build, retrying ${new Date(repo.failedAt + BACKOFF_MS).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (prewarm retries now)`
+    const released = all.some((w) => w.status === "released")
+    if (!released && all.filter((w) => w.status !== "removing").length >= repo.maxTotal)
+      return `At its cap of ${repo.maxTotal} worktrees on disk (--max-total)`
   }
 
   private rebalanceAll() {
@@ -969,6 +987,7 @@ export class WorktreeService {
     const count = (...status: Worktree["status"][]) => all.filter((w) => status.includes(w.status)).length
     const ups = this.data.events.filter((e): e is Extract<WorktreeEvent, { type: "up" }> => e.repo === repo.source && e.type === "up")
     const recent = ups.filter((e) => now - e.t <= POOL.window)
+    const waiting = this.waiting(repo)
     return {
       source: repo.source,
       ...(repo.name ? { name: repo.name } : {}),
@@ -992,6 +1011,7 @@ export class WorktreeService {
         buildMs: this.buildMs(repo.source),
         lastTaken: ups.length ? ups[ups.length - 1].t : null,
       },
+      ...(waiting ? { waiting } : {}),
       ...(repo.error ? { error: repo.error } : {}),
       ...(repo.updated ? { updated: repo.updated } : {}),
     }

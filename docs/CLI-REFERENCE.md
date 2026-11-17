@@ -1182,7 +1182,7 @@ Starts building warm worktrees for a repo now, without waiting for them *(change
 ctrl worktree prewarm <repo> [--count <n>]
 ```
 
-- Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way.
+- Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way, and `waiting` says why more aren't yet (e.g. queued behind other repos' builds).
 
 | Argument | Meaning |
 |---|---|
@@ -1320,6 +1320,7 @@ ctrl events [--type <type>...] [--session <session>...]
   maxTotal: number
   counts: {ready, attached, building, released, total}
   usage: {taken, instant, buildMs, lastTaken}   // last 7 days: worktrees taken, share that came warm (0-1), median build time
+  waiting?: string           // why it's short of warm worktrees with none being built (queued, backoff, cap)
   error?: string             // why the last build failed
   updated?: {at, result}     // what the update job last did to the checkout
 }

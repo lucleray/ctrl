@@ -248,6 +248,20 @@ describe("WorktreeService", () => {
     service.stop()
   })
 
+  test("a repo added while 3 others build says it's queued, then builds once a slot frees up", async () => {
+    const slow = [makeRepo(), makeRepo(), makeRepo()]
+    const late = makeRepo()
+    const { service } = makeService()
+    for (const source of slow) await service.configure(source, { setup: "sleep 1" })
+    const { repo } = await service.configure(late, { setup: "" })
+    assert.deepEqual([repo.counts.building, repo.setup], [0, null])
+    assert.match(repo.waiting, /^Queued/)
+    await until(() => ready(service, late).length === 1, "the queued repo's warm worktree")
+    assert.equal(service.view().repos.find((r) => r.source === late).waiting, undefined)
+    await settled(service)
+    service.stop()
+  })
+
   test("a folder another ctrl owns is never used: this one falls back to its own", async () => {
     const shared = mkdtempSync(join(tmp, "shared-"))
     const a = makeService({ root: shared })
