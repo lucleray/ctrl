@@ -107,3 +107,4 @@ reference other sessions, change settings and switch what's on screen.
 - [CLI](docs/CLI.md): the `ctrl` command line for agents
 - [Architecture](docs/ARCHITECTURE.md): how it works inside
 - [Development](docs/DEVELOPMENT.md): run, release, debug hooks, screenshots
+- [Testing](docs/TESTING.md): fast, never-flaky tests, and how to add them

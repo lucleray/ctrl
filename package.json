@@ -41,6 +41,7 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.4",
     "markdown-it": "^15.0.3",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",

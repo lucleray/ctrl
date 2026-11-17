@@ -1,16 +1,22 @@
 // The `ctrl` command handlers (src/main/cli-handlers.ts) against a real Store and a fake host: spaces,
 // session lookup and listing, settings. No app, no harness. Run with `npm test`.
 import assert from "node:assert/strict"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { before, describe, test } from "node:test"
 import { load, tmpDir } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-handlers-test-")
-let createHandlers, Store, COMMANDS
+let createHandlers, Store, COMMANDS, referenceMarkdown
 
 before(async () => {
-  ;[{ createHandlers }, { Store }, { COMMANDS }] = await load(tmp, "src/main/cli-handlers.ts", "src/main/store.ts", "src/shared/cli/commands.ts")
+  ;[{ createHandlers }, { Store }, { COMMANDS }, { referenceMarkdown }] = await load(
+    tmp,
+    "src/main/cli-handlers.ts",
+    "src/main/store.ts",
+    "src/shared/cli/commands.ts",
+    "src/shared/cli/docs.ts",
+  )
 })
 
 const session = (id, extra = {}) => ({ id, harness: "opencode", title: id, directory: "/w", status: "idle", updated: 1, ...extra })
@@ -54,6 +60,10 @@ test("every command has a handler, and every handler a command", () => {
   const remote = COMMANDS.filter((c) => !c.local).map((c) => c.name)
   assert.deepEqual(remote.filter((n) => !handlers[n]), [], "commands without a handler")
   assert.deepEqual(Object.keys(handlers).filter((n) => !remote.includes(n)), [], "handlers without a command")
+})
+
+test("docs/CLI-REFERENCE.md is up to date", () => {
+  assert.ok(referenceMarkdown() === readFileSync("docs/CLI-REFERENCE.md", "utf8"), "run `npm run cli-docs` and commit the result")
 })
 
 describe("spaces", () => {
