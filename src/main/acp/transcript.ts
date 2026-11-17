@@ -79,7 +79,11 @@ export class Transcript {
     const item = this.current
     this.current = null
     this.lastUser = null
-    if (!item) return false
+    if (!item) {
+      // Failed before saying anything: the error still needs a reply to sit on.
+      if (error) this.items.push({ id: `a${++this.seq}`, kind: "assistant", time: this.time(), live: false, parts: [], error })
+      return !!error
+    }
     item.live = false
     if (error) item.error = error
     // Nothing came back and nothing went wrong: no empty reply.
