@@ -1068,24 +1068,26 @@ ctrl worktree up <repo> [--session <session>] [--skip-setup] [--timeout <n>]
 ```
 
 - Instant when the repo's pool has a warm worktree. Otherwise it's built now (checkout + the repo's setup command), which can take minutes: `cold` is true.
-- <repo> is the path of a git checkout on this Mac (anywhere inside it works), or the name of a repo ctrl already manages. A repo seen for the first time is registered on its own: base branch from origin, setup command from its lockfile.
+- <repo> is the path of a git checkout on this Mac (anywhere inside it works), the name of a repo ctrl already manages, or a GitHub repo (owner/repo or its URL): the checkout ctrl manages with that origin, else ctrl clones it once (gh, else git). A repo seen for the first time is registered on its own: base branch from origin, setup command from its lockfile.
 - The worktree is attached to the session (default: the one you run in) and shows in its resources. Each call takes another worktree, so a session can hold several, of one repo or of many: `ctrl worktree list` shows the ones it holds.
 - It's on a detached HEAD: create a branch before committing (`git switch -c <branch>`). Work in it with its `path` as working directory; the session itself doesn't move.
 - Released when its session is archived or deleted, or with `ctrl worktree down`.
-- A build outlives this call: after a TIMEOUT (or a killed command), run it again to keep waiting for the same worktree.
+- When the pool is empty it takes over the pool's build closest to done, and while a session waits on a build, no other build of that repo starts.
+- A build outlives this call: after a TIMEOUT (90s by default, below most agents' own command limits) or a killed command, run the same command again to keep waiting for the same worktree. One your session never asks for again goes back to the pool 10 minutes after it's ready, unless you changed something in it.
 
 | Argument | Meaning |
 |---|---|
-| `<repo>` | Path of a git checkout, or the name of a repo ctrl manages (`ctrl worktree config`) · required |
+| `<repo>` | Path of a git checkout, the name of a repo ctrl manages (`ctrl worktree config`), or owner/repo on GitHub · required |
 | `--session <session>` | Session that holds it (selectors as for <session>); default `self` |
 | `--skip-setup / --no-skip-setup` | When it has to be built: don't run the repo's setup command (e.g. offline) |
-| `--timeout <n>` | Give up waiting for a build after this many ms (TIMEOUT); the build goes on · default: 600000 |
+| `--timeout <n>` | Give up waiting for a build after this many ms (TIMEOUT); the build goes on, run the same command again to keep waiting · default: 90000 |
 
 **Returns:** `Worktree & {cold:boolean, hint?:string}`
 
 ```bash
 ctrl worktree up ~/code/acme-app
 cd "$(ctrl worktree up ~/code/acme-app | jq -r .data.path)" && git switch -c my-feature
+ctrl worktree up vercel/next.js
 ctrl worktree up acme-app --fields id,path,branch
 ```
 

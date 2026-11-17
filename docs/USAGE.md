@@ -79,7 +79,8 @@ create or remove one yourself.
 ```text
 ctrl worktree up ~/code/app ──► pool has a warm one? ──yes──► yours, right away
                                         │ no
-                                        └─► built now (checkout + install), minutes for a big repo
+                                        └─► one being built for the pool, or built now (checkout + install),
+                                            minutes for a big repo
 session archived ──► its worktrees go back to the pool (recycled) or are removed
 ```
 

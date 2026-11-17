@@ -44,13 +44,18 @@ ctrl worktree down <id|path>         # give one back early (refuses unsaved work
 
 - **Work in `data.path`:** pass it as the working directory of every command (or `cd` there). Your session
   doesn't move, and you can hold several worktrees, of one repo or of many: one per branch or PR you work on.
-- **`<repo>`** is the path of a git checkout on this Mac (anywhere inside it), or the name of a repo ctrl
-  already manages (`ctrl worktree config` lists them). A new repo is set up on its own.
+- **`<repo>`** is the path of a git checkout on this Mac (anywhere inside it), the name of a repo ctrl
+  already manages (`ctrl worktree config` lists them), or a GitHub repo (`owner/repo` or its URL): ctrl uses
+  the checkout it manages with that origin, or clones it once. Don't clone repos yourself into a temp folder.
+  A new repo is set up on its own.
 - **Every `up` takes another worktree.** To find the ones you already hold, use `ctrl worktree list` (or
   `worktrees` in `ctrl session get self`), not `up` again.
-- **Read `data.hint`:** it says how old the base commit is and how to get the very latest. `cold: true`
-  means it had to be built (checkout + install), which can take minutes. If the command times out or is
-  killed, run the same command again: it waits for the same build instead of starting another.
+- **Read `data.hint` and `data.cold`,** not just `data.path` (`jq -r .data.path` hides them): the hint says
+  how old the base commit is and how to get the very latest. `cold: true` means it had to be built (checkout
+  + install), which can take minutes.
+- **On `TIMEOUT` (after 90s) or a killed command, run the same `up` again**, and keep doing so: it waits for
+  the same build instead of starting another. Don't work around it with a worktree you found elsewhere; one
+  your session never asks for again goes back to the pool after 10 minutes.
 - **Reviewing a PR:** `up`, then `gh pr checkout <n>` in the worktree. If git says the branch is already
   checked out elsewhere, `ctrl worktree list --all` shows which session holds it: use that worktree if it's
   yours or your parent's, else review detached (`git fetch origin pull/<n>/head && git checkout --detach FETCH_HEAD`).

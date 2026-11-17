@@ -122,7 +122,7 @@ export type CliHost = {
   /** The worktree pool (src/main/worktrees) */
   worktrees: Pick<
     WorktreeService,
-    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup" | "update"
+    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "delivered" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup" | "update"
   >
   /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
   rootSession(sessionID: string): Promise<string | null>
@@ -1388,7 +1388,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       // A caller that's gone (killed by a tool timeout) or gave up doesn't get the worktree: its next `up` does.
       let alive = true
       void stream.closed.then(() => (alive = false))
-      const timeout = Math.max(1, Number(args.timeout ?? 600_000))
+      const timeout = Math.max(1, Number(args.timeout ?? 90_000))
       let timer: ReturnType<typeof setTimeout> | undefined
       const gaveUp = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
@@ -1435,6 +1435,8 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         }
         if (args.status?.length) items = items.filter((w) => args.status.includes(w.status))
         const p = page(items, args)
+        // The session knows their paths now: a worktree its `up` never got (a killed call) is its own from here.
+        if (scope === "session" && args.session === undefined) host.worktrees.delivered(p.items)
         return { ...p, items: (await Promise.all(p.items.map((w) => host.worktrees.describe(w)))).map(worktreeView), scope }
       }),
     "worktree config": async (args, req) =>
