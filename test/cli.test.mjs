@@ -3,15 +3,14 @@
 import * as esbuild from "esbuild"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { createRequire } from "node:module"
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { after, before, describe, test } from "node:test"
+import { before, describe, test } from "node:test"
 import { configs } from "../scripts/build.mjs"
+import { load, tmpDir } from "./helpers.mjs"
 
-const tmp = mkdtempSync(join(tmpdir(), "ctrl-test-"))
+const tmp = tmpDir("ctrl-cli-test-")
 const launcher = "dist/cli/ctrl"
 let createHandlers
 let Store
@@ -19,22 +18,8 @@ let Store
 before(async () => {
   const cli = configs.find((c) => c.outfile === "dist/cli/cli.cjs")
   await esbuild.build({ ...cli, logLevel: "warning" })
-  const handlers = join(tmp, "cli-handlers.cjs")
-  await esbuild.build({
-    entryPoints: ["src/main/cli-handlers.ts"],
-    outfile: handlers,
-    bundle: true,
-    platform: "node",
-    format: "cjs",
-    logLevel: "warning",
-  })
-  ;({ createHandlers } = createRequire(import.meta.url)(handlers))
-  const store = join(tmp, "store.cjs")
-  await esbuild.build({ entryPoints: ["src/main/store.ts"], outfile: store, bundle: true, platform: "node", format: "cjs", logLevel: "warning" })
-  ;({ Store } = createRequire(import.meta.url)(store))
+  ;[{ createHandlers }, { Store }] = await load(tmp, "src/main/cli-handlers.ts", "src/main/store.ts")
 })
-
-after(() => rmSync(tmp, { recursive: true, force: true }))
 
 /** A stand-in for the app's socket: `answer(req)` returns the reply, or undefined to never answer. */
 async function fakeApp(answer) {
@@ -109,7 +94,7 @@ const bigPrompt = [
   ...Array.from({ length: 2000 }, (_, i) => `- line ${i}: lorem ipsum <tag> \`code\` & more`),
 ].join("\n")
 
-describe("ctrl launcher", () => {
+describe("ctrl launcher", { concurrency: true }, () => {
   test("a CLI killed before it answers still replies in JSON, and points long values to stdin", async () => {
     const app = await fakeApp(() => ({ ok: true, data: { id: "ses_new" } }))
     const node = strictNode()
@@ -166,7 +151,7 @@ describe("ctrl launcher", () => {
 
   test("an app that never answers gives a TIMEOUT reply, not a silent wait", async () => {
     const app = await fakeApp(() => undefined)
-    const res = await run(["session", "new", "--prompt", "hi", "--timeout", "500"], { socket: app.path })
+    const res = await run(["session", "new", "--prompt", "hi", "--timeout", "200"], { socket: app.path })
     await app.close()
     assert.equal(res.code, 7, res.stdout)
     assert.equal(res.json.ok, false)
@@ -265,7 +250,7 @@ describe("session new handler", () => {
   })
 
   test("a harness that never creates the session times out within the budget", async () => {
-    const handlers = createHandlers(fakeHost({ newSession: never }), { sessionNewBudget: 300 })
+    const handlers = createHandlers(fakeHost({ newSession: never }), { sessionNewBudget: 50 })
     const started = Date.now()
     await assert.rejects(handlers["session new"](...req({ prompt: "go" })), (err) => {
       assert.equal(err.code, "TIMEOUT")
@@ -276,7 +261,7 @@ describe("session new handler", () => {
   })
 
   test("a prompt that never goes through times out and names the created session", async () => {
-    const handlers = createHandlers(fakeHost({ prompt: never }), { sessionNewBudget: 300 })
+    const handlers = createHandlers(fakeHost({ prompt: never }), { sessionNewBudget: 50 })
     await assert.rejects(handlers["session new"](...req({ space: "self", prompt: "go" })), (err) => {
       assert.equal(err.code, "TIMEOUT")
       assert.match(err.extra.hint, /ses_new was created/)
@@ -286,7 +271,7 @@ describe("session new handler", () => {
   })
 
   test("a rename that never finishes times out too", async () => {
-    const handlers = createHandlers(fakeHost({ renameSession: never }), { sessionNewBudget: 300 })
+    const handlers = createHandlers(fakeHost({ renameSession: never }), { sessionNewBudget: 50 })
     await assert.rejects(handlers["session new"](...req({ title: "t" })), { code: "TIMEOUT" })
   })
 })

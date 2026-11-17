@@ -110,3 +110,4 @@ keeps warm, attached to their session and released when you archive it.
 - [CLI](docs/CLI.md): the `ctrl` command line for agents
 - [Architecture](docs/ARCHITECTURE.md): how it works inside
 - [Development](docs/DEVELOPMENT.md): run, release, debug hooks, screenshots
+- [Testing](docs/TESTING.md): fast, never-flaky tests, and how to add them

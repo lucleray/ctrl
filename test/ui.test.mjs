@@ -1,0 +1,131 @@
+// Renderer components in a fake DOM (happy-dom), with a fake `window.ctrl`: what they show and what clicks
+// and keys do. No Electron, no browser. Run with `npm test`.
+import assert from "node:assert/strict"
+import { after, before, beforeEach, describe, test } from "node:test"
+import { key, loadUi, tmpDir, type } from "./helpers.mjs"
+
+const tmp = tmpDir("ctrl-ui-test-")
+let ui, Palette, Toasts
+
+const ctrl = {
+  hits: [],
+  calls: [],
+  search: async (q) => (ctrl.calls.push(["search", q]), { hits: ctrl.hits, status: { indexing: false, done: 1, total: 1 } }),
+  createSpace: async (name) => void ctrl.calls.push(["createSpace", name]),
+  onToast: (cb) => ((ctrl.toast = cb), () => {}),
+  onToastDismiss: (cb) => ((ctrl.dismiss = cb), () => {}),
+  undo: async (id) => void ctrl.calls.push(["undo", id]),
+  toastAction: async (id) => void ctrl.calls.push(["toastAction", id]),
+}
+
+before(async () => {
+  ui = await loadUi(tmp, ["src/renderer/Palette.tsx", "src/renderer/Toast.tsx"], ctrl)
+  ;[{ Palette }, { Toasts }] = ui.modules
+})
+
+after(() => ui.close())
+
+beforeEach(() => {
+  ctrl.calls = []
+  ctrl.hits = []
+})
+
+const session = (id, title, extra = {}) => ({ id, harness: "opencode", title, directory: "/Users/me/w/app", status: "idle", updated: 1, ...extra })
+const state = {
+  spaces: [{ id: "spc_1", name: "Work" }],
+  assignments: { ses_a: "spc_1" },
+  archived: { ses_old: 1 },
+  sessions: [session("ses_a", "Fix the build", { status: "running" }), session("ses_b", "Write docs"), session("ses_old", "Old build fix")],
+  settings: { shortcuts: {} },
+}
+
+/** A palette with its callbacks recorded. */
+function palette(props = {}) {
+  const calls = []
+  const rec = (name) => (...args) => calls.push([name, ...args])
+  const r = ui.render(
+    ui.h(Palette, { state, onClose: rec("close"), onOpen: rec("open"), onNew: rec("new"), onRevealSpace: rec("reveal"), ...props }),
+  )
+  const $ = (sel) => r.root.querySelector(sel)
+  const rows = () => [...r.root.querySelectorAll(".palette-item")].map((el) => el.querySelector(".palette-label").textContent)
+  return { ...r, calls, $, rows, input: $(".palette-input") }
+}
+
+describe("Palette", () => {
+  test("lists recent chats without archived ones, then quick actions", () => {
+    const p = palette()
+    assert.deepEqual(p.rows(), ["Fix the build", "Write docs", "New chat"])
+    assert.equal(p.$(".palette-hint").textContent, "Work")
+    p.unmount()
+  })
+
+  test("typing filters chats (archived last), spaces, and offers to create a space", async () => {
+    const p = palette()
+    type(ui.act, p.input, "build")
+    await ui.act(async () => {})
+    assert.deepEqual(p.rows(), ["Fix the build", "Old build fix", "Create space “build”"])
+    assert.deepEqual(ctrl.calls, [["search", "build"]])
+    type(ui.act, p.input, "work")
+    await ui.act(async () => {})
+    assert.ok(p.rows().includes("Work"))
+    assert.ok(!p.rows().some((r) => r.startsWith("Create space")), "no offer when the space exists")
+    p.unmount()
+  })
+
+  test("message hits show their snippet, after chats, skipping chats already listed", async () => {
+    ctrl.hits = [
+      { sessionID: "ses_b", title: "Write docs", role: "assistant", created: 1, snippet: "x" },
+      { sessionID: "ses_a", title: "Fix the build", role: "user", created: 1, snippet: "the \uE000flaky\uE001 test" },
+    ]
+    const p = palette({ initialQuery: "docs" })
+    await ui.act(async () => {})
+    assert.deepEqual(p.rows(), ["Write docs", "Fix the build", "Create space “docs”"])
+    assert.equal(p.$(".palette-detail").textContent, "You: the flaky test")
+    assert.equal(p.$("mark").textContent, "flaky")
+    p.unmount()
+  })
+
+  test("arrows and Enter open the selected chat; ^2 opens the second; Escape closes", () => {
+    const p = palette()
+    key(ui.act, p.input, "ArrowDown")
+    assert.equal(p.$(".palette-item.selected .palette-label").textContent, "Write docs")
+    key(ui.act, p.input, "Enter")
+    assert.deepEqual(p.calls, [["close"], ["open", "ses_b"]])
+    p.calls.length = 0
+    key(ui.act, p.input, "2", { ctrlKey: true })
+    assert.deepEqual(p.calls, [["close"], ["open", "ses_b"]])
+    p.calls.length = 0
+    key(ui.act, p.input, "Escape")
+    assert.deepEqual(p.calls, [["close"]])
+    p.unmount()
+  })
+
+  test("clicking “New chat” and “Create space” run them", async () => {
+    const p = palette()
+    ui.act(() => [...p.root.querySelectorAll(".palette-item")].at(-1).click())
+    assert.deepEqual(p.calls, [["close"], ["new", null]])
+    type(ui.act, p.input, "Ideas")
+    await ui.act(async () => {})
+    ui.act(() => [...p.root.querySelectorAll(".palette-item")].at(-1).click())
+    assert.deepEqual(ctrl.calls.at(-1), ["createSpace", "Ideas"])
+    p.unmount()
+  })
+})
+
+describe("Toasts", () => {
+  test("shows the newest toast, its undo, and goes away when dismissed", () => {
+    const r = ui.render(ui.h(Toasts, { onView: () => {}, onAction: () => {}, undoLabel: "⌘Z" }))
+    assert.equal(r.root.textContent, "")
+    ui.act(() => ctrl.toast({ id: "t1", message: "Archived “A”", icon: "archive", duration: null, undo: true }))
+    ui.act(() => ctrl.toast({ id: "t2", message: "Archived “B”", icon: "archive", duration: null, undo: true }))
+    assert.match(r.root.textContent, /Archived “B”/)
+    assert.doesNotMatch(r.root.textContent, /“A”/)
+    const undo = [...r.root.querySelectorAll("button")].find((b) => /Undo/.test(b.textContent))
+    ui.act(() => undo.click())
+    assert.deepEqual(ctrl.calls, [["undo", "t2"]])
+    ui.act(() => ctrl.toast({ id: "t3", message: "Hi", icon: "check", duration: null, undo: false }))
+    ui.act(() => ctrl.dismiss("t3"))
+    assert.equal(r.root.querySelector(".toast"), null)
+    r.unmount()
+  })
+})
