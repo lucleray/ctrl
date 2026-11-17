@@ -1305,12 +1305,15 @@ button {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  /* Each keeps its own height: stretched to the tallest, a wide screenshot gets squashed */
+  align-items: flex-end;
   gap: 6px;
   max-width: 85%;
 }
 
 .msg.user .photos img {
   display: block;
+  object-fit: contain;
   max-width: 220px;
   max-height: 260px;
   border-radius: 14px;

@@ -2949,6 +2949,8 @@ body.resizing .terminal-pane.active {
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  /* Each keeps its own height: stretched to the tallest, a wide screenshot gets squashed */
+  align-items: flex-end;
 }
 
 .chat-photos img,
@@ -2956,6 +2958,10 @@ body.resizing .terminal-pane.active {
   max-width: 220px;
   max-height: 220px;
   border-radius: 10px;
+}
+
+.chat-photos img {
+  object-fit: contain;
 }
 
 .chat-photo-placeholder {
