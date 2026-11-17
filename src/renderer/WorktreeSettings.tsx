@@ -77,7 +77,7 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
       <label>
         <span>Pool</span>
         <select value={warm} onChange={(e) => setWarm(e.target.value)}>
-          <option value={AUTO}>Auto{repo.auto ? ` (${repo.target} warm now)` : ""}</option>
+          <option value={AUTO}>Auto</option>
           {sizes.map((n) => (
             <option key={n} value={n}>
               {n} warm
