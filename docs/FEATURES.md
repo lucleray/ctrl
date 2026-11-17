@@ -413,7 +413,9 @@ where it lives.
   suggests stdin (`--prompt -`) when an argument was long (`bin/ctrl`)
 - ctrl quitting or restarting mid-request (an update) gives `APP_NOT_RUNNING` "quit or restarted before it
   answered"; `session wait` instead waits up to a minute for ctrl to come back and asks again with the time
-  left of its `--timeout` (`resumes` in `src/shared/cli/commands.ts`, `src/cli/cli.ts`)
+  left of its `--timeout` (`resumes` in `src/shared/cli/commands.ts`, `src/cli/cli.ts`). Right after a launch,
+  commands (except `app ...`) wait up to 10s for the harness checks and opencode's first sync, so sessions
+  aren't `NOT_FOUND` while they load (`sessionsLoaded` in `src/main/main.ts`)
 - Child sessions: `session new` run from a session makes a child of it by default (`--parent self`, in the
   parent's space, folder and harness unless flags say otherwise; `--parent none` for a top-level one);
   `session move --parent <s|none>` nests or detaches (refuses cycles); `session list --parent <s>`; sessions

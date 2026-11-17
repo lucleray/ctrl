@@ -2007,12 +2007,25 @@ const cliHost: CliHost = {
   },
 }
 
+let harnessesChecked!: () => void
+/**
+ * Right after a launch (an update restarts ctrl under waiting agents), sessions aren't loaded yet: CLI
+ * commands wait for the harness checks and opencode's first sync, so a session isn't NOT_FOUND for a few
+ * seconds. Bounded, so a stuck opencode doesn't hang every command.
+ */
+const sessionsLoaded = Promise.race([
+  new Promise<void>((r) => (harnessesChecked = r)).then(() => (opencodeStarted ? opencode.ready : undefined)),
+  sleep(10_000),
+])
+
 /** Agents can name any session, so the CLI sees older ones too: a one-time load, then free. */
 const withOlderSessions = (handlers: ReturnType<typeof createHandlers>) =>
   Object.fromEntries(
     Object.entries(handlers).map(([name, handler]) => [
       name,
       async (...args: Parameters<typeof handler>) => {
+        // `app status` answers right away: it's how the CLI tells ctrl is up, and it reports a stuck opencode.
+        if (!name.startsWith("app ")) await sessionsLoaded
         if (opencodeStarted) await opencode.loadOlder()
         return handler(...args)
       },
@@ -2199,7 +2212,9 @@ app.whenReady().then(async () => {
   })
   createWindow()
   // Both checks first: the session on screen at quit comes back, whichever harness it belongs to.
-  void Promise.all([recheckOpencode(), recheckFx()]).then(restoreOpen)
+  void Promise.all([recheckOpencode(), recheckFx()])
+    .finally(harnessesChecked)
+    .then(restoreOpen)
   search.start()
   // Once the window can show the toasts a broken check raises.
   win!.webContents.once("did-finish-load", () =>
