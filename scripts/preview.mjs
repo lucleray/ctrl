@@ -71,6 +71,9 @@ if (!port) throw new Error("No free port in 7340-7399 for the phone view: delete
 writeFileSync(join(dir, "preview.json"), `${JSON.stringify({ port }, null, 2)}\n`)
 
 process.env.CTRL_USER_DATA = dir
+// A preview never touches the agent skills you have installed: its copies of them (which point agents at this
+// checkout's CLI) would replace the installed app's until that app restarts.
+process.env.CTRL_SKILLS_DIR ??= join(dir, "skills")
 process.env.CTRL_REMOTE_PORT = String(port)
 process.env.CTRL_LABEL = label
 

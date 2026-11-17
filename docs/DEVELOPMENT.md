@@ -61,6 +61,8 @@ npm run preview -- --name <label>  # label other than the branch (also names its
 - `state.json` (spaces, assignments, settings) and `~/.config/ctrl/tools.json` are copied in fresh on every
   launch, so edits a preview makes to them never reach the installed app. Sessions themselves are shared:
   they live in opencode and fx, so a preview drives your real sessions.
+- Your installed agent skills are left alone: a preview keeps its copies in its state folder (`CTRL_SKILLS_DIR`),
+  so agents keep reading the installed app's skills and running its CLI.
 - Worktrees are not shared: a preview has its own pool, repos and folder (`~/.ctrl/worktrees-<label>`), and
   starts with none. Agents in your sessions still talk to the installed app's `ctrl` (the opencode service is
   the installed app's), so try `ctrl worktree` in a preview with the `CTRL_SOCKET=…` line it prints.
