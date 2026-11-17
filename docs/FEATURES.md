@@ -362,10 +362,16 @@ where it lives.
   A session can hold several, of one repo or many, and isn't tied to any of them: it works in them by path
 - Repos register themselves the first time a worktree of one is taken: base branch from origin, setup command
   from the lockfile (pnpm, yarn, bun, npm, cargo, go). A path anywhere inside the repo, or its name, works
+- A GitHub repo works too (`ctrl worktree up owner/repo` or its URL): the checkout ctrl manages with that origin,
+  else a clone of its own in the worktree folder's `.repos/` (gh, else git), made once
 - Add a repo by hand too: Settings → Worktrees → Add a repository (folder picker, then its settings open), or
   `ctrl worktree config <path>`. One added by hand keeps a warm worktree for its first 30 days, used or not
-- Pool miss: the worktree is built on the spot (`cold: true`). The build belongs to the app, not to the CLI call:
-  a call that times out or is killed leaves it running, and the session's next `up` waits for it or gets its result
+- Pool miss: `up` takes over the pool's build closest to done, else builds one on the spot (`cold: true`). While a
+  session waits on a build, no other build of that repo starts, and session builds count toward the 3 at a time
+- The build belongs to the app, not to the CLI call: a call that times out (90s by default) or is killed leaves it
+  running, and the session's next `up` waits for it or gets its result, even while the first call still waits
+  (that one then gets the next worktree). One the session never asks for again, and that's untouched, goes back
+  to the pool 10 minutes after it's ready; `ctrl worktree list` in the session makes it the session's for good
 - A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
   the error shows on the repo, and warm builds of that repo wait 30 minutes
 - `ctrl worktree down` releases one: refused while it has uncommitted files, commits no remote has, or commits on

@@ -57,6 +57,7 @@ function fakePool() {
     all: () => worktrees,
     ofSession: (id) => worktrees.filter((w) => w.sessionID === id),
     name: (w) => w.repo.split("/").pop(),
+    delivered: (wts) => calls.push(["delivered", wts.map((w) => w.id)]),
     describe: async (w) => ({ ...w, name: pool.name(w), branch: w.branch ?? null, commit: "abc1234" }),
     find: (selector, cwd) => {
       const wt = worktrees.find((w) => w.id === selector || w.path === (selector ?? cwd))
@@ -160,6 +161,8 @@ describe("worktree handlers", () => {
 
     const mine = await run("worktree list")
     assert.deepEqual([mine.scope, mine.items.map((w) => w.id), mine.total], ["session", ["w1"], 1])
+    // The session's own list delivers them (they're never reclaimed); --all or --session doesn't.
+    assert.deepEqual(pool.calls.filter((c) => c[0] === "delivered"), [["delivered", ["w1"]]])
     const all = await run("worktree list", { all: true })
     assert.deepEqual([all.scope, all.items.map((w) => w.status)], ["all", ["attached", "attached", "ready"]])
     assert.equal((await run("worktree list", {}, {})).scope, "all")

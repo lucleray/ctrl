@@ -293,6 +293,7 @@ pool sizing in `src/shared/worktrees.ts`.
 ```text
 ctrl worktree up ──► WorktreeService.up(repo, session)
                        ├─ ready one in the pool ─────────► attached (instant)
+                       ├─ a warm build under way ─► reserved for the session, waits on it ─► attached (cold)
                        └─ none ─► build: git worktree add --detach origin/<base> + setup ─► attached (cold)
 down / session archived ─► released ─► room in the pool? ─► reset: reset --hard, clean, move, setup ─► ready
                                                        └─ no ─► removed (rename into .trash, rm in a child)
@@ -308,9 +309,20 @@ every 10 min + after up/down ─► rebalance(repo): build / recycle toward targ
 - **Main never blocks:** git, setup commands and deletes are child processes. Git commands that touch a repo's
   refs or worktree registry (`fetch`, `worktree add / move / prune`) run one at a time per repo, which is what
   avoids `cannot lock ref` between parallel builds. Fetches are per base branch and at most one a minute per repo.
-- **Builds belong to the app.** `up` on an empty pool starts a build reserved for the session and waits on it.
-  If the caller goes away (the CLI's socket closes, or its `--timeout` passes), the build goes on and the
-  worktree stays marked `undelivered`: the session's next `up` for that repo waits on it or returns it.
+- **Builds belong to the app.** `up` on an empty pool reserves the oldest warm build under way for the session
+  (unless `--skip-setup`), else starts one, and waits on it. If the caller goes away (the CLI's socket closes,
+  or its `--timeout`, 90s, passes), the build goes on and the worktree stays marked `undelivered`: the
+  session's next `up` for that repo waits on it or returns it. Each `up` holds a claim on the worktree it waits
+  for, and a later `up` from the same session takes the claim over (agents retry while the killed call still
+  waits); the call that lost it picks again. The minute tick (`reclaim`) puts an undelivered worktree back in
+  the pool once it's been ready 10 minutes with nothing changed in it; `worktree list` from the session
+  delivers it instead, since the agent now knows its path.
+- **Installs don't pile up.** `MAX_TASKS` (3) counts every build and recycle, a session's included, though a
+  session's never waits for a slot. While a session waits on a build of a repo, rebalance starts no warm build
+  of it (`waiting` says so).
+- **Repos by GitHub name.** `owner/repo` (when no such folder exists) or a GitHub URL resolves to the managed
+  repo whose `origin` matches, else to ctrl's clone in `<worktree folder>/.repos/<owner>/<repo>`, cloned on
+  the first `up` (`gh repo clone`, else `git clone`) into a temporary folder renamed when done.
 - **Pool size** (`poolTarget()`): the repo's `up` timestamps of the last 7 days are replayed against a pool of
   1, 2, 3… worktrees refilled two at a time in the repo's median build time, and the smallest one with at most
   2% misses wins, capped by the repo's cap on worktrees (`maxTotal`). No use in 7 days: 1. None in 30: 0. A pinned size

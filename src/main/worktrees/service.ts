@@ -84,6 +84,8 @@ type Persisted = {
 /** Who owns a worktree folder: two ctrls (installed, a preview) must never clean up each other's worktrees. */
 const OWNER_FILE = ".ctrl-worktrees"
 const TRASH = ".trash"
+/** Clones of repos that weren't on this Mac (`ctrl worktree up owner/repo`), inside the worktree folder */
+const CLONES = ".repos"
 
 const POOL_EVERY = 10 * MINUTE
 const CLEANUP_EVERY = HOUR
@@ -96,8 +98,15 @@ const STALE_MS = DAY
 const ORPHAN_MS = HOUR
 /** After a failed build, warm builds of that repo wait this long. */
 const BACKOFF_MS = 30 * MINUTE
-/** Warm builds and recycles running at once, over all repos (an `up` that finds the pool empty never waits for a slot). */
+/**
+ * Builds and recycles running at once, over all repos, past which no warm one starts. A build for a session
+ * counts too (installs running side by side slow each other down), but never waits for a slot.
+ */
 const MAX_TASKS = 3
+/** A worktree built for a session whose `up` never got it, untouched this long after it's ready, goes back to the pool. */
+const UNCLAIMED_MS = 10 * MINUTE
+/** Cloning a repo that isn't on this Mac yet (`ctrl worktree up owner/repo`) */
+const CLONE_TIMEOUT = 30 * MINUTE
 const KEEP_EVENTS_MS = 30 * DAY
 const MAX_EVENTS = 5000
 
@@ -137,6 +146,9 @@ export class WorktreeService {
   private builds = new Map<string, Promise<void>>()
   /** `up` calls waiting on a build, by worktree id */
   private waiters = new Map<string, number>()
+  /** The `up` call a worktree goes to, by worktree id: a later `up` from the same session takes it over */
+  private claims = new Map<string, number>()
+  private claimSeq = 0
   /** Git commands that touch a repo's refs or worktree registry, one at a time per repo */
   private chains = new Map<string, Promise<unknown>>()
   private fetched = new Map<string, number>()
@@ -212,6 +224,7 @@ export class WorktreeService {
     const now = Date.now()
     const settings = this.host.settings()
     const due = (id: WorktreeJobID, every: number) => now - (this.data.jobs[id].at ?? 0) >= every
+    await this.reclaim()
     if (due("pool", POOL_EVERY)) await this.runJob("pool")
     if (settings.cleanup && due("cleanup", CLEANUP_EVERY)) await this.runJob("cleanup")
     if (settings.updateRepos && due("update", UPDATE_EVERY)) await this.runJob("update")
@@ -324,7 +337,9 @@ export class WorktreeService {
   // ---------- repos ----------
 
   /** A path (anywhere inside a repo, even one of its worktrees) or the name of a configured repo → its source checkout. */
-  private async resolveSource(token: string, cwd?: string): Promise<{ source: string; repo?: RepoState }> {
+  private async resolveSource(token: string, cwd?: string, clone = false): Promise<{ source: string; repo?: RepoState }> {
+    const remote = parseRemote(token, cwd)
+    if (remote) return this.resolveRemote(remote, clone)
     const pathLike = token.includes("/") || token.startsWith("~") || token.startsWith(".")
     if (!pathLike) {
       const repos = Object.values(this.data.repos)
@@ -355,9 +370,45 @@ export class WorktreeService {
     return { source, repo: this.data.repos[source] }
   }
 
+  /**
+   * A GitHub repo by owner/name or URL: the checkout of it ctrl already manages (same origin), else ctrl's
+   * own clone of it, made now when `clone` (taking a worktree) and it isn't there yet.
+   */
+  private async resolveRemote(remote: Remote, clone: boolean): Promise<{ source: string; repo?: RepoState }> {
+    const slug = `${remote.owner}/${remote.name}`
+    for (const repo of Object.values(this.data.repos)) {
+      if (!existsSync(repo.source)) continue
+      const origin = await git(repo.source, ["remote", "get-url", "origin"])
+      if (origin.code === 0 && sameRemote(origin.stdout.trim(), remote)) return { source: repo.source, repo }
+    }
+    const parent = join(this.defaultRoot, CLONES, remote.owner)
+    mkdirSync(parent, { recursive: true })
+    const dest = join(real(parent), remote.name)
+    if (!existsSync(join(dest, ".git"))) {
+      if (!clone)
+        throw new WorktreeError("NOT_FOUND", `${slug} isn't a repo ctrl manages yet`, { hint: `ctrl worktree up ${slug} clones it` })
+      await this.withGit(dest, async () => {
+        if (existsSync(join(dest, ".git"))) return
+        const tmp = `${dest}.cloning-${randomBytes(3).toString("hex")}`
+        // gh clones over the protocol you set up (ssh or https, with its credentials); plain git is the fallback.
+        const gh = await run("gh", ["repo", "clone", slug, tmp, "--", "--quiet"], { timeout: CLONE_TIMEOUT })
+        const res = gh.code === 0 ? gh : await run("git", ["clone", "--quiet", remote.url, tmp], { timeout: CLONE_TIMEOUT })
+        if (res.code !== 0) {
+          await run("rm", ["-rf", tmp])
+          const why = (res.stderr || gh.stderr).trim().split("\n").slice(-2).join(" ")
+          throw new WorktreeError("NOT_FOUND", `Couldn't clone ${slug}${why ? `: ${why}` : ""}`, {
+            hint: "Check the name and your access (gh auth status), or clone it yourself and pass its path",
+          })
+        }
+        renameSync(tmp, dest)
+      })
+    }
+    return { source: dest, repo: this.data.repos[dest] }
+  }
+
   /** The repo for a token, registered with detected settings the first time it's seen (`added`: by hand). */
   private async ensureRepo(token: string, cwd?: string, added = false): Promise<RepoState> {
-    const { source, repo } = await this.resolveSource(token, cwd)
+    const { source, repo } = await this.resolveSource(token, cwd, true)
     if (repo) return repo
     const created: RepoState = {
       source,
@@ -484,14 +535,13 @@ export class WorktreeService {
     return wt
   }
 
-  /** Starts building a worktree: for the pool, or for a session that found it empty. */
+  /** Starts building a worktree: for the pool, or for a session that found it empty (it starts even past MAX_TASKS). */
   private startBuild(repo: RepoState, sessionID: string | null, skipSetup = false): Worktree {
     const wt = this.newWorktree(repo, sessionID)
-    const pooled = !sessionID
-    if (pooled) this.tasks++
+    this.tasks++
     const work = this.build(repo, wt, skipSetup).finally(() => {
       this.builds.delete(wt.id)
-      if (pooled) this.tasks--
+      this.tasks--
       // Other repos' `waiting` depends on the free slots.
       this.cached = undefined
       this.rebalanceAll()
@@ -678,6 +728,8 @@ export class WorktreeService {
         continue
       }
       if (warm < target) {
+        // A session is waiting on a build of this repo: no other install competes with it.
+        if (all.some((w) => w.status === "building" && w.sessionID)) return
         if (inflight >= POOL.parallel || this.tasks >= MAX_TASKS) return
         if (repo.failedAt && now - repo.failedAt < BACKOFF_MS) return
         if (released.length) {
@@ -702,9 +754,11 @@ export class WorktreeService {
     const all = this.of(repo.source)
     const inflight = all.filter((w) => (w.status === "building" && !w.sessionID) || w.status === "resetting").length
     const warm = all.filter((w) => w.status === "ready").length + inflight
-    if (warm >= Math.max(this.target(repo), this.floors.get(repo.source) ?? 0) || inflight >= POOL.parallel) return
+    if (warm >= Math.max(this.target(repo), this.floors.get(repo.source) ?? 0)) return
+    if (all.some((w) => w.status === "building" && w.sessionID)) return "Paused while a session waits for a worktree being built"
+    if (inflight >= POOL.parallel) return
     if (this.tasks >= MAX_TASKS)
-      return `Queued: ${MAX_TASKS} warm builds are already running (at most ${MAX_TASKS} at a time), it starts when one ends`
+      return `Queued: ${MAX_TASKS} builds are already running (at most ${MAX_TASKS} at a time), it starts when one ends`
     if (repo.failedAt && Date.now() - repo.failedAt < BACKOFF_MS)
       return `Paused after a failed build, retrying ${new Date(repo.failedAt + BACKOFF_MS).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (prewarm retries now)`
     const released = all.some((w) => w.status === "released")
@@ -754,9 +808,11 @@ export class WorktreeService {
   // ---------- up / down ----------
 
   /**
-   * A ready worktree for a session: from the pool, else built now. A build outlives the call that asked
-   * for it, so when that call gives up (a tool timeout), the session's next `up` waits on the same build
-   * or gets its result, instead of starting another.
+   * A ready worktree for a session: from the pool, else the pool's build closest to done, else one built now.
+   * A build outlives the call that asked for it: when that call gives up (a tool timeout), the session's next
+   * `up` waits on the same build or gets its result, instead of starting another. That next `up` takes it
+   * over even while the first is still waiting (it's usually about to be killed): the first then gets the
+   * next worktree instead.
    */
   async up(
     token: string,
@@ -766,35 +822,99 @@ export class WorktreeService {
   ): Promise<{ worktree: Worktree; cold: boolean }> {
     const started = Date.now()
     const repo = await this.ensureRepo(token, opts.cwd)
-    const mine = (w: Worktree) => w.repo === repo.source && w.sessionID === sessionID && !!w.undelivered && !this.waiters.get(w.id)
-    let wt = this.data.worktrees.find((w) => mine(w) && (w.status === "building" || w.status === "attached"))
-    let cold = !!wt
-    if (!wt) {
-      wt = this.data.worktrees.find((w) => w.repo === repo.source && w.status === "ready" && existsSync(w.path))
-      if (wt) {
-        Object.assign(wt, { status: "attached", sessionID, attachedAt: started, since: started })
-        this.touch([sessionID])
+    /** Worktrees a later `up` took from this one */
+    const lost = new Set<string>()
+    let cold = false
+    for (;;) {
+      const pick = this.pick(repo, sessionID, !!opts.skipSetup, lost)
+      const wt = pick.worktree
+      cold ||= pick.cold
+      const claim = ++this.claimSeq
+      this.claims.set(wt.id, claim)
+      if (wt.status === "building") {
+        const id = wt.id
+        this.waiters.set(id, (this.waiters.get(id) ?? 0) + 1)
+        try {
+          await this.builds.get(id)
+        } catch (err) {
+          if (this.claims.get(id) === claim) this.claims.delete(id)
+          throw err
+        } finally {
+          this.waiters.set(id, (this.waiters.get(id) ?? 1) - 1)
+        }
       }
-    }
-    if (!wt) {
-      cold = true
-      wt = this.startBuild(repo, sessionID, opts.skipSetup)
-    }
-    if (wt.status === "building") {
-      const id = wt.id
-      this.waiters.set(id, (this.waiters.get(id) ?? 0) + 1)
-      try {
-        await this.builds.get(id)
-      } finally {
-        this.waiters.set(id, (this.waiters.get(id) ?? 1) - 1)
+      if (this.claims.get(wt.id) !== claim) {
+        lost.add(wt.id)
+        continue
       }
+      this.claims.delete(wt.id)
+      // Nobody left to hand it to: it stays marked for this session's next `up` (or goes back to the pool, reclaim).
+      if (opts.alive?.() !== false) delete wt.undelivered
+      this.event({ t: Date.now(), repo: repo.source, type: "up", warm: !cold, ms: Date.now() - started })
+      this.touch()
+      this.rebalance(repo.source)
+      return { worktree: wt, cold }
     }
-    // Nobody left to hand it to: it stays marked for this session's next `up`.
-    if (opts.alive?.() !== false) delete wt.undelivered
-    this.event({ t: Date.now(), repo: repo.source, type: "up", warm: !cold, ms: Date.now() - started })
-    this.touch()
-    this.rebalance(repo.source)
-    return { worktree: wt, cold }
+  }
+
+  private pick(repo: RepoState, sessionID: string, skipSetup: boolean, lost: Set<string>): { worktree: Worktree; cold: boolean } {
+    const of = this.of(repo.source)
+    // Built for this session but never handed over: done ones first, then the one closest to done.
+    const mine = of
+      .filter((w) => w.sessionID === sessionID && w.undelivered && !lost.has(w.id) && (w.status === "attached" || w.status === "building"))
+      .sort((a, b) => Number(a.status === "building") - Number(b.status === "building") || a.since - b.since)[0]
+    if (mine) return { worktree: mine, cold: true }
+    const now = Date.now()
+    const ready = of.find((w) => w.status === "ready" && existsSync(w.path))
+    if (ready) {
+      Object.assign(ready, { status: "attached", sessionID, attachedAt: now, since: now })
+      this.touch([sessionID])
+      return { worktree: ready, cold: false }
+    }
+    // A warm build already under way is closer to done than a new one (unless this one skips setup).
+    const inflight = skipSetup
+      ? undefined
+      : of.filter((w) => w.status === "building" && !w.sessionID).sort((a, b) => a.since - b.since)[0]
+    if (inflight) {
+      Object.assign(inflight, { sessionID, undelivered: true })
+      this.touch([sessionID])
+      return { worktree: inflight, cold: true }
+    }
+    return { worktree: this.startBuild(repo, sessionID, skipSetup), cold: true }
+  }
+
+  /**
+   * Worktrees built for a session whose `up` never got them (killed by a tool timeout, and never asked
+   * again): once untouched for UNCLAIMED_MS, they go back to the pool.
+   */
+  private async reclaim() {
+    const now = Date.now()
+    const unclaimed = (w: Worktree) =>
+      w.status === "attached" && !!w.undelivered && !this.claims.has(w.id) && !this.waiters.get(w.id) && now - (w.warmedAt ?? w.since) >= UNCLAIMED_MS
+    for (const wt of this.data.worktrees.filter(unclaimed)) {
+      if (!existsSync(wt.path)) continue
+      const unsaved = await unsavedWork(wt.path, wt.baseCommit)
+      const head = await git(wt.path, ["rev-parse", "HEAD"])
+      const untouched = !unsaved.branch && !hasUnsaved(unsaved) && head.code === 0 && !!wt.baseCommit && head.stdout.trim().startsWith(wt.baseCommit)
+      // Checked again: an `up` may have taken it while git ran.
+      if (!untouched || !unclaimed(wt)) continue
+      const holder = wt.sessionID
+      if (wt.setupFailed) {
+        await this.release(wt)
+        continue
+      }
+      Object.assign(wt, { status: "ready", sessionID: null, attachedAt: null, since: Date.now() })
+      delete wt.undelivered
+      this.touch([holder])
+      this.rebalance(wt.repo)
+    }
+  }
+
+  /** The session was shown these worktrees (`ctrl worktree list`): they're its own now, never reclaimed. */
+  delivered(wts: Worktree[]) {
+    const shown = wts.filter((w) => w.status === "attached" && w.undelivered && !this.claims.has(w.id))
+    for (const wt of shown) delete wt.undelivered
+    if (shown.length) this.touch()
   }
 
   /** By id, by path (the worktree's folder or anything inside it), or the one the caller's folder is in. */
@@ -1108,3 +1228,23 @@ const unsavedHint = (u: Unsaved, wt: Worktree) =>
   u.orphans
     ? `Save them on a branch (git -C ${wt.path} switch -c <branch> && git push -u origin <branch>), or pass --force (a rescue ref keeps them)`
     : `Commit and push first, or pass --force to discard: recycling resets the worktree to its base branch`
+
+type Remote = { owner: string; name: string; url: string }
+
+const GITHUB_URL = /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/
+const OWNER_REPO = /^([\w-]+)\/([\w.-]+?)(?:\.git)?$/
+
+/** A GitHub repo named by URL, or as owner/repo when no folder by that name is there. */
+export function parseRemote(token: string, cwd?: string): Remote | null {
+  const t = token.trim()
+  const url = GITHUB_URL.exec(t)
+  if (url) return { owner: url[1], name: url[2], url: t }
+  const short = OWNER_REPO.exec(t)
+  if (short && !existsSync(expand(t, cwd))) return { owner: short[1], name: short[2], url: `https://github.com/${short[1]}/${short[2]}.git` }
+  return null
+}
+
+const sameRemote = (url: string, r: Remote) => {
+  const m = GITHUB_URL.exec(url)
+  return !!m && m[1].toLowerCase() === r.owner.toLowerCase() && m[2].toLowerCase() === r.name.toLowerCase()
+}

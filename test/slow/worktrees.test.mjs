@@ -171,6 +171,68 @@ describe("WorktreeService", () => {
     service.stop()
   })
 
+  test("an empty pool hands over the warm build under way, and starts no other build while a session waits", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { setup: `sleep 0.6 && ${SETUP}`, warm: 1 })
+    const warming = await until(() => service.all().find((w) => w.repo === source && w.status === "building"), "a warm build")
+    const taking = service.up(source, "ses_a")
+    await until(() => warming.sessionID === "ses_a", "the warm build to be reserved")
+    assert.equal(service.all().filter((w) => w.repo === source && w.status === "building").length, 1)
+    assert.match((await service.repo(source)).waiting, /^Paused while a session waits/)
+    const { worktree, cold } = await taking
+    assert.deepEqual([worktree.id, cold, worktree.undelivered], [warming.id, true, undefined])
+    assert.ok(existsSync(join(worktree.path, "node_modules/marker")))
+    await until(() => ready(service, source).length === 1, "the pool to refill once nobody waits")
+    service.stop()
+  })
+
+  test("a session's second up takes over the build its first is still waiting on, and the first gets the next one", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { setup: `sleep 0.6 && ${SETUP}`, warm: 0 })
+    const first = service.up(source, "ses_a")
+    const building = await until(() => service.all().find((w) => w.repo === source && w.status === "building"), "the first build")
+    const second = await service.up(source, "ses_a")
+    assert.equal(second.worktree.id, building.id)
+    const firstGot = await first
+    assert.notEqual(firstGot.worktree.id, building.id)
+    assert.deepEqual(service.ofSession("ses_a").map((w) => w.status), ["attached", "attached"])
+    service.stop()
+  })
+
+  test("a worktree its session never got goes back to the pool once untouched for 10 minutes, unless listed or changed", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { setup: SETUP, warm: 0 })
+    const age = (wt) => (wt.warmedAt = Date.now() - 11 * 60_000)
+    const lost = (await service.up(source, "ses_a", { alive: () => false })).worktree
+    const dirty = (await service.up(source, "ses_b", { alive: () => false })).worktree
+    const shown = (await service.up(source, "ses_c", { alive: () => false })).worktree
+    writeFileSync(join(dirty.path, "notes.txt"), "mine\n")
+    service.delivered([shown])
+    for (const wt of [lost, dirty, shown]) age(wt)
+    await service.reclaim()
+    assert.deepEqual([lost.status, lost.sessionID, lost.undelivered], ["ready", null, undefined])
+    assert.deepEqual([dirty.status, dirty.sessionID], ["attached", "ses_b"])
+    assert.deepEqual([shown.status, shown.sessionID], ["attached", "ses_c"])
+    // The next session to ask gets it from the pool, warm.
+    const next = await service.up(source, "ses_d")
+    assert.deepEqual([next.worktree.id, next.cold], [lost.id, false])
+    service.stop()
+  })
+
+  test("a GitHub owner/repo or URL means the managed checkout with that origin, and isn't cloned outside up", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { warm: 0 })
+    sh(source, "git", "remote", "set-url", "origin", "git@github.com:Acme/App.git")
+    for (const token of ["acme/app", "https://github.com/acme/app", "git@github.com:acme/app.git"])
+      assert.equal((await service.repo(token)).source, source, token)
+    await assert.rejects(service.repo("acme/nothere"), (err) => err.code === "NOT_FOUND" && /worktree up acme\/nothere clones it/.test(err.extra.hint))
+    service.stop()
+  })
+
   test("a failing setup: warm builds are dropped and remembered, a session still gets its checkout", async () => {
     const source = makeRepo()
     const { service } = makeService()
