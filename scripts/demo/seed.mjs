@@ -1,7 +1,8 @@
 // Seeds a throwaway opencode (its own HOME, XDG dirs and service port), or with --harness fx
 // a throwaway ~/.fx in that HOME, and a ctrl state folder with demo spaces and sessions, for
-// README screenshots. Nothing touches your real opencode, fx or ctrl state.
-// Usage: node scripts/demo/seed.mjs <demo dir> [--harness fx]
+// README screenshots and previews. Nothing touches your real opencode, fx or ctrl state.
+// Usage: node scripts/demo/seed.mjs <demo dir> [--harness fx] [--port <opencode service port>] [--preview]
+//   --preview  adds the sessions previews test with (PREVIEW_SESSIONS) to the screenshot ones
 // Then scripts/demo/capture.mjs takes the screenshots (docs/DEVELOPMENT.md → Screenshots).
 import { execFileSync } from "node:child_process"
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs"
@@ -10,7 +11,10 @@ import { demoEnv, opencodeBin } from "./env.mjs"
 
 const dir = process.argv[2]
 if (!dir) throw new Error("usage: seed.mjs <demo dir> [--harness fx]")
-const harness = process.argv.includes("--harness") ? process.argv[process.argv.indexOf("--harness") + 1] : "opencode"
+const option = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined)
+const harness = option("--harness") ?? "opencode"
+const port = option("--port") ?? "49411"
+const preview = process.argv.includes("--preview")
 rmSync(dir, { recursive: true, force: true })
 const env = demoEnv(dir)
 const home = env.HOME
@@ -26,7 +30,7 @@ const folders = { next: join(home, "code/next.js"), ai: join(home, "code/ai"), n
 for (const f of Object.values(folders)) mkdirSync(f, { recursive: true })
 if (harness === "opencode") {
   // A separate port, so the demo service never collides with the real one.
-  oc("service", "set", "port", "49411")
+  oc("service", "set", "port", port)
   mkdirSync(env.XDG_CONFIG_HOME + "/opencode", { recursive: true })
   writeFileSync(env.XDG_CONFIG_HOME + "/opencode/opencode.json", JSON.stringify({ model: "opencode/big-pickle" }))
 }
@@ -61,7 +65,8 @@ const shell = (command, output, t) => ({
 })
 
 /**
- * key, title, folder, ago (minutes since its last turn), status, space, archived, and turns:
+ * key, title, folder, ago (minutes since its last turn), status, space, archived, parent (key of the
+ * session that started it with `ctrl session new`), and turns:
  * [user text, assistant text, optional shell tool [command, output]]
  */
 const SESSIONS = [
@@ -209,6 +214,45 @@ const SESSIONS = [
   },
 ]
 
+/** Previews only (--preview), so the README screenshots stay as they are. Add what you want to test with. */
+const PREVIEW_SESSIONS = [
+  {
+    key: "monorepo",
+    title: "Speed up next build on large monorepos",
+    folder: "next",
+    ago: 4,
+    status: "idle",
+    space: "next",
+    turns: [
+      [
+        "next build takes 9 minutes on our 400-package monorepo. Split the investigation in two sub sessions.",
+        "Started 2 child sessions: one profiles the webpack cache, the other opens a PR that builds the route manifest in parallel.",
+      ],
+    ],
+  },
+  {
+    key: "monorepo-cache",
+    title: "Profile webpack cache hits",
+    folder: "next",
+    ago: 3,
+    status: "unread",
+    space: "next",
+    parent: "monorepo",
+    turns: [["Profile webpack cache hits on the monorepo build", "62% of modules miss the cache: the hash includes absolute paths."]],
+  },
+  {
+    key: "monorepo-pr",
+    title: "PR: build the route manifest in parallel",
+    folder: "next",
+    ago: 2,
+    status: "idle",
+    space: "next",
+    parent: "monorepo",
+    turns: [["Open a PR that builds the route manifest in parallel", "Opened https://github.com/vercel/next.js/pull/99940, 9m to 6m on the monorepo."]],
+  },
+]
+if (preview) SESSIONS.push(...PREVIEW_SESSIONS)
+
 const SPACES = [
   { id: "spc_demo_next", name: "next.js", directory: folders.next },
   { id: "spc_demo_reviews", name: "Reviews", directory: folders.next },
@@ -216,7 +260,8 @@ const SPACES = [
 ]
 const ui = { skillPrompted: true, resourcesOpen: true, recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280, resourcesWidth: 320, resourcesScope: "session" }
 // The demo links point at made-up Slack and Vercel teams: show them as links only.
-const settings = { adapterModes: { slack: "links", vercel: "links" } }
+// Previews print a phone link, so their phone view is on.
+const settings = { adapterModes: { slack: "links", vercel: "links" }, ...(preview ? { remoteControl: true } : {}) }
 
 /** Writes ctrl's state for the demo sessions, plus the ids capture.mjs drives them by. */
 function writeState(ids, extra = {}) {
@@ -224,6 +269,10 @@ function writeState(ids, extra = {}) {
     spaces: SPACES,
     assignments: Object.fromEntries(SESSIONS.filter((s) => s.space).map((s) => [ids[s.key], `spc_demo_${s.space}`])),
     archived: Object.fromEntries(SESSIONS.filter((s) => s.archived).map((s) => [ids[s.key], now - s.ago * min])),
+    parents: Object.fromEntries(SESSIONS.filter((s) => s.parent).map((s) => [ids[s.key], ids[s.parent]])),
+    createdByAgent: Object.fromEntries(
+      SESSIONS.filter((s) => s.parent).map((s) => [ids[s.key], { agent: harness, by: ids[s.parent], at: now - s.ago * min }]),
+    ),
     ui,
     settings,
     ...extra,
