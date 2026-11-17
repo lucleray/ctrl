@@ -350,20 +350,23 @@ where it lives.
 - Worktrees show in the resources panel of the session that holds them (and its space's): repo and branch, path,
   `building` / `detached` / `setup failed` chips; click opens the folder, copy copies the path. Also in
   `ctrl resources list` (type `worktree`) and `worktrees` on `ctrl session get`
-- Background jobs, each a row in Settings → Worktrees with what it last did and Run now:
-  - Keep pools warm (every 10 minutes and after each take or release): build up to each repo's pool size (2 at
-    a time per repo, 3 overall), recycle released ones, remove warm ones past the size once a day old, refresh
-    one warm worktree per repo when it's over a day old and the base branch moved
-  - Size pools from usage (toggle, with a largest pool size): the smallest pool that would have served the last
-    7 days of requests with at most 2% misses, replayed against the repo's measured build time. One for a repo
-    not used in a week, none after 30 days. A repo can be pinned to a size instead
-  - Clean up (toggle; every hour and after an archive): releases worktrees of archived and deleted sessions,
-    drops entries whose folder is gone, removes folders in the worktree folder nothing tracks (older than an hour)
-  - Keep your checkouts up to date (toggle, off by default; every hour): fetches repos used in the last 30 days
-    and fast-forwards your own checkout when it's on its base branch with nothing uncommitted
-- Settings → Worktrees: the folder (default `~/.ctrl/worktrees`), every repo with its pool, usage over 7 days
-  (taken, share served instantly, build time), pool size (auto or fixed), and an editor for name, base branch,
-  setup command, cap and Forget repo (`src/renderer/WorktreeSettings.tsx`)
+- The pool refills on its own: after each take or release and every 10 minutes, ctrl builds up to each repo's
+  pool size (2 at a time per repo, 3 overall), recycles released worktrees, removes warm ones past the size once
+  a day old, and refreshes one warm worktree per repo when it's over a day old and the base branch moved
+- Background jobs, each a row in Settings → Worktrees with a toggle:
+  - Size pools from usage (with a largest pool size): the smallest pool that would have served the last 7 days
+    of requests with at most 2% misses, replayed against the repo's measured build time. One for a repo not used
+    in a week, none after 30 days. A repo can be pinned to a size instead
+  - Clean up (every hour and after an archive; shows what it last did, Run now): releases worktrees of archived
+    and deleted sessions, drops entries whose folder is gone, removes folders in the worktree folder nothing
+    tracks (older than an hour)
+  - Keep your checkouts up to date (off by default; every hour; shows what it last did, Run now): fetches repos
+    used in the last 30 days and fast-forwards your own checkout when it's on its base branch with nothing
+    uncommitted
+- Settings → Worktrees: the folder (default `~/.ctrl/worktrees`) and every repo with its path, base branch, setup
+  command, warm and in-use counts and the share of the last 7 days' requests served instantly. The gear on a
+  repo opens its settings: name, base branch, setup command, pool size (auto or fixed), cap, Forget repo
+  (`src/renderer/WorktreeSettings.tsx`)
 - Each ctrl owns its worktree folder (a marker file in it): a preview or dev run uses its own
   (`~/.ctrl/worktrees-<state folder name>`), and never cleans up another ctrl's worktrees
 - The ctrl instruction and the ctrl skill tell agents to take a worktree to work on a repo

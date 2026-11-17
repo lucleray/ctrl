@@ -11,25 +11,13 @@ const POOL_MAX = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20]
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
-const duration = (ms: number) => (ms < 90_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.round(ms / 60_000)}m`)
-
-/** "3 warm · 2 in use · 1 being built" */
-const poolText = ({ counts, target }: WorktreeRepoView) =>
+/** "3 warm · 2 in use · 97% instant": instant is the share of the last 7 days' requests the pool served right away */
+const poolText = ({ counts, usage }: WorktreeRepoView) =>
   [
-    `${counts.ready} of ${target} warm`,
-    counts.attached ? `${counts.attached} in use` : "",
+    `${counts.ready} warm`,
+    `${counts.attached} in use`,
     counts.building ? `${counts.building} being built` : "",
-    counts.released ? `${counts.released} being recycled` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
-
-/** "34 taken in 7 days · 97% instant · builds take 3m" */
-const usageText = ({ usage }: WorktreeRepoView) =>
-  [
-    usage.taken ? `${usage.taken} taken in the last 7 days` : usage.lastTaken ? `Last taken ${age(usage.lastTaken)} ago` : "Never taken",
     usage.instant !== null ? `${Math.round(usage.instant * 100)}% instant` : "",
-    usage.buildMs !== null ? `a build takes ${duration(usage.buildMs)}` : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -40,6 +28,8 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
   const [base, setBase] = useState(repo.baseBranch)
   const [setup, setSetup] = useState(repo.setup ?? "")
   const [maxTotal, setMaxTotal] = useState(String(repo.maxTotal))
+  const [warm, setWarm] = useState(repo.warm === null ? AUTO : String(repo.warm))
+  const sizes = repo.warm !== null && !POOL_SIZES.includes(repo.warm) ? [...POOL_SIZES, repo.warm].sort((a, b) => a - b) : POOL_SIZES
   const cap = Math.round(Number(maxTotal))
   const valid = !!base.trim() && cap >= 1
   const save = () => {
@@ -48,6 +38,7 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
       name: name.trim() || null,
       baseBranch: base.trim(),
       setup: setup.trim() || null,
+      warm: warm === AUTO ? null : Number(warm),
       maxTotal: cap,
     })
     onDone()
@@ -60,6 +51,7 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
         if (e.key === "Escape") (e.stopPropagation(), onDone())
       }}
     >
+      <div className="setting-title">{repo.label}</div>
       <label>
         <span>Name</span>
         <input className="setting-input" value={name} autoFocus placeholder={repo.label} onChange={(e) => setName(e.target.value)} />
@@ -83,6 +75,18 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
         />
       </label>
       <div className="setting-desc wide">Runs in every new worktree, and again when one is recycled. Usually installs dependencies.</div>
+      <label>
+        <span>Pool</span>
+        <select value={warm} onChange={(e) => setWarm(e.target.value)}>
+          <option value={AUTO}>Auto{repo.auto ? ` (${repo.target} warm now)` : ""}</option>
+          {sizes.map((n) => (
+            <option key={n} value={n}>
+              {n} warm
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="setting-desc wide">Worktrees kept ready so taking one is instant. Auto sizes the pool from how often you take one.</div>
       <label>
         <span>At most</span>
         <span className="tool-every">
@@ -114,7 +118,6 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
 }
 
 function RepoRow({ repo, onEdit }: { repo: WorktreeRepoView; onEdit(): void }) {
-  const sizes = repo.warm !== null && !POOL_SIZES.includes(repo.warm) ? [...POOL_SIZES, repo.warm].sort((a, b) => a - b) : POOL_SIZES
   return (
     <div className="setting">
       <div className="mcp-name">
@@ -125,7 +128,6 @@ function RepoRow({ repo, onEdit }: { repo: WorktreeRepoView; onEdit(): void }) {
             {shortPath(repo.source)} · {repo.baseBranch} · {repo.setup ? <code className="worktree-setup">{repo.setup}</code> : "no setup"}
           </div>
           <div className="setting-desc">{poolText(repo)}</div>
-          <div className="setting-desc">{usageText(repo)}</div>
           {repo.updated && (
             <div className="setting-desc">
               Your checkout: {repo.updated.result.toLowerCase()}, {age(repo.updated.at) === "now" ? "just now" : `${age(repo.updated.at)} ago`}
@@ -135,20 +137,8 @@ function RepoRow({ repo, onEdit }: { repo: WorktreeRepoView; onEdit(): void }) {
         </div>
       </div>
       <div className="mcp-actions">
-        <select
-          title="Warm worktrees kept ready for this repo"
-          value={repo.warm === null ? AUTO : String(repo.warm)}
-          onChange={(e) => void window.ctrl.configureWorktreeRepo(repo.source, { warm: e.target.value === AUTO ? null : Number(e.target.value) })}
-        >
-          <option value={AUTO}>Auto{repo.auto ? ` (${repo.target} warm)` : ""}</option>
-          {sizes.map((n) => (
-            <option key={n} value={n}>
-              {n} warm
-            </option>
-          ))}
-        </select>
-        <button className="icon-btn" title="Edit" onClick={onEdit}>
-          <Icon name="compose" />
+        <button className="icon-btn" title="Repo settings" onClick={onEdit}>
+          <Icon name="settings" />
         </button>
       </div>
     </div>
@@ -176,8 +166,8 @@ function JobStatus({ id, job }: { id: WorktreeJobID; job: WorktreeJob }) {
 }
 
 /**
- * Settings → Worktrees: where they live, each repo with its pool and usage, and the background jobs that
- * keep the pools warm, sized, clean and up to date. Everything here is set up on its own (agents add repos
+ * Settings → Worktrees: where they live, each repo with its pool (its settings behind the gear), and the
+ * background jobs that size the pools, clean up and keep checkouts up to date. Everything here is set up on its own (agents add repos
  * by taking a worktree), so the page is mostly for seeing what ctrl does and adjusting it.
  */
 export function WorktreeSettings({ state }: { state: AppState }) {
@@ -250,22 +240,11 @@ export function WorktreeSettings({ state }: { state: AppState }) {
       <div className="settings-card">
         <div className="setting">
           <div>
-            <div className="setting-title">Keep pools warm</div>
-            <div className="setting-desc">
-              Every 10 minutes, and whenever a worktree is taken or released: builds warm worktrees up to each repo's
-              pool size, recycles released ones (reset to the base branch, setup run again), and brings warm ones
-              older than a day up to date.
-            </div>
-            <JobStatus id="pool" job={worktrees.jobs.pool} />
-          </div>
-        </div>
-        <div className="setting setting-indent">
-          <div>
             <div className="setting-title">Size pools from usage</div>
             <div className="setting-desc">
-              Each repo gets the smallest pool that would have served the last 7 days of requests instantly 98% of the
-              time. One for a repo not used in a week, none after 30 days. Off: one per repo. A repo with a size picked
-              above keeps it.
+              Each repo keeps the smallest pool that would have served the last 7 days of requests instantly 98% of the
+              time, refilled as soon as a worktree is taken. One for a repo not used in a week, none after 30 days.
+              Off: one per repo. A size picked in a repo's settings wins.
             </div>
           </div>
           <Toggle on={settings.worktreePoolAuto} onChange={(worktreePoolAuto) => set({ worktreePoolAuto })} />
