@@ -78,6 +78,7 @@ function prStage(f: Fields | undefined, last: number, me: string | undefined, no
   if (f.mergeable === "conflicting") return { stage: "you", reason: "Merge conflicts" }
   if (f.review === "changes_requested") return { stage: "you", reason: "Changes requested" }
   if (f.draft) return { stage: "moving", reason: f.ci === "pending" ? "Draft, CI running" : "Draft" }
+  if (f.review === "approved" && f.autoMerge) return { stage: "moving", reason: "Approved, auto-merging" }
   if (f.review === "approved")
     return f.ci === "pending" ? { stage: "moving", reason: "Approved, CI running" } : { stage: "you", reason: "Approved, ready to merge" }
   if (reviewers.length) return { stage: "waiting", reason: waitingOn }
@@ -146,7 +147,7 @@ const githubRepoType: ResourceType = {
 
 // ---------- live details (gh api graphql) ----------
 
-const PR_FIELDS = `title state isDraft reviewDecision mergeable additions deletions author { login }
+const PR_FIELDS = `title state isDraft reviewDecision mergeable additions deletions author { login } autoMergeRequest { mergeMethod }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } }`
 const ISSUE_FIELDS = `title state stateReason author { login }`
@@ -187,6 +188,7 @@ function pullRequest(n: Node, ref: string): Fetched {
     ci: ci ?? null,
     review: lower(n.reviewDecision),
     mergeable: n.state === "OPEN" ? lower(n.mergeable) : null,
+    autoMerge: !!n.autoMergeRequest,
     author: n.author?.login ?? null,
     additions: n.additions ?? null,
     deletions: n.deletions ?? null,
@@ -212,6 +214,7 @@ function pullRequest(n: Node, ref: string): Fetched {
     n.reviewDecision === "APPROVED" && chip("approved", "good", "Approved"),
     n.reviewDecision === "CHANGES_REQUESTED" && chip("changes", "bad", "Changes requested"),
     !draft && n.reviewDecision === "REVIEW_REQUIRED" && chip("review", "muted", "Review required"),
+    n.autoMergeRequest && chip("auto-merge", "good", `Auto-merge enabled (${lower(n.autoMergeRequest.mergeMethod)})`),
   ])
   const maxAge = ci === "pending" || computing ? MINUTE : draft ? 10 * MINUTE : 5 * MINUTE
   return { meta: { ...meta, tone: draft ? "muted" : "open", chips: list }, cache: every(maxAge) }

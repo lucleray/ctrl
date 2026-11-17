@@ -119,7 +119,7 @@ where it lives.
   declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are
   display-ready (title, subtitle, tone, chips), carry the same details as plain `fields` for agents (PR state,
-  draft, CI, review, mergeable, author; deployment state, target, branch; Slack channel, author, text), and a
+  draft, CI, review, mergeable, auto-merge, author; deployment state, target, branch; Slack channel, author, text), and a
   cache policy (max age, refetch when mentioned again); one scheduler fetches only while the panel is open and
   the window focused, and caches on disk (`src/main/adapters/service.ts`). The CLI shares that cache and its
   pauses (see Command line). Settings → Resource adapters lists them with a status
