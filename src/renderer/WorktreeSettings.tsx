@@ -11,11 +11,12 @@ const POOL_SIZES = [0, 1, 2, 3, 4, 5, 6, 8, 10]
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
 /** "3 warm · 2 in use · 97% instant": instant is the share of the last 7 days' requests the pool served right away */
-const poolText = ({ counts, usage }: WorktreeRepoView) =>
+const poolText = ({ counts, usage, waiting }: WorktreeRepoView) =>
   [
     `${counts.ready} warm`,
     `${counts.attached} in use`,
     counts.building ? `${counts.building} being built` : "",
+    waiting?.startsWith("Queued") ? "queued" : "",
     usage.instant !== null ? `${Math.round(usage.instant * 100)}% instant` : "",
   ]
     .filter(Boolean)
@@ -120,13 +121,15 @@ function RepoRow({ repo, onEdit }: { repo: WorktreeRepoView; onEdit(): void }) {
   return (
     <div className="setting">
       <div className="mcp-name">
-        <span className={`mcp-dot ${repo.error ? "failed" : repo.counts.building ? "pending" : repo.counts.ready ? "connected" : "disabled"}`} />
+        <span className={`mcp-dot ${repo.error ? "failed" : repo.counts.building || repo.waiting?.startsWith("Queued") ? "pending" : repo.counts.ready ? "connected" : "disabled"}`} />
         <div style={{ minWidth: 0 }}>
           <div className="setting-title">{repo.label}</div>
           <div className="setting-desc worktree-line" title={`${repo.source} · ${repo.baseBranch} · ${repo.setup ?? "no setup"}`}>
             {shortPath(repo.source)} · {repo.baseBranch} · {repo.setup ? <code>{repo.setup}</code> : "no setup"}
           </div>
-          <div className="setting-desc">{poolText(repo)}</div>
+          <div className="setting-desc" title={repo.waiting}>
+            {poolText(repo)}
+          </div>
           {repo.updated && (
             <div className="setting-desc">
               Your checkout: {repo.updated.result.toLowerCase()}, {age(repo.updated.at) === "now" ? "just now" : `${age(repo.updated.at)} ago`}

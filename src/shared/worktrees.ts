@@ -81,6 +81,8 @@ export type WorktreeRepoView = WorktreeRepoConfig & {
     buildMs: number | null
     lastTaken: number | null
   }
+  /** Why the pool is short of its target with no build on the way (queued behind other repos, backoff, cap) */
+  waiting?: string
   /** Why the last build failed, until one succeeds */
   error?: string
   /** What the update job last did to your checkout, and when */
