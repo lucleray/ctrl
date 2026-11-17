@@ -60,3 +60,5 @@ When asked to publish, all the way to the user's installed app:
 - fx refuses session files others can read: anything written under `~/.fx/sessions` must stay `0600`.
 - Test runs must not leave fx sessions behind in `~/.fx/sessions` (fx has no profile override); delete the ones
   you create.
+- Add tests for what you change. They must stay fast (`npm test` well under a second) and never flaky: follow
+  [docs/TESTING.md](docs/TESTING.md).

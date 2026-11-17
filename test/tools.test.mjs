@@ -1,32 +1,25 @@
 // Watched tools (src/main/tools): alerts, CLI checks, detection, the tools.json file, the service that
 // ties them to the harnesses, and the `ctrl tools` handlers.
-import * as esbuild from "esbuild"
 import assert from "node:assert/strict"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { createRequire } from "node:module"
-import { tmpdir } from "node:os"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { after, before, describe, test } from "node:test"
+import { before, describe, test } from "node:test"
+import { load, tmpDir } from "./helpers.mjs"
 
-const tmp = mkdtempSync(join(tmpdir(), "ctrl-tools-test-"))
+const tmp = tmpDir("ctrl-tools-test-")
 let ToolAlerts, CliTools, createHandlers, detect, awsChecks, fxMcpConfigs, parseTools, ToolsService
 
-const load = async (entry) => {
-  const outfile = join(tmp, entry.replace(/\W/g, "_") + ".cjs")
-  await esbuild.build({ entryPoints: [entry], outfile, bundle: true, platform: "node", format: "cjs", logLevel: "warning" })
-  return createRequire(import.meta.url)(outfile)
-}
-
 before(async () => {
-  ;({ ToolAlerts } = await load("src/main/tools/alerts.ts"))
-  ;({ CliTools } = await load("src/main/tools/cli.ts"))
-  ;({ detect, awsChecks, fxMcpConfigs } = await load("src/main/tools/detect.ts"))
-  ;({ parseTools } = await load("src/main/tools/config.ts"))
-  ;({ ToolsService } = await load("src/main/tools/service.ts"))
-  ;({ createHandlers } = await load("src/main/cli-handlers.ts"))
+  ;[{ ToolAlerts }, { CliTools }, { detect, awsChecks, fxMcpConfigs }, { parseTools }, { ToolsService }, { createHandlers }] = await load(
+    tmp,
+    "src/main/tools/alerts.ts",
+    "src/main/tools/cli.ts",
+    "src/main/tools/detect.ts",
+    "src/main/tools/config.ts",
+    "src/main/tools/service.ts",
+    "src/main/cli-handlers.ts",
+  )
 })
-
-after(() => rmSync(tmp, { recursive: true, force: true }))
 
 const fakeUi = () => {
   const events = []
