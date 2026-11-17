@@ -1,6 +1,7 @@
 import type { ChatPending, FormAnswer } from "../main/remote"
 import type { ChatItem, ChatPage, ChatQueued } from "../main/remote-chat"
 import type { CommandID, ShortcutOverrides } from "./shortcuts"
+import type { WorktreeJobID, WorktreeRepoConfig, WorktreesView } from "./worktrees"
 
 /** variant: opencode model variant, or fx reasoning effort (`--effort`); unset = the model's default */
 export type ModelRef = { providerID: string; id: string; variant?: string }
@@ -187,6 +188,16 @@ export type Settings = {
   remoteControl: boolean
   /** How opencode sessions show: the embedded TUI, or a chat view like the phone's (src/renderer/ChatView.tsx) */
   sessionView: SessionView
+  /** Folder git worktrees are created in (src/main/worktrees); null = ~/.ctrl/worktrees */
+  worktreeRoot: string | null
+  /** Size each repo's warm pool from how often its worktrees are taken; off = one warm worktree per repo */
+  worktreePoolAuto: boolean
+  /** Most warm worktrees a pool sized from usage keeps */
+  worktreePoolMax: number
+  /** Release the worktrees of archived and deleted sessions, and remove worktree folders nothing tracks */
+  worktreeCleanup: boolean
+  /** Fetch your own checkouts every hour and fast-forward their base branch when it's safe */
+  worktreeUpdateRepos: boolean
 }
 
 export type SessionView = "terminal" | "chat"
@@ -324,6 +335,8 @@ export type AppState = {
   tools: ToolItem[]
   /** tools.json exists: you went through the tools scan (onboarding or Settings) */
   toolsSetUp: boolean
+  /** Git worktrees agents take with `ctrl worktree up`: repos, pool sizes, usage and background jobs (Settings → Worktrees) */
+  worktrees: WorktreesView
   /** Resource adapters (live details for links), in Settings order */
   adapters: AdapterInfo[]
   /** Ongoing connection trouble (opencode service or embedded TUI); clears itself */
@@ -593,6 +606,16 @@ export type CtrlApi = {
   saveCliTool(config: CliToolConfig): Promise<void>
   /** Stops watching an MCP server or CLI (a scan can find it again) */
   removeTool(id: string): Promise<void>
+  /** Changes a repo's worktree settings (Settings → Worktrees); null clears name / setup, or sizes the pool from usage */
+  configureWorktreeRepo(source: string, patch: Partial<Pick<WorktreeRepoConfig, "baseBranch" | "maxTotal">> & { name?: string | null; setup?: string | null; warm?: number | null }): Promise<void>
+  /** Stops managing a repo and removes its idle worktrees */
+  forgetWorktreeRepo(source: string): Promise<void>
+  /** Runs a worktree background job now */
+  runWorktreeJob(id: WorktreeJobID): Promise<void>
+  /** Settings → Worktrees → Folder */
+  pickWorktreeRoot(): Promise<void>
+  /** Shows a folder in Finder (a worktree in the resources panel) */
+  revealPath(path: string): Promise<void>
   /** While on, key presses are reported to onRecordedKey instead of running shortcuts */
   recordShortcut(on: boolean): Promise<void>
   onRecordedKey(cb: (accel: string) => void): () => void

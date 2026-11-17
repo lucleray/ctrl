@@ -6,6 +6,7 @@ import { notion } from "./notion"
 import { sessionRefUrl, sessions } from "./sessions"
 import { slack } from "./slack"
 import { vercel } from "./vercel"
+import { worktrees } from "./worktrees"
 
 export type { ParsedResource, Placement, ResourceAdapter, ResourceType, Stage, StageContext } from "./adapter"
 
@@ -18,7 +19,7 @@ export type { ParsedResource, Placement, ResourceAdapter, ResourceType, Stage, S
  * Adding or changing link types: bump RESOURCES_VERSION, which re-extracts
  * resources from already indexed messages (local, nothing is refetched).
  */
-export const ADAPTERS: ResourceAdapter[] = [sessions, github, linear, notion, slack, vercel]
+export const ADAPTERS: ResourceAdapter[] = [worktrees, sessions, github, linear, notion, slack, vercel]
 
 export const RESOURCES_VERSION = 3
 

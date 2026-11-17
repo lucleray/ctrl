@@ -572,6 +572,41 @@ export class OpenCodeService implements HarnessSource {
     return root
   }
 
+  /**
+   * The root session of a subagent session, asking opencode for parents it hasn't seen run. So a subagent
+   * that runs `ctrl worktree up` gets a worktree for the session you see in the sidebar. null: no such session.
+   */
+  async rootSession(id: string): Promise<string | null> {
+    let root = id
+    for (let i = 0; i < MAX_DEPTH; i++) {
+      let parent = this.subagentParents.get(root)
+      if (!parent) {
+        if (!this.client) return i ? root : null
+        try {
+          parent = (await this.client.session.get({ sessionID: root })).parentID ?? undefined
+        } catch {
+          return i ? root : null
+        }
+      }
+      if (!parent) break
+      root = parent
+    }
+    return root
+  }
+
+  /** Whether opencode still has this session (archived on its side counts as archived). undefined: can't tell right now. */
+  async sessionState(id: string): Promise<"active" | "archived" | "gone" | undefined> {
+    if (this.deleted.has(id)) return "gone"
+    if (!this.client) return undefined
+    try {
+      const info = await this.client.session.get({ sessionID: id })
+      return info.time.archived ? "archived" : "active"
+    } catch (err) {
+      const text = `${(err as { name?: string })?.name ?? ""} ${err instanceof Error ? err.message : String(err)}`
+      return /not.?found|404/i.test(text) ? "gone" : undefined
+    }
+  }
+
   /** Shells and running subagents per root session. Proportional to what runs, not to how many sessions exist. */
   private rebuildActivity() {
     const out = new Map<string, SessionActivity>()

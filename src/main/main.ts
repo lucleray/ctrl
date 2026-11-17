@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "e
 import { execFile } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   FONT_SIZE,
@@ -27,6 +27,8 @@ import {
   type CliToolConfig,
   type ChatAttachment,
   type UiState,
+  type ResourceItem,
+  type ResourceMeta,
   isResourceArchived,
 } from "../shared/types"
 import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
@@ -54,6 +56,9 @@ import { cleanImages, RemoteServer, type FormAnswer, type RemoteBoardCard, type 
 import { chatImage, chatInbox, chatPage } from "./remote-chat"
 import { Store } from "./store"
 import { ToolsService } from "./tools/service"
+import { WorktreeService, type SessionState } from "./worktrees/service"
+import { worktreeUrl } from "../shared/adapters/worktrees"
+import type { Worktree, WorktreeJobID } from "../shared/worktrees"
 
 import { Terminal } from "./terminal"
 import { WrappedLinks } from "./wrapped-links" // wrapped-links
@@ -185,6 +190,7 @@ const state = (): AppState => ({
   activeTermID: activeTermID(),
   tools: tools.items(),
   toolsSetUp: tools.setUp,
+  worktrees: worktrees.view(),
   adapters: adapters.adapters,
   // Without a usable opencode, the setup screen (or Settings) explains what's wrong instead.
   problem:
@@ -836,6 +842,7 @@ const applySettings = (patch: Partial<Settings>) => {
   }
   if (patch.companion !== undefined && !headless) companion.setEnabled(patch.companion)
   if (patch.shortcuts && !headless) companion.updateShortcuts()
+  if (Object.keys(patch).some((key) => key.startsWith("worktree"))) worktrees.settingsChanged()
   loadThemes()
   applyTheme()
 }
@@ -1196,6 +1203,8 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
     const status = fxTerms.status(id)?.state
     if (status !== "working" && status !== "blocked") fxTerms.closeSession(id)
   }
+  // Their worktrees go back to the pool once the undo window has passed.
+  worktrees.sessionsArchived()
   push()
   if (!withToast) return
   // One session asked for (its children may have come along): name it.
@@ -1271,6 +1280,7 @@ const commitDelete = async (sessionID: string) => {
       fx.forget(sessionID)
     } else await opencode.removeSession(sessionID)
     store.forgetSession(sessionID)
+    void worktrees.releaseSession(sessionID).catch(report)
   } catch (err) {
     report(err)
   } finally {
@@ -1359,6 +1369,96 @@ const suggestTools = () => {
     { icon: "link", message: "ctrl can watch your MCP servers and CLI logins, and tell you when one needs you" },
     { action: { label: "Set up", run: () => send("ui:settings", "tools") } },
   )
+}
+
+// ---------- worktrees ----------
+
+/**
+ * Where worktrees go by default. Only the installed app uses ~/.ctrl/worktrees: dev runs and previews get
+ * a folder of their own, so two ctrls never manage (or clean up) the same worktrees. CTRL_WORKTREE_ROOT
+ * is a debug hook (docs/DEVELOPMENT.md).
+ */
+const WORKTREE_ROOT =
+  process.env.CTRL_WORKTREE_ROOT ||
+  (app.isPackaged && !process.env.CTRL_USER_DATA
+    ? join(homedir(), ".ctrl", "worktrees")
+    : join(homedir(), ".ctrl", `worktrees-${basename(app.getPath("userData")).replace(/[^\w.-]+/g, "-")}`))
+
+/** Archived and deleted sessions give their worktrees back. A session ctrl can't see the state of keeps them. */
+const worktreeSessionState = async (sessionID: string): Promise<SessionState> => {
+  if (store.data.archived[sessionID]) return "archived"
+  if (sessionByID(sessionID) || pendingDeletes.has(sessionID)) return "active"
+  if (harnessOf(sessionID) === "fx") return fxStarted ? (fx.get(sessionID) ? "active" : "gone") : "unknown"
+  return (await opencode.sessionState(sessionID)) ?? "unknown"
+}
+
+const worktrees: WorktreeService = new WorktreeService(join(app.getPath("userData"), "worktrees.json"), WORKTREE_ROOT, {
+  settings: () => {
+    const s = store.data.settings
+    return {
+      root: s.worktreeRoot,
+      poolAuto: s.worktreePoolAuto,
+      poolMax: s.worktreePoolMax,
+      cleanup: s.worktreeCleanup,
+      updateRepos: s.worktreeUpdateRepos,
+    }
+  },
+  sessionState: worktreeSessionState,
+  changed: (sessionIDs) => {
+    if (sessionIDs.length) send("resources:changed", sessionIDs)
+    push()
+  },
+})
+
+const worktreeMeta = (wt: Worktree): ResourceMeta => {
+  const branch = worktrees.knownBranch(wt)
+  const name = worktrees.name(wt)
+  return {
+    title: branch ? `${name} · ${branch}` : name,
+    subtitle: wt.path.replace(homedir(), "~"),
+    tone: wt.status === "building" ? "warn" : "open",
+    chips: [
+      ...(wt.status === "building" ? [{ text: "building", tone: "warn" as const, title: "Checking out and running the repo's setup command" }] : []),
+      ...(wt.status === "attached" && !branch ? [{ text: "detached", tone: "muted" as const, title: "No branch checked out yet" }] : []),
+      ...(wt.setupFailed ? [{ text: "setup failed", tone: "bad" as const, title: "The repo's setup command failed in this worktree" }] : []),
+    ],
+    fields: { repo: name, source: wt.repo, path: wt.path, branch, status: wt.status, baseCommit: wt.baseCommit },
+    fetched: Date.now(),
+  }
+}
+
+/**
+ * The worktrees these sessions hold, as resources: they're attached to a session by ctrl, not mentioned in
+ * its messages, so they're added here instead of coming from the index. Branches are read from git behind
+ * the reply: when one changed, the panel is told to ask again.
+ */
+const worktreeResources = (sessionIDs: string[]): (ResourceItem & { meta: ResourceMeta })[] => {
+  if (!adapters.shows("worktree")) return []
+  const ids = new Set(sessionIDs)
+  const held = worktrees.all().filter((w) => w.sessionID && ids.has(w.sessionID) && (w.status === "attached" || w.status === "building"))
+  for (const wt of held) {
+    const before = worktrees.knownBranch(wt)
+    void worktrees.describe(wt).then((now) => {
+      if (now.branch !== before && wt.sessionID) send("resources:changed", [wt.sessionID])
+    })
+  }
+  return held.map((wt) => {
+    const at = wt.attachedAt ?? wt.since
+    const meta = worktreeMeta(wt)
+    return {
+      id: `worktree:${wt.id}`,
+      type: "worktree",
+      url: worktreeUrl(wt.id),
+      data: { id: wt.id, repo: worktrees.name(wt), path: wt.path, ...(meta.fields?.branch ? { branch: String(meta.fields.branch) } : {}) },
+      mentions: 1,
+      sessions: 1,
+      first: at,
+      last: at,
+      sharedByYou: false,
+      sessionIDs: [wt.sessionID!],
+      meta,
+    }
+  })
 }
 
 // ---------- shortcuts ----------
@@ -1492,6 +1592,24 @@ function registerIpc() {
   ipcMain.handle("tools:apply-scan", (_e, checked: string[]) => tools.applyScan(checked))
   ipcMain.handle("tools:save-cli", (_e, config: CliToolConfig) => tools.saveCli(config))
   ipcMain.handle("tools:remove", (_e, id: string) => void tools.remove(id))
+  ipcMain.handle("worktrees:configure", (_e, source: string, patch: Parameters<WorktreeService["configure"]>[1]) =>
+    worktrees.configure(source, patch).then(() => undefined, report),
+  )
+  ipcMain.handle("worktrees:forget", (_e, source: string) => worktrees.forget(source).then(() => undefined, report))
+  ipcMain.handle("worktrees:run-job", (_e, id: WorktreeJobID) => worktrees.runJob(id).then(() => undefined, report))
+  ipcMain.handle("worktrees:pick-root", async () => {
+    if (!win) return
+    const res = await dialog.showOpenDialog(win, {
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: worktrees.root(),
+    })
+    if (res.canceled || !res.filePaths[0]) return
+    applySettings({ worktreeRoot: res.filePaths[0] })
+    push()
+  })
+  ipcMain.handle("reveal-path", (_e, path: string) => {
+    if (existsSync(path)) void shell.openPath(path)
+  })
   ipcMain.handle("shortcut:record", (_e, on: boolean) => {
     recordingShortcut = on
     if (!headless) companion.pauseShortcuts(on)
@@ -1593,12 +1711,13 @@ function registerIpc() {
     void opencode.loadOlder()
     return search.search(query)
   })
-  ipcMain.handle("resources:list", (_e, sessionIDs: string[]) =>
-    search
+  ipcMain.handle("resources:list", (_e, sessionIDs: string[]) => [
+    ...worktreeResources(sessionIDs),
+    ...search
       .resources(sessionIDs)
       .filter((r) => adapters.shows(r.type))
       .map((r) => ({ ...r, meta: adapters.get(r) })),
-  )
+  ])
   ipcMain.handle("resources:board", (_e, sessionIDs: string[]) =>
     search
       .resourcesWithSessions(sessionIDs)
@@ -1819,11 +1938,13 @@ const cliHost: CliHost = {
   renderer: (event, arg) => send(`ui:${event}`, arg),
   home: (prefill) => showOpencodeHome(prefill || undefined),
   search: (query) => search.search(query),
-  resources: (ids) =>
-    search
+  resources: (ids) => [
+    ...worktreeResources(ids),
+    ...search
       .resources(ids)
       .filter((r) => adapters.shows(r.type))
       .map((r) => ({ ...r, meta: adapters.get(r) })),
+  ],
   resourcesByID: (ids) =>
     search
       .resourcesByID(ids)
@@ -1831,7 +1952,13 @@ const cliHost: CliHost = {
       .map((r) => ({ ...r, meta: adapters.get(r) })),
   setResourcesArchived,
   fetchResources: (items, opts) => adapters.request(items, opts),
-  resourceMeta: (item) => adapters.get(item),
+  resourceMeta: (item) => {
+    if (item.type !== "worktree") return adapters.get(item)
+    const wt = worktrees.all().find((w) => `worktree:${w.id}` === item.id)
+    return wt && worktreeMeta(wt)
+  },
+  worktrees,
+  rootSession: async (id) => (harnessOf(id) === "opencode" ? opencode.rootSession(id) : null),
   models: (harness, directory) => (harness === "fx" ? listFxModels() : opencode.listModels(directory)),
   mcp: () => opencode.mcp,
   reconnectMcp: (name) => opencode.reconnectMcp(name),
@@ -2063,6 +2190,7 @@ app.whenReady().then(async () => {
   win!.webContents.once("did-finish-load", () =>
     setTimeout(() => {
       tools.start()
+      worktrees.start()
       // After the agents offer (3s), one thing at a time.
       setTimeout(suggestTools, 6000)
     }, 2000),
@@ -2114,5 +2242,6 @@ app.on("will-quit", () => {
   companion.dispose()
   adapters.stop()
   tools.stop()
+  worktrees.stop()
   updater.stop()
 })

@@ -39,6 +39,8 @@ import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
 import type { Handler } from "./cli-server"
 import type { Store } from "./store"
+import type { Worktree, WorktreeView } from "../shared/worktrees"
+import type { WorktreeService } from "./worktrees/service"
 
 /** What the CLI needs from main. main.ts implements it with the same functions the UI uses. */
 export type CliHost = {
@@ -113,6 +115,13 @@ export type CliHost = {
   removeTool(id: string): boolean
   /** CLI checks as configured in tools.json */
   cliTools(): CliToolConfig[]
+  /** The worktree pool (src/main/worktrees) */
+  worktrees: Pick<
+    WorktreeService,
+    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup"
+  >
+  /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
+  rootSession(sessionID: string): Promise<string | null>
   skill(name: "read-session" | "ctrl", action?: "install" | "uninstall"): SkillStatus
   update(action: "check" | "install"): Promise<UpdateStatus>
   digestScript(): string
@@ -161,6 +170,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     createdByAgent: store.data.createdByAgent[s.id] ?? null,
     parentID: store.data.parents[s.id] ?? null,
     children: childrenOf(s.id),
+    worktrees: host.worktrees.ofSession(s.id).map((w) => ({ id: w.id, repo: host.worktrees.name(w), path: w.path })),
     status: s.status,
     ...(s.statusDetail ? { statusDetail: s.statusDetail } : {}),
     updated: s.updated,
@@ -582,6 +592,11 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     soundsWhenFocused: false,
     remoteControl: false,
     sessionView: "terminal",
+    worktreeRoot: null,
+    worktreePoolAuto: true,
+    worktreePoolMax: 8,
+    worktreeCleanup: true,
+    worktreeUpdateRepos: false,
     "soundChoices.needs-input": "Glass",
     "soundChoices.failed": "Basso",
     "soundChoices.finished": "Hero",
@@ -700,6 +715,81 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       : (tools.find((t) => t.id === `cli:${raw}`) ?? tools.find((t) => t.id === `mcp:${raw}`))?.id
     if (!id) throw new CliError("NOT_FOUND", `No tool ${raw}`, { hint: "ctrl tools list", candidates: tools.map((t) => t.id) })
     return id
+  }
+
+  // ---------- worktrees ----------
+
+  /** The pool's own errors (no such repo, unsaved work…) become CLI errors with their hint. */
+  const worktreeCall = async <T>(work: () => Promise<T> | T): Promise<T> => {
+    try {
+      return await work()
+    } catch (err) {
+      const e = err as { name?: string; code?: CliError["code"]; message?: string; extra?: CliError["extra"] }
+      if (e?.name === "WorktreeError" && e.code) throw new CliError(e.code, e.message ?? "", e.extra)
+      throw err
+    }
+  }
+
+  /**
+   * The session a worktree is for: `self` by default. A subagent's shell reports the subagent's own
+   * session, which ctrl doesn't list, so that resolves to the session it works for.
+   */
+  const worktreeSession = async (selector: unknown, caller: CallerContext): Promise<SessionItem> => {
+    if (selector !== undefined && selector !== "self") return resolveSession(selector, caller)
+    let id: string
+    try {
+      id = selfID(caller)
+    } catch {
+      throw new CliError("NO_SELF", "A worktree belongs to a session, and this isn't run inside one", {
+        hint: "Pass --session <id> (ctrl session list)",
+      })
+    }
+    const root = byID(id) ?? byID((await host.rootSession(id)) ?? "")
+    if (!root) throw new CliError("NOT_FOUND", `No session ${id}`, { hint: "Pass --session <id> (ctrl session list)" })
+    return root
+  }
+
+  const baseBranchOf = (source: string) => host.worktrees.view().repos.find((r) => r.source === source)?.baseBranch ?? null
+
+  const worktreeView = (w: WorktreeView) => ({
+    id: w.id,
+    repo: w.name,
+    source: w.repo,
+    path: w.path,
+    status: w.status,
+    sessionID: w.sessionID,
+    branch: w.branch,
+    commit: w.commit,
+    baseBranch: baseBranchOf(w.repo),
+    baseCommit: w.baseCommit,
+    warmedAt: w.warmedAt,
+    attachedAt: w.attachedAt,
+    ...(w.setupFailed ? { setupFailed: true } : {}),
+  })
+
+  const ago = (at: number) => {
+    const min = Math.round((Date.now() - at) / 60_000)
+    return min < 1 ? "just now" : min < 90 ? `${min}m ago` : min < 48 * 60 ? `${Math.round(min / 60)}h ago` : `${Math.round(min / 1440)}d ago`
+  }
+
+  /** What an agent should know right after taking a worktree, in one line each. */
+  const upHint = (w: WorktreeView, others: Worktree[]) => {
+    const base = baseBranchOf(w.repo)
+    const setup = host.worktrees.view().repos.find((r) => r.source === w.repo)?.setup
+    return [
+      w.branch
+        ? `On branch ${w.branch}.`
+        : `Detached at ${base ?? "the base branch"} as of ${w.warmedAt ? ago(w.warmedAt) : "now"}: create a branch before committing (git switch -c <branch>${
+            w.warmedAt && Date.now() - w.warmedAt > 3_600_000 && base ? `; for the very latest, git fetch origin ${base} first and branch from origin/${base}` : ""
+          }).`,
+      `Work in ${w.path} (pass it as working directory); it's released when this session is archived.`,
+      w.setupFailed ? `The setup command failed${setup ? ` (${setup})` : ""}: run it yourself in the worktree.` : "",
+      others.length
+        ? `This session also holds ${others.length} other worktree${others.length > 1 ? "s" : ""} of ${w.name} (${others.map((o) => o.id).join(", ")}): release the ones you don't need with ctrl worktree down <id>.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
   }
 
   // ---------- handlers ----------
@@ -1284,6 +1374,113 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const name = args.name as "read-session" | "ctrl"
       return { name, ...host.skill(name, "uninstall") }
     },
+
+    // ----- worktrees -----
+    "worktree up": async (args, req, stream) => {
+      const session = await worktreeSession(args.session, req.caller)
+      if (store.data.archived[session.id])
+        throw new CliError("CONFLICT", `${session.id} is archived, and archived sessions give their worktrees back`, {
+          hint: `ctrl session unarchive ${session.id}`,
+        })
+      // A caller that's gone (killed by a tool timeout) or gave up doesn't get the worktree: its next `up` does.
+      let alive = true
+      void stream.closed.then(() => (alive = false))
+      const timeout = Math.max(1000, Number(args.timeout ?? 600_000))
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const gaveUp = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          alive = false
+          reject(
+            new CliError("TIMEOUT", `The worktree is still being built after ${Math.round(timeout / 1000)}s`, {
+              hint: "The build goes on: run the same command again to wait for it (it won't start another)",
+            }),
+          )
+        }, timeout)
+      })
+      const work = worktreeCall(() =>
+        host.worktrees.up(String(args.repo), session.id, { skipSetup: !!args["skip-setup"], cwd: req.caller.cwd, alive: () => alive }),
+      )
+      // Keeps building after a timeout: its failure then shows on the repo (ctrl worktree config).
+      work.catch(() => {})
+      const { worktree, cold } = await Promise.race([work, gaveUp]).finally(() => clearTimeout(timer))
+      const view = await host.worktrees.describe(worktree)
+      const others = host.worktrees.ofSession(session.id).filter((w) => w.id !== worktree.id && w.repo === worktree.repo)
+      return { ...worktreeView(view), cold, hint: upHint(view, others) }
+    },
+    "worktree down": async (args, req) =>
+      worktreeCall(async () => {
+        const wt = host.worktrees.find(args.worktree === undefined ? undefined : String(args.worktree), req.caller.cwd)
+        const { id, path } = wt
+        const repo = host.worktrees.name(wt)
+        const res = await host.worktrees.down(wt, { force: !!args.force })
+        return { id, repo, path, released: true, branch: res.branch, forced: res.forced, rescueRef: res.rescueRef }
+      }),
+    "worktree list": async (args, req) =>
+      worktreeCall(async () => {
+        let items = host.worktrees.all()
+        let scope: "session" | "all" = "all"
+        let sessionID: string | undefined
+        if (args.session !== undefined) sessionID = (await worktreeSession(args.session, req.caller)).id
+        else if (!args.all) sessionID = await worktreeSession(undefined, req.caller).then((s) => s.id, () => undefined)
+        if (sessionID) {
+          scope = "session"
+          items = items.filter((w) => w.sessionID === sessionID)
+        }
+        if (args.repo !== undefined) {
+          const { source } = await host.worktrees.repo(String(args.repo), req.caller.cwd)
+          items = items.filter((w) => w.repo === source)
+        }
+        if (args.status?.length) items = items.filter((w) => args.status.includes(w.status))
+        const p = page(items, args)
+        return { ...p, items: (await Promise.all(p.items.map((w) => host.worktrees.describe(w)))).map(worktreeView), scope }
+      }),
+    "worktree config": async (args, req) =>
+      worktreeCall(async () => {
+        const flags = ["name", "base", "setup", "warm", "max-total"].filter((f) => args[f] !== undefined)
+        if (args.repo === undefined) {
+          if (flags.length || args.forget) throw new CliError("USAGE", "Pass the repo these flags are for", { hint: "ctrl worktree config <repo> --warm 3" })
+          const s = store.data.settings
+          const view = host.worktrees.view()
+          return {
+            root: view.root,
+            settings: {
+              worktreeRoot: s.worktreeRoot,
+              worktreePoolAuto: s.worktreePoolAuto,
+              worktreePoolMax: s.worktreePoolMax,
+              worktreeCleanup: s.worktreeCleanup,
+              worktreeUpdateRepos: s.worktreeUpdateRepos,
+            },
+            jobs: view.jobs,
+            repos: view.repos,
+          }
+        }
+        const token = String(args.repo)
+        if (args.forget) {
+          if (flags.length) throw new CliError("USAGE", "--forget goes alone")
+          return { ...(await host.worktrees.forget(token, req.caller.cwd)), changed: true }
+        }
+        let warm: number | null | undefined
+        if (args.warm !== undefined) {
+          warm = args.warm === "auto" ? null : Number(args.warm)
+          if (warm !== null && (!Number.isInteger(warm) || warm < 0))
+            throw new CliError("USAGE", `--warm must be a number or auto, got ${JSON.stringify(args.warm)}`)
+        }
+        const { repo, changed } = await host.worktrees.configure(
+          token,
+          {
+            ...(args.name !== undefined ? { name: String(args.name) || null } : {}),
+            ...(args.base !== undefined ? { baseBranch: String(args.base) } : {}),
+            ...(args.setup !== undefined ? { setup: String(args.setup) || null } : {}),
+            ...(warm !== undefined ? { warm } : {}),
+            ...(args["max-total"] !== undefined ? { maxTotal: Number(args["max-total"]) } : {}),
+          },
+          req.caller.cwd,
+        )
+        return { ...repo, changed }
+      }),
+    "worktree prewarm": async (args, req) =>
+      worktreeCall(() => host.worktrees.prewarm(String(args.repo), args.count === undefined ? undefined : Number(args.count), req.caller.cwd)),
+    "worktree cleanup": async (args) => ({ ...(await host.worktrees.cleanup({ apply: !!args.apply })), applied: !!args.apply }),
 
     // ----- events -----
     events: async (args, req, stream) => {

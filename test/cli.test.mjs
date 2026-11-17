@@ -222,6 +222,7 @@ function fakeHost(overrides = {}) {
     currentSessionID: () => null,
     termSession: () => undefined,
     isLive: () => false,
+    worktrees: { ofSession: () => [], name: () => "" },
     window: () => ({}),
     changed,
     onChange: (cb) => (listeners.add(cb), () => listeners.delete(cb)),

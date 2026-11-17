@@ -34,7 +34,7 @@ const EMPTY: AppState = {
     resourcesCollapsed: false,
     resourcesDocked: false,
   },
-  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal" },
+  settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal", worktreeRoot: null, worktreePoolAuto: true, worktreePoolMax: 8, worktreeCleanup: true, worktreeUpdateRepos: false },
   themes: { builtin: [], custom: [] },
   dark: false,
   spaces: [],
@@ -50,6 +50,7 @@ const EMPTY: AppState = {
   activeTermID: null,
   tools: [],
   toolsSetUp: true,
+  worktrees: { root: "", repos: [], jobs: { pool: { at: null, summary: null }, cleanup: { at: null, summary: null }, update: { at: null, summary: null } } },
   adapters: [],
   remote: { state: "off" },
 }

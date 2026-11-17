@@ -79,6 +79,27 @@ export const SETTING_KEYS: SettingKey[] = [
     description: "How opencode sessions show: the embedded TUI (terminal) or a chat view (chat). fx sessions always use their terminal",
   },
   {
+    key: "worktreeRoot",
+    type: { kind: "string", nullable: true },
+    description: "Folder git worktrees are created in (`ctrl worktree up`); null = ~/.ctrl/worktrees. Worktrees that exist stay where they are",
+  },
+  {
+    key: "worktreePoolAuto",
+    type: { kind: "bool" },
+    description: "Size each repo's warm worktree pool from the last 7 days of use; off = one warm worktree per repo (repos with a fixed size keep it)",
+  },
+  { key: "worktreePoolMax", type: { kind: "int", min: 0, max: 50 }, description: "Most warm worktrees a pool sized from usage keeps per repo" },
+  {
+    key: "worktreeCleanup",
+    type: { kind: "bool" },
+    description: "Every hour and after a session is archived: release the worktrees of archived and deleted sessions, remove worktree folders nothing tracks",
+  },
+  {
+    key: "worktreeUpdateRepos",
+    type: { kind: "bool" },
+    description: "Every hour: fetch the repos worktrees come from and fast-forward your own checkout when it's on its base branch with nothing uncommitted",
+  },
+  {
     key: "soundChoices.<event>",
     type: { kind: "sound" },
     description: "Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null",

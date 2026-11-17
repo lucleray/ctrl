@@ -794,6 +794,121 @@ export const COMMANDS: CommandSpec[] = [
     mutates: true,
   },
 
+  // ---------- worktrees ----------
+  {
+    name: "worktree up",
+    summary: "A ready-to-work git worktree of a repo for this session: checked out at the latest base branch, dependencies installed",
+    details: [
+      "Instant when the repo's pool has a warm worktree. Otherwise it's built now (checkout + the repo's setup command), which can take minutes: `cold` is true.",
+      "<repo> is the path of a git checkout on this Mac (anywhere inside it works), or the name of a repo ctrl already manages. A repo seen for the first time is registered on its own: base branch from origin, setup command from its lockfile.",
+      "The worktree is attached to the session (default: the one you run in) and shows in its resources. Each call takes another worktree, so a session can hold several, of one repo or of many: `ctrl worktree list` shows the ones it holds.",
+      "It's on a detached HEAD: create a branch before committing (`git switch -c <branch>`). Work in it with its `path` as working directory; the session itself doesn't move.",
+      "Released when its session is archived or deleted, or with `ctrl worktree down`.",
+      "A build outlives this call: after a TIMEOUT (or a killed command), run it again to keep waiting for the same worktree.",
+    ],
+    args: [
+      { name: "repo", type: "string", positional: true, required: true, placeholder: "<repo>", description: "Path of a git checkout, or the name of a repo ctrl manages (`ctrl worktree config`)" },
+      { name: "session", type: "string", description: "Session that holds it (selectors as for <session>); default `self`" },
+      { name: "skip-setup", type: "bool", description: "When it has to be built: don't run the repo's setup command (e.g. offline)" },
+      { name: "timeout", type: "int", default: 600000, description: "Give up waiting for a build after this many ms (TIMEOUT); the build goes on" },
+    ],
+    returns: "Worktree & {cold:boolean, hint?:string}",
+    examples: [
+      "ctrl worktree up ~/code/acme-app",
+      'cd "$(ctrl worktree up ~/code/acme-app | jq -r .data.path)" && git switch -c my-feature',
+      "ctrl worktree up acme-app --fields id,path,branch",
+    ],
+    mutates: true,
+  },
+  {
+    name: "worktree down",
+    summary: "Gives a worktree back to its repo's pool",
+    details: [
+      "Recycling resets it to the base branch, so this refuses (CONFLICT) while it has uncommitted files, commits no remote has, or commits on a detached HEAD: commit and push first, or pass --force to discard (branches stay in the repo, detached commits get a rescue ref under refs/ctrl/rescue/).",
+      "Its folder goes away: don't use the path afterwards.",
+      "Rarely needed: archiving a session releases its worktrees.",
+    ],
+    args: [
+      { name: "worktree", type: "string", positional: true, placeholder: "[<id|path>]", description: "Worktree id or path (default: the worktree the current folder is in)" },
+      { name: "force", type: "bool", description: "Release it even with unsaved work" },
+    ],
+    returns: "{id, repo, path, released:true, branch:string|null, forced:boolean, rescueRef:string|null}",
+    examples: ["ctrl worktree down", "ctrl worktree down k3x9qd", "ctrl worktree down ~/.ctrl/worktrees/acme-app-3f9c/k3x9qd --force"],
+    mutates: true,
+  },
+  {
+    name: "worktree list",
+    summary: "Worktrees: the ones your session holds, or all of them",
+    details: [
+      "Run inside a session: the worktrees it holds (`scope: \"session\"`). Outside one, or with --all: every worktree, warm ones in the pools included.",
+      "`branch` and `commit` are read from git as you ask.",
+    ],
+    args: [
+      { name: "all", type: "bool", description: "Every worktree, not only your session's" },
+      { name: "session", type: "string", description: "Worktrees this session holds (selectors as for <session>)" },
+      { name: "repo", type: "string", description: "Only this repo's (path or name)" },
+      {
+        name: "status",
+        type: "enum",
+        list: true,
+        values: ["ready", "attached", "building", "released", "resetting", "removing"],
+        description: "Only these statuses (repeatable)",
+      },
+      limit,
+      cursor,
+    ],
+    returns: '{items:[Worktree], next:string|null, total:number, scope:"session"|"all"}',
+    examples: ["ctrl worktree list --fields id,repo,path,branch", "ctrl worktree list --all --status attached"],
+  },
+  {
+    name: "worktree config",
+    summary: "Worktree settings: every repo ctrl manages, or one repo (add it, or change how its worktrees are made)",
+    details: [
+      "Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.",
+      "With <repo>: that repo, registered if it's new. Flags change it.",
+      "The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the worktreePoolMax setting. One for a repo unused for a week, none after 30 days.",
+    ],
+    args: [
+      { name: "repo", type: "string", positional: true, placeholder: "[<repo>]", description: "Path of a git checkout, or a managed repo's name" },
+      { name: "name", type: "string", description: "Short name to use instead of the path; \"\" clears it" },
+      { name: "base", type: "string", description: "Branch worktrees start from (default: origin's default branch)" },
+      { name: "setup", type: "string", description: "Shell command run in every new worktree, e.g. \"pnpm install --frozen-lockfile\"; \"\" for none" },
+      { name: "warm", type: "string", description: "Warm pool size: a number, or `auto` to size it from usage" },
+      { name: "max-total", type: "int", description: "Most worktrees of this repo on disk; warm ones stop being built past it (default 30)" },
+      { name: "forget", type: "bool", description: "Stop managing the repo and remove its idle worktrees (refused while a session holds one)" },
+    ],
+    returns: "{root, settings, jobs, repos:[WorktreeRepo]}, or with <repo>: WorktreeRepo & {changed}",
+    examples: [
+      "ctrl worktree config",
+      'ctrl worktree config ~/code/acme-app --name app --setup "pnpm install --frozen-lockfile"',
+      "ctrl worktree config app --warm 3",
+      "ctrl worktree config app --warm auto",
+    ],
+    mutates: true,
+  },
+  {
+    name: "worktree prewarm",
+    summary: "Starts building warm worktrees for a repo now, without waiting for them",
+    details: ["Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way."],
+    args: [
+      { name: "repo", type: "string", positional: true, required: true, placeholder: "<repo>", description: "Path of a git checkout, or a managed repo's name" },
+      { name: "count", type: "int", description: "Warm worktrees to have" },
+    ],
+    returns: "WorktreeRepo",
+    mutates: true,
+  },
+  {
+    name: "worktree cleanup",
+    summary: "What the cleanup job would do, or does with --apply",
+    details: [
+      "released: worktrees whose session is archived or deleted. dropped: worktrees whose folder is gone. removed: folders in the worktree folder that ctrl doesn't track, older than an hour.",
+      "ctrl runs this itself every hour and after a session is archived (the worktreeCleanup setting), so it's rarely needed.",
+    ],
+    args: [{ name: "apply", type: "bool", description: "Do it (default: only list)" }],
+    returns: "{released:[{id, path, sessionID, reason}], dropped:[{id, path}], removed:[path], applied:boolean}",
+    mutates: true,
+  },
+
   // ---------- events ----------
   {
     name: "events",
@@ -830,6 +945,7 @@ export const OBJECTS: Record<string, string> = {
   createdByAgent: {agent: string, by: string | null, at: number} | null   // made by an agent with \`session new\`; by = its own session
   parentID: string | null    // parent session (child sessions); can be in another space, or deleted
   children: string[]         // ids of its direct child sessions, archived ones too
+  worktrees: [{id, repo, path}]   // git worktrees it holds (ctrl worktree up)
   status: "needs-input" | "running" | "failed" | "unread" | "idle"
   statusDetail?: string      // e.g. "Waiting for permission: bash"
   updated: number            // ms
@@ -852,6 +968,37 @@ export const OBJECTS: Record<string, string> = {
                              // MCP: per harness; unused = no session of it open, so not checked
   custom?: boolean           // cli: added by hand (scans never touch it)
 }`,
+  Worktree: `{
+  id: string
+  repo: string               // repo name
+  source: string             // the checkout it's a worktree of
+  path: string               // work here: pass it as working directory
+  status: "ready" | "attached" | "building" | "released" | "resetting" | "removing"
+                             // ready: warm in the pool · attached: a session holds it · released: given back, waiting to be recycled
+  sessionID: string | null   // session that holds it
+  branch: string | null      // checked out right now; null = detached HEAD
+  commit: string | null
+  baseBranch: string         // branch it started from
+  baseCommit: string | null  // commit of the base branch it was warmed at
+  warmedAt: number | null    // when it was last brought up to the base branch (ms)
+  attachedAt: number | null
+  setupFailed?: true         // the repo's setup command failed in it: run it yourself
+}`,
+  WorktreeRepo: `{
+  source: string             // your own checkout: worktrees are created from it
+  label: string              // name, else the folder name: \`ctrl worktree up <label>\`
+  name?: string
+  baseBranch: string
+  setup: string | null       // shell command run in every new worktree
+  warm: number | null        // pinned pool size; null = sized from usage
+  target: number             // pool size in effect
+  auto: boolean
+  maxTotal: number
+  counts: {ready, attached, building, released, total}
+  usage: {taken, instant, buildMs, lastTaken}   // last 7 days: worktrees taken, share that came warm (0-1), median build time
+  error?: string             // why the last build failed
+  updated?: {at, result}     // what the update job last did to the checkout
+}`,
   Space: `{
   id: string
   name: string
@@ -869,7 +1016,7 @@ export const OBJECTS: Record<string, string> = {
 }`,
   Resource: `{
   id: string                 // canonical key, e.g. "github-pr:vercel/next.js#99932"
-  type: string               // e.g. "github-pr", or "session" for a referenced session
+  type: string               // e.g. "github-pr", "session" for a referenced session, "worktree" for a git worktree it holds
   url: string                // sessions: ctrl://session/<id>
   title: string
   subtitle?: string
@@ -890,6 +1037,7 @@ export const OBJECTS: Record<string, string> = {
   //   vercel-deployment {state: ready|error|canceled|building|initializing|queued, target, url, branch, commit, creator}
   //   vercel-project {framework, productionState, productionUrl, productionCommit}
   //   slack-thread   {channel, author, text}      slack-channel {channel}
+  //   worktree       {repo, source, path, branch, status, baseCommit}   (a git worktree the session holds, url ctrl://worktree/<id>)
   pending?: true             // still being fetched when --wait ran out; live is the cached version, if any
 }`,
 }

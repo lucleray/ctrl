@@ -34,6 +34,11 @@ const DEFAULT_SETTINGS: Settings = {
   companion: false,
   remoteControl: false,
   sessionView: "terminal",
+  worktreeRoot: null,
+  worktreePoolAuto: true,
+  worktreePoolMax: 8,
+  worktreeCleanup: true,
+  worktreeUpdateRepos: false,
 }
 
 type Persisted = {
