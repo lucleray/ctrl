@@ -1398,7 +1398,6 @@ const worktrees: WorktreeService = new WorktreeService(join(app.getPath("userDat
     return {
       root: s.worktreeRoot,
       poolAuto: s.worktreePoolAuto,
-      poolMax: s.worktreePoolMax,
       cleanup: s.worktreeCleanup,
       updateRepos: s.worktreeUpdateRepos,
     }

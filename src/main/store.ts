@@ -36,7 +36,6 @@ const DEFAULT_SETTINGS: Settings = {
   sessionView: "terminal",
   worktreeRoot: null,
   worktreePoolAuto: true,
-  worktreePoolMax: 8,
   worktreeCleanup: true,
   worktreeUpdateRepos: false,
 }

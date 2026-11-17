@@ -46,8 +46,6 @@ export type WorktreeRepoConfig = {
 
 export const WORKTREE_DEFAULTS = {
   maxTotal: 30,
-  /** Ceiling for pools sized from usage (the worktreePoolMax setting) */
-  poolMax: 8,
 }
 
 export type WorktreeEvent =
@@ -156,8 +154,8 @@ export function simulateMisses(ups: number[], warm: number, refillMs: number, pa
 
 /**
  * Warm pool size for a repo, from when its worktrees were taken: the smallest pool that would have
- * served the last 7 days with at most 2% misses, capped at `max`. One for a repo used in the last 30
- * days but not the last 7, none after that.
+ * served the last 7 days with at most 2% misses, capped at `max` (the repo's cap on worktrees). One for a
+ * repo used in the last 30 days but not the last 7, none after that.
  */
 export function poolTarget(ups: number[], now: number, refillMs: number, max: number): number {
   if (max <= 0) return 0

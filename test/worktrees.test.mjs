@@ -55,7 +55,7 @@ const makeService = (settings = {}) => {
   const sessions = new Map()
   const changes = []
   const service = new WorktreeService(join(dir, "worktrees.json"), join(dir, "worktrees"), {
-    settings: () => ({ root: null, poolAuto: true, poolMax: 3, cleanup: true, updateRepos: false, ...settings }),
+    settings: () => ({ root: null, poolAuto: true, cleanup: true, updateRepos: false, ...settings }),
     sessionState: async (id) => sessions.get(id) ?? "active",
     changed: (ids) => changes.push(...ids),
   })
@@ -284,7 +284,7 @@ describe("WorktreeService", () => {
     writeFileSync(file, JSON.stringify(saved))
 
     const service = new WorktreeService(file, join(first.dir, "worktrees"), {
-      settings: () => ({ root: null, poolAuto: true, poolMax: 3, cleanup: true, updateRepos: false }),
+      settings: () => ({ root: null, poolAuto: true, cleanup: true, updateRepos: false }),
       sessionState: async () => "active",
       changed: () => {},
     })
@@ -316,7 +316,7 @@ describe("WorktreeService", () => {
 describe("worktree handlers", () => {
   const setup = () => {
     const { service, sessions } = makeService()
-    const data = { assignments: {}, archived: {}, createdByAgent: {}, parents: {}, spaces: [], settings: { worktreePoolMax: 3 } }
+    const data = { assignments: {}, archived: {}, createdByAgent: {}, parents: {}, spaces: [], settings: { worktreePoolAuto: true } }
     const list = ["ses_a", "ses_b"].map((id) => ({ id, harness: "opencode", title: id, directory: "/", status: "idle", updated: 1 }))
     const host = {
       store: { data },
@@ -402,7 +402,7 @@ describe("worktree handlers", () => {
     await assert.rejects(call("worktree config", { warm: "2" }), (err) => err.code === "USAGE")
     const overview = await call("worktree config")
     assert.deepEqual(overview.repos.map((r) => r.label), ["lib"])
-    assert.equal(overview.settings.worktreePoolMax, 3)
+    assert.equal(overview.settings.worktreePoolAuto, true)
     assert.equal(overview.root, service.root())
     const preview = await call("worktree cleanup")
     assert.deepEqual([preview.applied, preview.released, preview.removed], [false, [], []])

@@ -866,7 +866,7 @@ export const COMMANDS: CommandSpec[] = [
     details: [
       "Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.",
       "With <repo>: that repo, registered if it's new. Flags change it.",
-      "The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the worktreePoolMax setting. One for a repo unused for a week, none after 30 days.",
+      "The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.",
     ],
     args: [
       { name: "repo", type: "string", positional: true, placeholder: "[<repo>]", description: "Path of a git checkout, or a managed repo's name" },

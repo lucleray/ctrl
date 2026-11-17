@@ -44,7 +44,6 @@ export type WorktreesHost = {
     root: string | null
     /** Size pools from usage (off: one warm worktree per repo) */
     poolAuto: boolean
-    poolMax: number
     cleanup: boolean
     updateRepos: boolean
   }
@@ -431,10 +430,9 @@ export class WorktreeService {
 
   private target(repo: RepoState): number {
     if (repo.warm !== null) return repo.warm
-    const { poolAuto, poolMax } = this.host.settings()
-    if (!poolAuto) return 1
+    if (!this.host.settings().poolAuto) return 1
     const ups = this.data.events.filter((e) => e.repo === repo.source && e.type === "up").map((e) => e.t)
-    return poolTarget(ups, Date.now(), this.buildMs(repo.source) ?? POOL.buildMs, poolMax)
+    return poolTarget(ups, Date.now(), this.buildMs(repo.source) ?? POOL.buildMs, repo.maxTotal)
   }
 
   // ---------- git, serialized per repo ----------

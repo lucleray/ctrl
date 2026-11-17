@@ -286,7 +286,7 @@ every 10 min + after up/down ─► rebalance(repo): build / recycle toward targ
   worktree stays marked `undelivered`: the session's next `up` for that repo waits on it or returns it.
 - **Pool size** (`poolTarget()`): the repo's `up` timestamps of the last 7 days are replayed against a pool of
   1, 2, 3… worktrees refilled two at a time in the repo's median build time, and the smallest one with at most
-  2% misses wins, capped by the `worktreePoolMax` setting. No use in 7 days: 1. None in 30: 0. A pinned size
+  2% misses wins, capped by the repo's cap on worktrees (`maxTotal`). No use in 7 days: 1. None in 30: 0. A pinned size
   (`warm`) skips all that.
 - **Releasing never reuses a path.** A recycled worktree is `git worktree move`d to a new id and folder before
   it's warm again, so a session that still remembers the old path (an unarchived one) hits a missing folder

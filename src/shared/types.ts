@@ -192,8 +192,6 @@ export type Settings = {
   worktreeRoot: string | null
   /** Size each repo's warm pool from how often its worktrees are taken; off = one warm worktree per repo */
   worktreePoolAuto: boolean
-  /** Most warm worktrees a pool sized from usage keeps */
-  worktreePoolMax: number
   /** Release the worktrees of archived and deleted sessions, and remove worktree folders nothing tracks */
   worktreeCleanup: boolean
   /** Fetch your own checkouts every hour and fast-forward their base branch when it's safe */

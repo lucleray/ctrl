@@ -354,9 +354,9 @@ where it lives.
   pool size (2 at a time per repo, 3 overall), recycles released worktrees, removes warm ones past the size once
   a day old, and refreshes one warm worktree per repo when it's over a day old and the base branch moved
 - Background jobs, each a row in Settings → Worktrees with a toggle:
-  - Size pools from usage (with a largest pool size): the smallest pool that would have served the last 7 days
+  - Size pools from usage: the smallest pool that would have served the last 7 days
     of requests with at most 2% misses, replayed against the repo's measured build time. One for a repo not used
-    in a week, none after 30 days. A repo can be pinned to a size instead
+    in a week, none after 30 days, never more than the repo's cap. A repo can be pinned to a size instead
   - Clean up (every hour and after an archive; shows what it last did, Run now): releases worktrees of archived
     and deleted sessions, drops entries whose folder is gone, removes folders in the worktree folder nothing
     tracks (older than an hour)

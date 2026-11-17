@@ -7,7 +7,6 @@ import { Toggle } from "./Toggle"
 
 const AUTO = "auto"
 const POOL_SIZES = [0, 1, 2, 3, 4, 5, 6, 8, 10]
-const POOL_MAX = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20]
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
@@ -91,7 +90,7 @@ function RepoEditor({ repo, onDone }: { repo: WorktreeRepoView; onDone(): void }
         <span>At most</span>
         <span className="tool-every">
           <input className="setting-input" type="number" min={1} value={maxTotal} onChange={(e) => setMaxTotal(e.target.value)} />
-          worktrees on disk. Past it, warm ones stop being built.
+          worktrees on disk, warm and in use. Past it, warm ones stop being built.
         </span>
       </label>
       <div className="setting-actions tool-editor-actions">
@@ -174,7 +173,6 @@ export function WorktreeSettings({ state }: { state: AppState }) {
   const { worktrees, settings } = state
   const [editing, setEditing] = useState<string | null>(null)
   const set = (patch: Partial<AppState["settings"]>) => void window.ctrl.setSettings(patch)
-  const maxes = POOL_MAX.includes(settings.worktreePoolMax) ? POOL_MAX : [...POOL_MAX, settings.worktreePoolMax].sort((a, b) => a - b)
   const total = worktrees.repos.reduce((n, r) => n + r.counts.total, 0)
   const inUse = worktrees.repos.reduce((n, r) => n + r.counts.attached, 0)
 
@@ -249,22 +247,6 @@ export function WorktreeSettings({ state }: { state: AppState }) {
           </div>
           <Toggle on={settings.worktreePoolAuto} onChange={(worktreePoolAuto) => set({ worktreePoolAuto })} />
         </div>
-        {settings.worktreePoolAuto && (
-          <div className="setting setting-indent">
-            <div>
-              <div className="setting-title">Largest pool</div>
-              <div className="setting-desc">Most warm worktrees a repo sized from usage keeps.</div>
-            </div>
-            <select value={settings.worktreePoolMax} onChange={(e) => set({ worktreePoolMax: Number(e.target.value) })}>
-              {maxes.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         <div className="setting">
           <div>
             <div className="setting-title">Clean up</div>

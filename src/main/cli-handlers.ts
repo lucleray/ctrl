@@ -594,7 +594,6 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     sessionView: "terminal",
     worktreeRoot: null,
     worktreePoolAuto: true,
-    worktreePoolMax: 8,
     worktreeCleanup: true,
     worktreeUpdateRepos: false,
     "soundChoices.needs-input": "Glass",
@@ -1446,7 +1445,6 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
             settings: {
               worktreeRoot: s.worktreeRoot,
               worktreePoolAuto: s.worktreePoolAuto,
-              worktreePoolMax: s.worktreePoolMax,
               worktreeCleanup: s.worktreeCleanup,
               worktreeUpdateRepos: s.worktreeUpdateRepos,
             },
