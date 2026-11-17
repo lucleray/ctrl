@@ -63,7 +63,9 @@ export type CliHost = {
     model?: ModelRef
     focus: boolean
     parentID?: string | null
-  }): Promise<{ id: string } | { pending: true; terminal: string }>
+    /** fx: started with this first prompt (`prompted` in the reply); others ignore it */
+    prompt?: string
+  }): Promise<{ id: string } | { pending: true; terminal: string; prompted?: boolean }>
   openSession(sessionID: string): void
   renameSession(sessionID: string, title: string): Promise<void>
   /** Moves it with the descendants that shared its space; returns those descendants. */
@@ -860,7 +862,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const directory = args.directory ? folder(args.directory, req.caller) : fromParent?.directory
       const model = args.model ? parseModelArg(args.model, harness ?? space?.harness ?? store.data.settings.defaultHarness) : undefined
       const created = await bounded(
-        host.newSession({ spaceID, harness, directory, model, focus: !!args.focus, parentID: parent?.id ?? null }),
+        host.newSession({ spaceID, harness, directory, model, focus: !!args.focus, parentID: parent?.id ?? null, prompt: args.prompt }),
         left(),
         "the harness to create the session",
         "Check the harness: ctrl app status. The session may still show up: ctrl session list --limit 5",
@@ -870,10 +872,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         args.prompt ? `${id} was created, the prompt may not have been sent: ctrl session read ${id}, then ctrl session send ${id} --text -` : undefined
       if ("pending" in created) {
         const sentAt = Date.now()
-        if (args.prompt) {
+        if (args.prompt && !created.prompted) {
           await bounded(host.promptTerminal(created.terminal, args.prompt), left(), "fx to take the prompt", "ctrl session list --harness fx --limit 5")
         }
-        // fx reports the id once its process is up (and, for some versions, after the first prompt).
+        // fx reports the id once its process is up (fx ≥ 0.0.17: once the first prompt starts).
         const id = await waitFor(() => host.termSession(created.terminal) ?? undefined, left(), "fx to report the new session's id").catch(
           () => undefined,
         )
