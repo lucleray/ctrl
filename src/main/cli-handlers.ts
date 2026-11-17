@@ -755,7 +755,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       // Everything below shares one budget that ends before the CLI's default --timeout (15s), so the
       // agent always gets a reply that says what happened, never a silent wait.
       const deadline = Date.now() + sessionNewBudget
-      const left = () => Math.max(250, deadline - Date.now())
+      const left = () => Math.max(Math.min(250, sessionNewBudget), deadline - Date.now())
       // From a session, new sessions are its children unless --parent says otherwise.
       const parent = args.parent !== undefined ? resolveParent(args.parent, req.caller) : (selfSession(req.caller) ?? null)
       // Without --space, a child starts like the sidebar's New child session: the parent's space, folder and harness.

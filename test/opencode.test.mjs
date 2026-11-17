@@ -1,30 +1,15 @@
 // OpenCodeService's full sync against a fake opencode client: recent sessions first, older ones on demand,
 // and only running sessions' folders asked for pending input. Run with `npm test`.
-import * as esbuild from "esbuild"
 import assert from "node:assert/strict"
-import { mkdtempSync, rmSync } from "node:fs"
-import { createRequire } from "node:module"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { after, before, test } from "node:test"
+import { before, test } from "node:test"
+import { load, tmpDir } from "./helpers.mjs"
 
-const tmp = mkdtempSync(join(tmpdir(), "ctrl-opencode-test-"))
+const tmp = tmpDir("ctrl-opencode-test-")
 let OpenCodeService
 
 before(async () => {
-  const out = join(tmp, "opencode.cjs")
-  await esbuild.build({
-    entryPoints: ["src/main/opencode.ts"],
-    outfile: out,
-    bundle: true,
-    platform: "node",
-    format: "cjs",
-    logLevel: "warning",
-  })
-  ;({ OpenCodeService } = createRequire(import.meta.url)(out))
+  ;[{ OpenCodeService }] = await load(tmp, "src/main/opencode.ts")
 })
-
-after(() => rmSync(tmp, { recursive: true, force: true }))
 
 const DAY = 24 * 60 * 60_000
 

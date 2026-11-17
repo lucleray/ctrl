@@ -79,8 +79,21 @@ Point it at a running dev or test ctrl with `CTRL_SOCKET`:
 ```bash
 CTRL_SOCKET="$HOME/Library/Application Support/ctrl-dev/ctrl.sock" node dist/cli/cli.cjs status --pretty
 npm run cli-docs   # regenerate docs/CLI-REFERENCE.md after changing src/shared/cli/commands.ts
-npm test           # CLI tests (test/): the launcher against a fake app socket, handlers against a fake host
+npm test           # unit tests (test/), well under a second
 ```
+
+## Tests
+
+`npm test` runs `test/*.test.mjs` with `node:test`. Each file bundles the sources it needs with esbuild
+(`load()` in `test/helpers.mjs`) and runs them against fakes: a fake host for the CLI handlers, a fake
+opencode client, a fake app socket for the launcher, a real `Store` in a temp folder.
+
+Keep the whole run well under a second, so it's cheap to run after every change:
+
+- No Electron, no network, no real opencode or fx. Fake what the code talks to.
+- Timeouts and budgets in tests are tens of ms, not seconds (pass them in, like `sessionNewBudget`).
+- Spawning processes is the slow part (~80ms each): only the launcher tests do it, and they run concurrently.
+- Every test has a 5s timeout (`--test-timeout`), so a hang fails fast instead of stalling the run.
 
 ## Debug hooks
 
