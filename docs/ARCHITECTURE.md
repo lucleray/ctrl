@@ -320,6 +320,11 @@ every 10 min + after up/down ─► rebalance(repo): build / recycle toward targ
 - **Installs don't pile up.** `MAX_TASKS` (3) counts every build and recycle, a session's included, though a
   session's never waits for a slot. While a session waits on a build of a repo, rebalance starts no warm build
   of it (`waiting` says so).
+- **Skipping setup.** `up --skip-setup` builds without the setup command and marks the worktree `setupSkipped`
+  (its `build` event is `skipped`, left out of the build time that sizes the pool). `pick` only hands a running
+  build to a call asking for the same kind. `setup()` runs the command later in a held worktree, one run per
+  worktree (`setups`, counted in `MAX_TASKS` and pausing warm builds like a session's build). Reclaiming or
+  releasing one recycles it, which runs setup, so the pool never holds a worktree without dependencies.
 - **Repos by GitHub name.** `owner/repo` (when no such folder exists) or a GitHub URL resolves to the managed
   repo whose `origin` matches, else to ctrl's clone in `<worktree folder>/.repos/<owner>/<repo>`, cloned on
   the first `up` (`gh repo clone`, else `git clone`) into a temporary folder renamed when done.

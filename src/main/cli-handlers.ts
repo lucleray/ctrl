@@ -122,7 +122,7 @@ export type CliHost = {
   /** The worktree pool (src/main/worktrees) */
   worktrees: Pick<
     WorktreeService,
-    "up" | "down" | "find" | "all" | "ofSession" | "describe" | "delivered" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup" | "update"
+    "up" | "down" | "setup" | "settingUp" | "find" | "all" | "ofSession" | "describe" | "delivered" | "name" | "view" | "repo" | "configure" | "forget" | "prewarm" | "cleanup" | "update"
   >
   /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
   rootSession(sessionID: string): Promise<string | null>
@@ -768,6 +768,8 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     warmedAt: w.warmedAt,
     attachedAt: w.attachedAt,
     ...(w.setupFailed ? { setupFailed: true } : {}),
+    ...(w.setupSkipped ? { setupSkipped: true } : {}),
+    ...(host.worktrees.settingUp(w) ? { settingUp: true } : {}),
   })
 
   const ago = (at: number) => {
@@ -786,7 +788,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
             w.warmedAt && Date.now() - w.warmedAt > 3_600_000 && base ? `; for the very latest, git fetch origin ${base} first and branch from origin/${base}` : ""
           }).`,
       `Work in ${w.path} (pass it as working directory); it's released when this session is archived.`,
-      w.setupFailed ? `The setup command failed${setup ? ` (${setup})` : ""}: run it yourself in the worktree.` : "",
+      w.setupFailed ? `The setup command failed${setup ? ` (${setup})` : ""}: fix it and run ctrl worktree setup ${w.id}, or run it yourself in the worktree.` : "",
+      w.setupSkipped
+        ? `Dependencies aren't installed (--skip-setup): fine for reading, reviewing and editing; before tests, typecheck or commits (commit hooks often need them), run ctrl worktree setup ${w.id}.`
+        : "",
       others.length
         ? `This session also holds ${others.length} other worktree${others.length > 1 ? "s" : ""} of ${w.name} (${others.map((o) => o.id).join(", ")}): release the ones you don't need with ctrl worktree down <id>.`
         : "",
@@ -1395,7 +1400,9 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
           alive = false
           reject(
             new CliError("TIMEOUT", `The worktree is still being built after ${Math.round(timeout / 1000)}s`, {
-              hint: "The build goes on: run the same command again to wait for it (it won't start another)",
+              hint: `The build goes on: run the same command again to wait for it (it won't start another).${
+                args["skip-setup"] ? "" : " Only reading, reviewing or editing? Add --skip-setup for a checkout without dependencies in seconds."
+              }`,
             }),
           )
         }, timeout)
@@ -1409,6 +1416,33 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const view = await host.worktrees.describe(worktree)
       const others = host.worktrees.ofSession(session.id).filter((w) => w.id !== worktree.id && w.repo === worktree.repo)
       return { ...worktreeView(view), cold, hint: upHint(view, others) }
+    },
+    "worktree setup": async (args, req) => {
+      const wt = await worktreeCall(() => host.worktrees.find(args.worktree === undefined ? undefined : String(args.worktree), req.caller.cwd))
+      const timeout = Math.max(1, Number(args.timeout ?? 90_000))
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const gaveUp = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new CliError("TIMEOUT", `The setup command is still running after ${Math.round(timeout / 1000)}s`, {
+                hint: "It goes on: run the same command again to wait for it (it won't start another)",
+              }),
+            ),
+          timeout,
+        )
+      })
+      const work = worktreeCall(() => host.worktrees.setup(wt))
+      work.catch(() => {})
+      const { worktree, ran, detail } = await Promise.race([work, gaveUp]).finally(() => clearTimeout(timer))
+      const view = worktreeView(await host.worktrees.describe(worktree))
+      const setup = host.worktrees.view().repos.find((r) => r.source === worktree.repo)?.setup
+      const hint = !ran
+        ? "The repo has no setup command: nothing to run (ctrl worktree config <repo> --setup <command> sets one)"
+        : detail
+          ? `The setup command failed (${setup}): ${detail.trim().split("\n").slice(-5).join(" | ")}`
+          : `Set up (${setup}): dependencies are installed.`
+      return { ...view, ran, hint }
     },
     "worktree down": async (args, req) =>
       worktreeCall(async () => {

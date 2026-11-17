@@ -149,6 +149,8 @@ export class WorktreeService {
   /** The `up` call a worktree goes to, by worktree id: a later `up` from the same session takes it over */
   private claims = new Map<string, number>()
   private claimSeq = 0
+  /** `ctrl worktree setup` runs in flight, by worktree id: a second call waits on the same run */
+  private setups = new Map<string, Promise<{ ok: boolean; detail: string }>>()
   /** Git commands that touch a repo's refs or worktree registry, one at a time per repo */
   private chains = new Map<string, Promise<unknown>>()
   private fetched = new Map<string, number>()
@@ -479,7 +481,8 @@ export class WorktreeService {
   // ---------- pool sizing ----------
 
   private buildMs(source: string): number | null {
-    const builds = this.data.events.filter((e) => e.repo === source && e.type === "build" && e.ok).slice(-10)
+    // Builds without setup (--skip-setup) take seconds: they'd make the pool look quicker to refill than it is.
+    const builds = this.data.events.filter((e) => e.repo === source && e.type === "build" && e.ok && !e.skipped).slice(-10)
     return median(builds.map((e) => e.ms))
   }
 
@@ -517,7 +520,7 @@ export class WorktreeService {
 
   // ---------- building, recycling, removing ----------
 
-  private newWorktree(repo: RepoState, sessionID: string | null): Worktree {
+  private newWorktree(repo: RepoState, sessionID: string | null, skipSetup = false): Worktree {
     const id = randomBytes(4).toString("hex").slice(0, 6)
     const wt: Worktree = {
       id,
@@ -530,6 +533,7 @@ export class WorktreeService {
       attachedAt: null,
       since: Date.now(),
       ...(sessionID ? { undelivered: true } : {}),
+      ...(skipSetup && repo.setup ? { setupSkipped: true } : {}),
     }
     this.data.worktrees.push(wt)
     return wt
@@ -537,7 +541,7 @@ export class WorktreeService {
 
   /** Starts building a worktree: for the pool, or for a session that found it empty (it starts even past MAX_TASKS). */
   private startBuild(repo: RepoState, sessionID: string | null, skipSetup = false): Worktree {
-    const wt = this.newWorktree(repo, sessionID)
+    const wt = this.newWorktree(repo, sessionID, skipSetup)
     this.tasks++
     const work = this.build(repo, wt, skipSetup).finally(() => {
       this.builds.delete(wt.id)
@@ -583,7 +587,7 @@ export class WorktreeService {
       delete repo.failedAt
     }
     const now = Date.now()
-    this.event({ t: now, repo: repo.source, type: "build", ms: now - started, ok: !wt.setupFailed })
+    this.event({ t: now, repo: repo.source, type: "build", ms: now - started, ok: !wt.setupFailed, ...(wt.setupSkipped ? { skipped: true as const } : {}) })
     wt.warmedAt = now
     wt.since = now
     // Its session may have been archived while it was built: then it joins the pool.
@@ -657,6 +661,7 @@ export class WorktreeService {
     Object.assign(wt, { status: "ready", sessionID: null, attachedAt: null, warmedAt: now, since: now })
     delete wt.undelivered
     delete wt.setupFailed
+    delete wt.setupSkipped
     this.touch()
   }
 
@@ -728,8 +733,8 @@ export class WorktreeService {
         continue
       }
       if (warm < target) {
-        // A session is waiting on a build of this repo: no other install competes with it.
-        if (all.some((w) => w.status === "building" && w.sessionID)) return
+        // A session is waiting on a build or a setup of this repo: no other install competes with it.
+        if (this.sessionWaits(all)) return
         if (inflight >= POOL.parallel || this.tasks >= MAX_TASKS) return
         if (repo.failedAt && now - repo.failedAt < BACKOFF_MS) return
         if (released.length) {
@@ -755,7 +760,7 @@ export class WorktreeService {
     const inflight = all.filter((w) => (w.status === "building" && !w.sessionID) || w.status === "resetting").length
     const warm = all.filter((w) => w.status === "ready").length + inflight
     if (warm >= Math.max(this.target(repo), this.floors.get(repo.source) ?? 0)) return
-    if (all.some((w) => w.status === "building" && w.sessionID)) return "Paused while a session waits for a worktree being built"
+    if (this.sessionWaits(all)) return "Paused while a session waits for a worktree being built or set up"
     if (inflight >= POOL.parallel) return
     if (this.tasks >= MAX_TASKS)
       return `Queued: ${MAX_TASKS} builds are already running (at most ${MAX_TASKS} at a time), it starts when one ends`
@@ -764,6 +769,10 @@ export class WorktreeService {
     const released = all.some((w) => w.status === "released")
     if (!released && all.filter((w) => w.status !== "removing").length >= repo.maxTotal)
       return `At its cap of ${repo.maxTotal} worktrees on disk (--max-total)`
+  }
+
+  private sessionWaits(all: Worktree[]) {
+    return all.some((w) => (w.status === "building" && w.sessionID) || this.setups.has(w.id))
   }
 
   private rebalanceAll() {
@@ -859,9 +868,16 @@ export class WorktreeService {
 
   private pick(repo: RepoState, sessionID: string, skipSetup: boolean, lost: Set<string>): { worktree: Worktree; cold: boolean } {
     const of = this.of(repo.source)
-    // Built for this session but never handed over: done ones first, then the one closest to done.
+    // Built for this session but never handed over: done ones first, then the one closest to done. A build
+    // still running only if it's the kind asked for: a retry with --skip-setup doesn't wait for an install.
     const mine = of
-      .filter((w) => w.sessionID === sessionID && w.undelivered && !lost.has(w.id) && (w.status === "attached" || w.status === "building"))
+      .filter(
+        (w) =>
+          w.sessionID === sessionID &&
+          w.undelivered &&
+          !lost.has(w.id) &&
+          (w.status === "attached" || (w.status === "building" && !!w.setupSkipped === (skipSetup && !!repo.setup))),
+      )
       .sort((a, b) => Number(a.status === "building") - Number(b.status === "building") || a.since - b.since)[0]
     if (mine) return { worktree: mine, cold: true }
     const now = Date.now()
@@ -899,7 +915,8 @@ export class WorktreeService {
       // Checked again: an `up` may have taken it while git ran.
       if (!untouched || !unclaimed(wt)) continue
       const holder = wt.sessionID
-      if (wt.setupFailed) {
+      // Not installed: recycling runs the setup command before it's warm again.
+      if (wt.setupFailed || wt.setupSkipped) {
         await this.release(wt)
         continue
       }
@@ -908,6 +925,47 @@ export class WorktreeService {
       this.touch([holder])
       this.rebalance(wt.repo)
     }
+  }
+
+  /**
+   * Runs the repo's setup command in a worktree a session holds: one built with --skip-setup, or whose setup
+   * failed. A run outlives the call that started it, and a second call waits on the same run.
+   */
+  async setup(wt: Worktree): Promise<{ worktree: Worktree; ran: boolean; detail?: string }> {
+    if (wt.status !== "attached")
+      throw new WorktreeError("CONFLICT", `Worktree ${wt.id} isn't held by a session (${wt.status})`, { hint: "ctrl worktree list" })
+    const repo = this.data.repos[wt.repo]
+    if (!repo) throw new WorktreeError("NOT_FOUND", `${wt.repo} isn't a repo ctrl manages`, { hint: "ctrl worktree config" })
+    const command = repo.setup
+    if (!command) return { worktree: wt, ran: false }
+    let running = this.setups.get(wt.id)
+    if (!running) {
+      const id = wt.id
+      this.tasks++
+      running = runSetup(command, wt.path).finally(() => {
+        this.setups.delete(id)
+        this.tasks--
+        this.cached = undefined
+        this.rebalanceAll()
+      })
+      this.setups.set(id, running)
+      this.touch([wt.sessionID])
+    }
+    const res = await running
+    if (res.ok) {
+      delete wt.setupFailed
+      delete wt.setupSkipped
+    } else {
+      wt.setupFailed = true
+      delete wt.setupSkipped
+    }
+    this.touch([wt.sessionID])
+    return { worktree: wt, ran: true, ...(res.ok ? {} : { detail: res.detail }) }
+  }
+
+  /** Its setup command is running (`ctrl worktree setup`) */
+  settingUp(wt: Worktree) {
+    return this.setups.has(wt.id)
   }
 
   /** The session was shown these worktrees (`ctrl worktree list`): they're its own now, never reclaimed. */

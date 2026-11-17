@@ -56,6 +56,10 @@ ctrl worktree down <id|path>         # give one back early (refuses unsaved work
 - **On `TIMEOUT` (after 90s) or a killed command, run the same `up` again**, and keep doing so: it waits for
   the same build instead of starting another. Don't work around it with a worktree you found elsewhere; one
   your session never asks for again goes back to the pool after 10 minutes.
+- **Only reading, reviewing or editing?** `ctrl worktree up <repo> --skip-setup` gives a checkout in seconds
+  when the pool is empty, without dependencies (`setupSkipped: true`; a warm one, already installed, still
+  comes first). Before tests, typecheck or commits (commit hooks often need them), run
+  `ctrl worktree setup <id>`: it installs them, and like `up` you run it again after a TIMEOUT.
 - **Reviewing a PR:** `up`, then `gh pr checkout <n>` in the worktree. If git says the branch is already
   checked out elsewhere, `ctrl worktree list --all` shows which session holds it: use that worktree if it's
   yours or your parent's, else review detached (`git fetch origin pull/<n>/head && git checkout --detach FETCH_HEAD`).
@@ -84,7 +88,7 @@ Don't guess flags: read `help` first. The most used ones:
 | `session reference <src> --into <dst> [--text t] [--submit]` | reference one session in another |
 | `session move <s> [--space <space\|none>] [--parent <s>\|none]` · `session archive <s>` | file / nest / archive |
 | `space create <name> [--directory d]` · `space list` | spaces |
-| `worktree up <repo>` · `worktree list` · `worktree down [<id\|path>]` | take / list / give back a git worktree (see above) |
+| `worktree up <repo>` · `worktree list` · `worktree setup [<id\|path>]` · `worktree down [<id\|path>]` | take / list / install deps in / give back a git worktree (see above) |
 | `settings list` · `settings set <key> <value>` | settings |
 | `focus <s> [--raise]` | put a session on screen |
 

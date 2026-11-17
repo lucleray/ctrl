@@ -1436,6 +1436,11 @@ const worktreeMeta = (wt: Worktree): ResourceMeta => {
       ...(wt.status === "building" ? [{ text: "building", tone: "warn" as const, title: "Checking out and running the repo's setup command" }] : []),
       ...(wt.status === "attached" && !branch ? [{ text: "detached", tone: "muted" as const, title: "No branch checked out yet" }] : []),
       ...(wt.setupFailed ? [{ text: "setup failed", tone: "bad" as const, title: "The repo's setup command failed in this worktree" }] : []),
+      ...(worktrees.settingUp(wt)
+        ? [{ text: "setting up", tone: "warn" as const, title: "Running the repo's setup command (ctrl worktree setup)" }]
+        : wt.setupSkipped
+          ? [{ text: "no deps", tone: "muted" as const, title: "Taken with --skip-setup: dependencies aren't installed (ctrl worktree setup)" }]
+          : []),
     ],
     fields: { repo: name, source: wt.repo, path: wt.path, branch, status: wt.status, baseCommit: wt.baseCommit },
     fetched: Date.now(),

@@ -222,6 +222,45 @@ describe("WorktreeService", () => {
     service.stop()
   })
 
+  test("--skip-setup: marked, left out of the build time, a retry with it doesn't wait on an install, setup installs later", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { setup: `sleep 1 && ${SETUP}`, warm: 0 })
+    // A full build is under way for the session (its call was killed), then the agent retries with --skip-setup.
+    const full = service.up(source, "ses_a", { alive: () => false })
+    const installing = await until(() => service.all().find((w) => w.repo === source && w.status === "building"), "the full build")
+    const quick = await service.up(source, "ses_a", { skipSetup: true })
+    assert.notEqual(quick.worktree.id, installing.id)
+    assert.deepEqual([quick.worktree.setupSkipped, existsSync(join(quick.worktree.path, "node_modules"))], [true, false])
+    await full
+    // Its quick build isn't a build time to size the pool by.
+    service.flush()
+    const events = JSON.parse(readFileSync(service.file, "utf8")).events.filter((e) => e.type === "build")
+    assert.deepEqual(events.map((e) => !!e.skipped).sort(), [false, true])
+    // Two setup calls share one run, which clears the marker.
+    const [one, two] = await Promise.all([service.setup(quick.worktree), service.setup(quick.worktree)])
+    assert.deepEqual([one.ran, two.ran, quick.worktree.setupSkipped], [true, true, undefined])
+    assert.ok(existsSync(join(quick.worktree.path, "node_modules/marker")))
+    service.stop()
+  })
+
+  test("a skipped-setup worktree its session never got is released (recycling installs it), never put in the pool bare", async () => {
+    const source = makeRepo()
+    const { service } = makeService()
+    await service.configure(source, { setup: SETUP, warm: 0 })
+    const lost = (await service.up(source, "ses_a", { alive: () => false, skipSetup: true })).worktree
+    lost.warmedAt = Date.now() - 11 * 60_000
+    await service.reclaim()
+    assert.equal(lost.sessionID, null)
+    assert.notEqual(lost.status, "ready")
+    assert.ok(service.all().filter((w) => w.status === "ready").every((w) => !w.setupSkipped))
+    // A pool with room recycles it: setup runs, and the marker goes.
+    await service.configure(source, { warm: 1 })
+    const [warm] = await until(() => (ready(service, source).length === 1 ? ready(service, source) : null), "a warm worktree")
+    assert.deepEqual([warm.setupSkipped, existsSync(join(warm.path, "node_modules/marker"))], [undefined, true])
+    service.stop()
+  })
+
   test("a GitHub owner/repo or URL means the managed checkout with that origin, and isn't cloned outside up", async () => {
     const source = makeRepo()
     const { service } = makeService()
