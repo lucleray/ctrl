@@ -255,6 +255,14 @@ function notRunning(cause: string) {
   return new CliError("APP_NOT_RUNNING", `ctrl isn't running (${cause})`, { hint })
 }
 
+/** The app closed the connection without replying: it quit or restarted mid-request (an update, say). */
+class Dropped extends CliError {}
+
+const dropped = () =>
+  new Dropped("APP_NOT_RUNNING", "ctrl quit or restarted before it answered", {
+    hint: "Check it's running (ctrl app status), then run the command again",
+  })
+
 /**
  * Sends one request. Streaming commands call onLine per NDJSON line; others resolve with the reply.
  * `timeout` = 0 waits forever.
@@ -302,12 +310,14 @@ function request(req: CliRequest, timeout: number, onLine?: (line: string) => vo
     sock.on("error", (err: NodeJS.ErrnoException) =>
       done(() => {
         if (err.code === "ENOENT" || err.code === "ECONNREFUSED") reject(notRunning(err.code))
+        else if (err.code === "ECONNRESET" || err.code === "EPIPE") reject(dropped())
         else reject(new CliError("INTERNAL", `Socket error: ${err.message}`))
       }),
     )
     sock.on("end", () =>
       done(() => {
         if (onLine) return resolve({ ok: true, data: null })
+        if (!buf.trim()) return reject(dropped())
         try {
           resolve(JSON.parse(buf) as CliReply)
         } catch {
@@ -347,6 +357,19 @@ async function launch(wait: boolean) {
   throw new CliError("TIMEOUT", "ctrl was launched but didn't answer within 30s")
 }
 
+/** After a restart: true once ctrl answers again, false when it doesn't within `ms`. */
+async function backWithin(ms: number) {
+  const until = Date.now() + ms
+  for (;;) {
+    if (await isRunning()) return true
+    if (Date.now() >= until) return false
+    await sleep(300)
+  }
+}
+
+/** How long a resuming command waits for ctrl to come back after it went away mid-request. */
+const RESTART_GRACE = 60_000
+
 // ---------- main ----------
 
 async function main() {
@@ -381,14 +404,30 @@ async function main() {
     return
   }
   // Commands that wait on their own get their timeout plus a margin for the reply.
-  const ownTimeout = typeof args.timeout === "number" ? args.timeout + 5000 : undefined
-  const timeout = ownTimeout ?? globals.timeout
-  const reply = await request(req, timeout).catch((err) => {
-    if (err instanceof CliError && err.code === "TIMEOUT" && spec.mutates) {
-      err.extra.hint = "The app may still have done it: check (e.g. ctrl session list) before retrying, or pass a larger --timeout"
+  const ownTimeout = typeof args.timeout === "number" ? args.timeout : undefined
+  const deadline = Date.now() + (ownTimeout ?? 0)
+  let sent = req
+  let reply: CliReply
+  for (;;) {
+    try {
+      reply = await request(sent, ownTimeout === undefined ? globals.timeout : (sent.args.timeout as number) + 5000)
+      break
+    } catch (err) {
+      if (err instanceof Dropped && spec.resumes) {
+        // ctrl went away mid-wait (an update restarts it): ask again once it's back, with what's left.
+        if (await backWithin(Math.min(RESTART_GRACE, Math.max(0, deadline - Date.now())))) {
+          sent = { ...req, args: { ...args, timeout: Math.max(0, deadline - Date.now()) } }
+          continue
+        }
+      }
+      if (err instanceof Dropped && spec.mutates) {
+        err.extra.hint = "The app may still have done it: check (e.g. ctrl session list) once it's back, before retrying"
+      } else if (err instanceof CliError && err.code === "TIMEOUT" && spec.mutates) {
+        err.extra.hint = "The app may still have done it: check (e.g. ctrl session list) before retrying, or pass a larger --timeout"
+      }
+      throw err
     }
-    throw err
-  })
+  }
   if (!reply.ok) fail(new CliError(reply.error.code, reply.error.message, reply.error))
   print(reply)
 }
