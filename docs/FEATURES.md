@@ -22,13 +22,16 @@ where it lives.
   switching never reflows (`src/renderer/TerminalStack.tsx`)
 - One long-lived opencode TUI (xterm.js + node-pty). Switching opencode sessions navigates
   it in place through the bridge plugin, no restart (`src/main/terminal.ts`, `bridge/tui.ts`)
-- One fx process per open fx session (`fx resume --id <id>`), kept alive so switching is instant and running
+- One fx process per open fx session (`fx --resume <id>`), kept alive so switching is instant and running
   turns keep going; up to 12, the least recently used idle ones closed past that (`src/main/fx-terminals.ts`)
-- fx's `/new` and `/resume` are followed: the sidebar highlight and space move with the pty (`owner.live` →
-  `claim()` in `src/main/fx-terminals.ts`)
+- fx's `/new` and `/resume` are followed: the sidebar highlight and space move with the pty (the session whose
+  lock the process holds, or v1's `owner.live` → `claim()` in `src/main/fx-terminals.ts`)
+- Both fx session layouts: fx 0.0.17's `~/.fx/sessions/v2/` (index + one log per session) and the older
+  per-session folders it converts the first time it opens one (`src/main/fx-store.ts`)
 - When fx exits, its pane stays with an `[fx exited]` line; Enter or reopening the session restarts it
 - fx sessions open at quit come back at launch, in the background one at a time, and so does whichever
-  session was on screen. Running fx turns don't survive (send `continue`) (`restoreOpen()` in `src/main/main.ts`)
+  session was on screen. fx 0.0.17+ sends a request that quitting interrupted again on its own when it reopens
+  (`restoreOpen()` in `src/main/main.ts`)
 - Empty state when nothing is open (e.g. after archiving the fx session on screen)
 - Sidebar highlight follows navigation done inside the TUI (`bridge/tui.ts`)
 - The TUI auto-restarts if it exits (`src/main/terminal.ts`)
@@ -44,8 +47,8 @@ where it lives.
 - ⋯ menu: new session in space, rename, space settings, archive all sessions, delete space (`src/main/main.ts`)
 - Space settings for new sessions started from ctrl in that space: folder (unset follows Settings → Sessions →
   Folder), harness, model (toggle + variant,
-  one per harness), instructions attached as an invisible session instruction (opencode only), ctrl
-  instructions Default / On / Off
+  one per harness), instructions attached as an invisible session instruction (fx: through an agent profile,
+  `src/main/fx-profiles.ts`), ctrl instructions Default / On / Off
   (`src/renderer/SpaceSettings.tsx`)
 - Status rollup on a folded space or parent session: shows the loudest signal of its sessions, background work
   included: needs input > running > failed > unread > subagent > shell (`signalRank()` in `src/renderer/StatusIcon.tsx`)
@@ -81,19 +84,23 @@ where it lives.
 - **Archived**: most recently archived first, 10 at a time with Show more, foldable (state saved)
 - Status per row, most urgent first: needs input (permission / question), running, failed (unread),
   finished (unread), otherwise time since last update (`src/renderer/StatusIcon.tsx`). fx: from OSC 7501
-  reports of the processes ctrl runs, else `recovery.json` (turn in progress) or the last line of
-  `events.jsonl`; read state kept by ctrl
+  reports of the processes ctrl runs, else the turn lines at the end of its log and whether an fx process has
+  it open (`fx sessions --live`, `lsof` on its lock); read state kept by ctrl
   (`src/main/fx.ts`)
 - Sidebar list patched from opencode events instead of re-listing (`src/main/opencode.ts`). The sync on launch and
   reconnect loads opencode sessions updated in the last 30 days and checks pending input only in running sessions'
   folders; older sessions load when the Archived section opens, the palette searches or a CLI command runs; fx sessions
-  from one scan of `~/.fx/sessions`, then an fs watcher re-reads only the folder that changed (`src/main/fx.ts`)
+  from one scan of `~/.fx/sessions` (v2's index and the older folders), then an fs watcher re-reads only the
+  folder that changed, and a 2s poll stats v2's index and the logs of open sessions (`src/main/fx.ts`)
+- fx subagents still working once the main agent's turn is over show as the sidebar's subagent icon
+  (`fx sessions --live`, `activity()` in `src/main/fx.ts`)
 
 ## Navigation & search
 
 - ⌘1–9 jumps to the Nth visible session; hold ⌘ to show number badges (`src/renderer/jump.ts`)
 - ⌘P / ⌘K search palette: session titles (in memory) + full-text over message content via a SQLite FTS5
-  index built in a utility process, for both harnesses (fx: tails each `events.jsonl` by byte offset)
+  index built in a utility process, for both harnesses (fx: tails each session's log by byte offset, so a
+  prompt is searchable while its turn runs)
   (`src/renderer/Palette.tsx`, `src/indexer/indexer.ts`, `src/main/search-db.ts`)
 - ⌘N new chat in the default space (Settings → Sessions → Space, else none) and folder (the space's, else Settings → Sessions → Folder, else ~), ⌘T new session in the current session's folder, space and harness
 - Search and settings icons at the top of the sidebar
@@ -272,7 +279,7 @@ where it lives.
 - Drag a session onto the terminal to paste `@session[Title](id)` (`session[…]` without the `@` in fx, which
   reads `@` as a file); the `read-session` skill lets the agent read it, opencode or fx, from either harness,
   with or without node installed (`src/renderer/ReferenceDrop.tsx`, `skills/read-session`). An fx turn still
-  in progress shows as `Turn N · running` (read from `recovery.json`)
+  in progress shows with what it did so far
 - Drop files from Finder onto the terminal to paste their escaped paths (`src/renderer/ReferenceDrop.tsx`)
 - Drag a row from the resources panel onto the terminal to paste its link, or its session mention for a
   referenced session (`src/renderer/ResourcesPanel.tsx`, `src/renderer/ReferenceDrop.tsx`)
@@ -298,7 +305,12 @@ where it lives.
 - ctrl instructions (on by default, Show text): an invisible instruction entry (`ctrl.cli`) on opencode sessions
   telling the agent it runs in ctrl and how to look around with the `ctrl` CLI. Added at creation and synced on
   the session on screen, so older and TUI-started sessions get it when opened; spaces can override
-  (`src/shared/ctrl-instructions.ts`, `syncCtrlInstructions()` in `src/main/opencode.ts`)
+  (`src/shared/ctrl-instructions.ts`, `syncCtrlInstructions()` in `src/main/opencode.ts`). fx (0.0.17+): new
+  sessions start in an agent profile (`fx --profile`) whose prompt holds the space's instructions and the ctrl
+  instruction (`~/.fx/agents/ctrl`, `~/.fx/agents/ctrl-<space id>`), rewritten when a space's instructions
+  change (`src/main/fx-profiles.ts`)
+- fx `session new --prompt` / `session send` to a session without a process pass the prompt to fx as an
+  argument (`fx "<prompt>"`, `fx --resume <id> "<prompt>"`) instead of typing it in once fx is ready
 - Tools: one list of the MCP servers and CLIs you watch, in `~/.config/ctrl/tools.json` (`src/main/tools/`).
   A broken one gets a sticky toast with its fix button, once per new problem, cleared when it recovers; a red dot
   on Settings → Tools
@@ -411,6 +423,11 @@ where it lives.
   its space for `--space`), `current`, `name:<title>`; ambiguous names list candidates
 - A CLI killed before it answers still replies: the launcher prints a JSON error naming the signal, and
   suggests stdin (`--prompt -`) when an argument was long (`bin/ctrl`)
+- ctrl quitting or restarting mid-request (an update) gives `APP_NOT_RUNNING` "quit or restarted before it
+  answered"; `session wait` instead waits up to a minute for ctrl to come back and asks again with the time
+  left of its `--timeout` (`resumes` in `src/shared/cli/commands.ts`, `src/cli/cli.ts`). Right after a launch,
+  commands (except `app ...`) wait up to 10s for the harness checks and opencode's first sync, so sessions
+  aren't `NOT_FOUND` while they load (`sessionsLoaded` in `src/main/main.ts`)
 - Child sessions: `session new` run from a session makes a child of it by default (`--parent self`, in the
   parent's space, folder and harness unless flags say otherwise; `--parent none` for a top-level one);
   `session move --parent <s|none>` nests or detaches (refuses cycles); `session list --parent <s>`; sessions

@@ -7,9 +7,9 @@
 //   event stream ───────► queue the session a turn/prompt landed in
 //   queue ──────────────► index: fetch messages newer than its watermark, upsert
 // fx (no server, files only):
-//   launch ─────────────► reconcile: list ~/.fx/sessions, queue every session
-//   fs watcher ─────────► queue the session whose events.jsonl changed
-//   queue ──────────────► index: read events.jsonl from its byte offset (fx only appends)
+//   launch ─────────────► reconcile: list ~/.fx/sessions (v1 folders + v2's index), queue every session
+//   fs watcher / poll ──► queue the session whose log (or index line) changed
+//   queue ──────────────► index: read its log from its byte offset (fx only appends)
 //
 // Work is proportional to what changed, not to how many sessions exist.
 import { OpenCode, type SessionInfo } from "@opencode/client"
@@ -21,7 +21,8 @@ import type { DatabaseSync, StatementSync } from "node:sqlite"
 import { extractResources, RESOURCES_VERSION } from "../shared/adapters"
 import { FX_PREFIX, type IndexerMessage, type IndexStatus } from "../shared/types"
 import { MAX_BODY, openSearchDb } from "../main/search-db"
-import { checkFx, fxID, SESSIONS_DIR } from "../main/fx"
+import { checkFx, fxID } from "../main/fx"
+import { isV1Name, isV2Name, parseLogLines, readIndex, SESSIONS_DIR, sessionLog, type IndexEntry } from "../main/fx-store"
 
 type Client = ReturnType<typeof OpenCode.make>
 type Message = {
@@ -422,20 +423,25 @@ class OpencodeIndexer extends Queue {
 
 }
 
-type FxEvent = { seq?: number; timestamp_ms?: number; event?: Record<string, { text?: unknown } | undefined> }
+/** sessions.watermark for fx rows: which layout `offset` counts bytes of (fx-store.ts). */
+const FX_LAYOUT = { v1: 0, v2: 2 } as const
+/** v2 logs not touched for this long, and not closed cleanly (fx crashed), stop being polled. */
+const FX_LIVE_MAX_AGE_MS = 24 * 3600_000
 
-/** fx sessions ("fx:<id>"), straight from ~/.fx/sessions. */
+/** fx sessions ("fx:<id>"), straight from ~/.fx/sessions (both layouts, see src/main/fx-store.ts). */
 class FxIndexer extends Queue {
   private stmt: Record<string, StatementSync>
-  /** Sessions with a live fx process (owner.live), and their log size as of the last pass */
-  private live = new Map<string, { pid: number; size: number }>()
+  /** Sessions with a live fx process (v1: owner.live) or that may have one (v2: log not closed), and their log size as of the last pass */
+  private live = new Map<string, { pid?: number; size: number }>()
+  private fxIndex = new Map<string, IndexEntry>()
+  private fxIndexOffset = 0
 
   constructor(db: DatabaseSync) {
     super(db)
     this.stmt = {
-      session: db.prepare("SELECT offset FROM sessions WHERE id = ?"),
+      session: db.prepare("SELECT offset, watermark FROM sessions WHERE id = ?"),
       allIDs: db.prepare(`SELECT id FROM sessions WHERE id LIKE '${FX_PREFIX}%'`),
-      setOffset: db.prepare("UPDATE sessions SET offset = ? WHERE id = ?"),
+      setOffset: db.prepare("UPDATE sessions SET offset = ?, watermark = ? WHERE id = ?"),
     }
   }
 
@@ -449,27 +455,42 @@ class FxIndexer extends Queue {
   }
 
   /**
-   * fx keeps events.jsonl open and appends to it, and macOS only reports those writes once the file is
-   * closed (when fx quits). So the watcher misses turns while fx runs: check those sessions on a timer.
+   * fx keeps its logs (and v2's index) open and appends to them, and macOS only reports those writes once
+   * the file is closed (when fx quits). So the watcher misses turns while fx runs: check those on a timer.
    */
   private async poll() {
+    await this.readFxIndex()
     for (const [id, { pid, size }] of this.live) {
-      if (!alive(pid)) {
+      if (pid !== undefined && !alive(pid)) {
         this.live.delete(id)
         this.debounce(id)
         continue
       }
-      const now = await stat(join(SESSIONS_DIR, id.slice(FX_PREFIX.length), "events.jsonl")).then((s) => s.size, () => 0)
+      const now = await stat(sessionLog(id.slice(FX_PREFIX.length)).file).then((s) => s.size, () => 0)
       if (now !== size) this.debounce(id)
     }
+  }
+
+  /** New index lines: the root sessions they're about get indexed (title, folder, or a new session). */
+  private async readFxIndex() {
+    const r = await readIndex(this.fxIndex, this.fxIndexOffset).catch(() => undefined)
+    if (!r) return
+    this.fxIndexOffset = r.offset
+    for (const id of r.reset ? this.fxIndex.keys() : r.changed) if (this.fxIndex.get(id)?.role !== "child") this.debounce(fxID(id))
   }
 
   private watch() {
     try {
       watch(SESSIONS_DIR, { recursive: true }, (_event, file) => {
         if (!file) return
-        const [id, name] = String(file).split("/")
-        if (name === "events.jsonl" || name === "session.json" || name === undefined) this.debounce(fxID(id))
+        const [first, id, name] = String(file).split("/")
+        if (first === "v2") {
+          if (id === "index.jsonl") void this.readFxIndex()
+          else if (id && isV2Name(id) && (name === "log.jsonl" || name === undefined)) this.debounce(fxID(id))
+          return
+        }
+        if (!isV1Name(first)) return
+        if (id === "events.jsonl" || id === "session.json" || id === undefined) this.debounce(fxID(first))
       })
     } catch (err) {
       log("can't watch fx sessions, retrying", err)
@@ -479,7 +500,10 @@ class FxIndexer extends Queue {
 
   /** Drops sessions that no longer exist and queues every session (a no-op when its log didn't grow). */
   private async reconcile() {
-    const ids = new Set((await readdir(SESSIONS_DIR).catch(() => [] as string[])).map(fxID))
+    await this.readFxIndex()
+    const v1 = (await readdir(SESSIONS_DIR).catch(() => [] as string[])).filter(isV1Name)
+    const v2 = [...this.fxIndex.values()].filter((e) => e.role === "root").map((e) => e.id)
+    const ids = new Set([...v1, ...v2].map(fxID))
     this.tx(() => {
       for (const { id } of this.stmt.allIDs.all() as { id: string }[]) if (!ids.has(id)) this.removeSession(id)
     })
@@ -487,27 +511,49 @@ class FxIndexer extends Queue {
     for (const id of ids) this.enqueue(id)
   }
 
+  /** Title, folder and update time, and who has it open (v1 only), or undefined when it's gone or a subagent. */
+  private async meta(raw: string, layout: "v1" | "v2", file: string) {
+    const size = (await stat(file)).size
+    if (layout === "v2") {
+      const entry = this.fxIndex.get(raw)
+      if (!entry || entry.role === "child") return undefined
+      return { title: entry.title, directory: entry.workspace, updated: entry.updated, size, pid: undefined }
+    }
+    const dir = join(SESSIONS_DIR, raw)
+    const meta = JSON.parse(await readFile(join(dir, "session.json"), "utf8")) as {
+      title?: string
+      workspace_root?: string
+      updated_at_ms?: number
+      subagent_child?: boolean
+    }
+    if (meta.subagent_child) return undefined
+    const owner = await readFile(join(dir, "owner.live"), "utf8").then((t) => JSON.parse(t) as { pid?: unknown }, () => undefined)
+    const pid = typeof owner?.pid === "number" && alive(owner.pid) ? owner.pid : undefined
+    return { title: meta.title, directory: meta.workspace_root ?? "", updated: meta.updated_at_ms ?? 0, size, pid }
+  }
+
   protected async index(id: string) {
-    const dir = join(SESSIONS_DIR, id.slice(FX_PREFIX.length))
-    let meta: { title?: string; workspace_root?: string; updated_at_ms?: number; subagent_child?: boolean }
-    let size: number
+    const raw = id.slice(FX_PREFIX.length)
+    const { layout, file } = sessionLog(raw)
+    let meta: Awaited<ReturnType<FxIndexer["meta"]>>
     try {
-      meta = JSON.parse(await readFile(join(dir, "session.json"), "utf8"))
-      size = (await stat(join(dir, "events.jsonl"))).size
+      meta = await this.meta(raw, layout, file)
     } catch {
-      // Gone (or never used): forget it.
+      meta = undefined
+    }
+    if (!meta) {
+      // Gone, never used, or a subagent: forget it.
+      this.live.delete(id)
       if (this.stmt.session.get(id)) this.tx(() => this.removeSession(id))
       return
     }
-    if (meta.subagent_child) return
-    const owner = await readFile(join(dir, "owner.live"), "utf8").then((t) => JSON.parse(t) as { pid?: unknown }, () => undefined)
-    if (typeof owner?.pid === "number" && alive(owner.pid)) this.live.set(id, { pid: owner.pid, size })
-    else this.live.delete(id)
-    this.base.upsertSession.run(id, meta.title || "New session", meta.workspace_root ?? "", meta.updated_at_ms ?? 0)
-    let offset = (this.stmt.session.get(id) as { offset: number }).offset
+    const { size } = meta
+    this.base.upsertSession.run(id, meta.title || "New session", meta.directory, meta.updated)
+    const row = this.stmt.session.get(id) as { offset: number; watermark: number }
+    let offset = row.offset
     let rebuilt = false
-    if (size < offset) {
-      // The log shrank (rewritten or replaced): start over.
+    // The log shrank (rewritten or replaced), or fx converted the session to v2: start over.
+    if (size < offset || row.watermark !== FX_LAYOUT[layout]) {
       this.tx(() => {
         this.base.deleteMessages.run(id)
         this.base.deleteSessionMentions.run(id)
@@ -515,10 +561,10 @@ class FxIndexer extends Queue {
       offset = 0
       rebuilt = true
     }
-    if (size === offset && !rebuilt) return
+    if (size === offset && !rebuilt) return this.track(id, layout, file, size, meta.pid)
 
     let resources = 0
-    const fh = await open(join(dir, "events.jsonl"), "r")
+    const fh = await open(file, "r")
     try {
       let carry = Buffer.alloc(0)
       while (offset + carry.length < size) {
@@ -532,7 +578,7 @@ class FxIndexer extends Queue {
           carry = data
           continue
         }
-        const docs = parseFxLines(data.subarray(0, end).toString("utf8"))
+        const docs = parseLogLines(layout, data.subarray(0, end).toString("utf8"))
         const consumed = offset + end + 1
         this.tx(() => {
           for (const d of docs) {
@@ -541,7 +587,7 @@ class FxIndexer extends Queue {
             this.insertMessage(messageID, id, d.role, d.created, text)
             resources += this.indexResources(messageID, id, d.role, d.created, text)
           }
-          this.stmt.setOffset.run(consumed, id)
+          this.stmt.setOffset.run(consumed, FX_LAYOUT[layout], id)
         })
         offset = consumed
         carry = data.subarray(end + 1)
@@ -551,6 +597,23 @@ class FxIndexer extends Queue {
       await fh.close()
     }
     if (resources || rebuilt) post({ type: "resources", sessionIDs: [id] })
+    await this.track(id, layout, file, size, meta.pid)
+  }
+
+  /**
+   * Polls the sessions fx may be appending to. v1: a live owner.live. v2: a log that doesn't end with
+   * `closed` (fx's clean exit) and changed recently; fx crashing leaves no `closed`, hence the age limit.
+   */
+  private async track(id: string, layout: "v1" | "v2", file: string, size: number, pid?: number) {
+    if (layout === "v1") {
+      if (pid !== undefined) this.live.set(id, { pid, size })
+      else this.live.delete(id)
+      return
+    }
+    const st = await stat(file).catch(() => undefined)
+    const open = st && Date.now() - st.mtimeMs < FX_LIVE_MAX_AGE_MS && !(await endsClosed(file, size))
+    if (open) this.live.set(id, { size })
+    else this.live.delete(id)
   }
 }
 
@@ -563,24 +626,19 @@ const alive = (pid: number) => {
   }
 }
 
-/** Your prompts (and steering) and the assistant's text; tool calls and results are skipped. */
-function parseFxLines(text: string) {
-  const docs: { seq: number; role: "user" | "assistant"; created: number; body: string }[] = []
-  for (const line of text.split("\n")) {
-    // Cheap prefilter: most lines are tool calls/results.
-    if (!/"event":\{"(user|assistant|steering)"/.test(line.slice(0, 200))) continue
-    let e: FxEvent
-    try {
-      e = JSON.parse(line)
-    } catch {
-      continue
-    }
-    const [kind, payload] = Object.entries(e.event ?? {})[0] ?? []
-    const body = typeof payload?.text === "string" ? payload.text.trim() : ""
-    if (!body || typeof e.seq !== "number") continue
-    docs.push({ seq: e.seq, role: kind === "assistant" ? "assistant" : "user", created: e.timestamp_ms ?? 0, body })
+/** A v2 log whose last line is `closed`: fx closed it cleanly, nothing more will be appended until it's reopened. */
+async function endsClosed(file: string, size: number) {
+  if (!size) return false
+  const len = Math.min(size, 512)
+  const fh = await open(file, "r")
+  try {
+    const buf = Buffer.alloc(len)
+    await fh.read(buf, 0, len, size - len)
+    const text = buf.toString("utf8").replace(/\n+$/, "")
+    return /"kind":"closed"/.test(text.slice(text.lastIndexOf("\n") + 1))
+  } finally {
+    await fh.close()
   }
-  return docs
 }
 
 process.parentPort.once("message", (e: { data: { type: "start"; dbPath: string } }) => {

@@ -21,7 +21,10 @@ before(async () => {
   ;[{ createHandlers }, { Store }] = await load(tmp, "src/main/cli-handlers.ts", "src/main/store.ts")
 })
 
-/** A stand-in for the app's socket: `answer(req)` returns the reply, or undefined to never answer. */
+/**
+ * A stand-in for the app's socket: `answer(req)` returns the reply, undefined to never answer, or "drop" to
+ * close the connection without a reply (what clients of a restarting ctrl see).
+ */
 async function fakeApp(answer) {
   const path = join(mkdtempSync(join(tmp, "sock-")), "ctrl.sock")
   const requests = []
@@ -36,7 +39,8 @@ async function fakeApp(answer) {
       const req = JSON.parse(buf.slice(0, nl))
       requests.push(req)
       const reply = answer(req)
-      if (reply) sock.end(JSON.stringify(reply) + "\n")
+      if (reply === "drop") sock.destroy()
+      else if (reply) sock.end(JSON.stringify(reply) + "\n")
     })
   })
   await new Promise((r) => server.listen(path, r))
@@ -158,6 +162,32 @@ describe("ctrl launcher", { concurrency: true }, () => {
     assert.equal(res.json.error.code, "TIMEOUT")
     assert.match(res.json.error.hint, /may still have done it/)
     assert.ok(res.ms < 5000, `took ${res.ms}ms`)
+  })
+
+  test("session wait keeps waiting through a ctrl restart, with the time that's left", async () => {
+    let waits = 0
+    const app = await fakeApp((req) => {
+      if (req.command !== "session wait") return { ok: true, data: {} }
+      return ++waits === 1 ? "drop" : { ok: true, data: { id: "ses_x", status: "idle" } }
+    })
+    const res = await run(["session", "wait", "ses_x", "--timeout", "60000"], { socket: app.path })
+    await app.close()
+    assert.equal(res.code, 0, res.stdout)
+    assert.deepEqual(res.json, { ok: true, data: { id: "ses_x", status: "idle" } })
+    const waited = app.requests.filter((r) => r.command === "session wait").map((r) => r.args.timeout)
+    assert.equal(waited.length, 2)
+    assert.equal(waited[0], 60000)
+    assert.ok(waited[1] < 60000 && waited[1] > 50000, `resent with ${waited[1]}`)
+  })
+
+  test("a connection closed without a reply says ctrl went away, not that the reply isn't JSON", async () => {
+    const app = await fakeApp(() => "drop")
+    const res = await run(["session", "get", "ses_x"], { socket: app.path })
+    await app.close()
+    assert.equal(res.code, 5, res.stdout)
+    assert.equal(res.json.error.code, "APP_NOT_RUNNING")
+    assert.match(res.json.error.message, /quit or restarted/)
+    assert.equal(app.requests.length, 1)
   })
 
   test("help documents `self` for every --space", async () => {
