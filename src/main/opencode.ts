@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import type { HarnessSource } from "./harness"
+import { OpenCodeChat } from "./opencode-chat"
 import type {
   McpServerConfig,
   McpServerItem,
@@ -457,7 +458,7 @@ export class OpenCodeService implements HarnessSource {
   private apply(event: Event) {
     const d = event.data ?? {}
     const id = typeof d.sessionID === "string" ? d.sessionID : undefined
-    if (id) this.onSessionEvent?.(id, event.type)
+    if (id) this.chat.onChange?.(id, event.type === "session.model.selected")
     switch (event.type) {
       case "permission.asked":
         this.pending.set(String(d.id), {
@@ -703,9 +704,14 @@ export class OpenCodeService implements HarnessSource {
 
   currentSessionID: string | null = null
 
-  /** Optimistically clears unread/failed for a session you just opened. */
-  /** Every event about a session (remote control's chat view refreshes on them). */
-  onSessionEvent?: (sessionID: string, type: string) => void
+  /** Its sessions as a chat (src/main/opencode-chat.ts); told about every event about a session. */
+  readonly chat = new OpenCodeChat({
+    client: () => {
+      if (!this.client) throw new Error("The opencode service isn't connected")
+      return this.client
+    },
+    pending: (sessionID) => this.pendingFor(sessionID),
+  })
 
   /** Permissions and questions waiting on you in this session, with their request/form ids. */
   pendingFor(sessionID: string): ChatPending[] {
@@ -716,6 +722,7 @@ export class OpenCodeService implements HarnessSource {
     })
   }
 
+  /** Optimistically clears unread/failed for a session you just opened. */
   setCurrent(sessionID: string | null) {
     this.currentSessionID = sessionID
     if (!sessionID) return

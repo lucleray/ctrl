@@ -166,3 +166,25 @@ test("work: lists a session's shells and subagents, its subagents' included, and
   assert.deepEqual(calls.removed, [["sh_2", "/dir/1"]])
   assert.deepEqual(calls.interrupted, ["ses_sub1"])
 })
+
+test("chat: every event about a session reaches the chat, and its waiting permissions are the chat's pending", () => {
+  const { svc } = service([])
+  const changes = []
+  svc.chat.onChange = (sessionID, modelChanged) => changes.push([sessionID, modelChanged])
+  svc.apply({ type: "permission.asked", data: { id: "per_1", sessionID: "ses_a", action: "bash", resources: ["npm test"] } })
+  svc.apply({ type: "session.model.selected", data: { sessionID: "ses_a" } })
+  svc.apply({ type: "mcp.status.changed", data: {} })
+  assert.deepEqual(changes, [
+    ["ses_a", false],
+    ["ses_a", true],
+  ])
+  assert.deepEqual(svc.chat.pending("ses_a"), [{ id: "per_1", kind: "permission", detail: "Waiting for permission: bash npm test" }])
+  assert.deepEqual(svc.chat.pending("ses_b"), [])
+  svc.apply({ type: "permission.replied", data: { requestID: "per_1", sessionID: "ses_a" } })
+  assert.deepEqual(svc.chat.pending("ses_a"), [])
+})
+
+test("chat: calls fail with a clear error while opencode isn't connected", async () => {
+  const svc = new OpenCodeService(() => {})
+  await assert.rejects(svc.chat.stop("ses_a"), /The opencode service isn't connected/)
+})
