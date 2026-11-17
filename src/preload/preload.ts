@@ -100,6 +100,7 @@ const api: CtrlApi = {
   onChatUpdate: on("chat:update"),
   onChatPending: on("chat:pending"),
   onChatInbox: on("chat:inbox"),
+  onChatDraft: on("chat:draft"),
 }
 
 contextBridge.exposeInMainWorld("ctrl", api)

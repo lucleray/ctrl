@@ -226,7 +226,9 @@ where it lives.
 - The TUI keeps running underneath (hidden, never focused), so switching back is instant and the sidebar,
   ⌘N and `/new` work as before. fx sessions show their terminal
 - No session on screen (the new-session screen, e.g. after archiving the current one): "What do you want to work
-  on?" with the composer in the middle. Sending starts an opencode session in the default space with that message
+  on?" with the composer in the middle. Sending starts an opencode session in the default space with that message.
+  A tool's fix-it prompt, the companion's text and `ctrl ui home --prefill` are typed into this composer, not
+  into the hidden TUI
 - One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed. Enter sends, ⇧↩ new
   line, Esc stops; paste or drop images to attach them
 - Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out

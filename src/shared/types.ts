@@ -709,6 +709,8 @@ export type CtrlApi = {
   onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
   /** Messages sent but not handed to the agent yet (they steer at its next step) */
   onChatInbox(cb: (sessionID: string, inbox: ChatQueued[]) => void): () => void
+  /** A prompt for the new-session composer (a fix-it prompt, the companion's text), typed in, not sent */
+  onChatDraft(cb: (text: string) => void): () => void
 }
 
 export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[] }

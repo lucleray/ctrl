@@ -61,6 +61,8 @@ export function App() {
   const [settings, setSettings] = useState(false)
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
   const [board, setBoard] = useState(false)
+  // A prompt for ChatHome's composer (a fix-it prompt); `n` gives each one a fresh composer.
+  const [draft, setDraft] = useState<{ text: string; n: number } | null>(null)
   // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
   const [boardFilter, setBoardFilterState] = useState<BoardFilter>(loadFilter)
   const setBoardFilter = useCallback((f: BoardFilter) => {
@@ -197,6 +199,7 @@ export function App() {
       }),
     [],
   )
+  useEffect(() => window.ctrl.onChatDraft((text) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 }))), [])
   useEffect(
     () =>
       window.ctrl.onUiPalette((query) => {
@@ -298,7 +301,14 @@ export function App() {
                 archived={!!state.archived[chatID]}
               />
             )}
-            {chatHome && <ChatHome ref={chat} />}
+            {chatHome && (
+              <ChatHome
+                key={draft?.n ?? 0}
+                ref={chat}
+                draft={draft?.text}
+                onDraftUsed={() => setDraft((d) => (d ? { ...d, text: "" } : d))}
+              />
+            )}
             {archivedOnScreen && !onboarding && (
               <ArchivedBanner
                 onUnarchive={() => {

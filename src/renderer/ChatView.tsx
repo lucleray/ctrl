@@ -341,13 +341,18 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
 })
 
 /** No session on screen (the TUI's new-session screen): the composer alone, starting a new session. */
-export const ChatHome = forwardRef<ChatHandle>(function ChatHome(_props, ref) {
+export const ChatHome = forwardRef<ChatHandle, { draft?: string; onDraftUsed?(): void }>(function ChatHome({ draft, onDraftUsed }, ref) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const composer = useRef<ChatHandle>(null)
   useImperativeHandle(ref, () => ({ focus: () => composer.current?.focus(), paste: (t) => composer.current?.paste(t) }), [])
   useEffect(() => {
-    requestAnimationFrame(() => composer.current?.focus())
+    requestAnimationFrame(() => {
+      if (draft) {
+        composer.current?.paste(draft)
+        onDraftUsed?.()
+      } else composer.current?.focus()
+    })
   }, [])
   return (
     <div className="chat-view chat-home">

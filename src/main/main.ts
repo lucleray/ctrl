@@ -856,6 +856,19 @@ const showOpencodeTerm = () => {
   fxTerms.deactivate()
 }
 
+/**
+ * The TUI's new-session screen, with `prompt` typed in (not sent). In chat mode the chat view's composer
+ * covers that screen, so the prompt goes there instead.
+ */
+const showOpencodeHome = (prompt?: string) => {
+  showOpencodeTerm()
+  const chat = !!prompt && store.data.settings.sessionView === "chat"
+  if (prompt && !chat) terminal.prefill(prompt)
+  else terminal.home()
+  push()
+  if (chat) send("chat:draft", prompt)
+}
+
 /** Shows an fx terminal: the opencode TUI goes to the back, and its session stops counting as on screen. */
 const showFxTerm = () => {
   markFxViewed(currentSessionID())
@@ -990,10 +1003,7 @@ const raiseWindow = () => {
 const newSessionWith = async (text: string) => {
   const prompt = text ? `${text} ` : ""
   if (harnessFor() === "opencode" && opencodeStarted) {
-    showOpencodeTerm()
-    if (prompt) terminal.prefill(prompt)
-    else terminal.home()
-    push()
+    showOpencodeHome(prompt)
   } else {
     const created = await newSession(defaultSpaceID())
     if (prompt && "pending" in created) {
@@ -1320,13 +1330,6 @@ const TOOLS_FILE =
     ? join(app.getPath("userData"), "tools.json")
     : join(homedir(), ".config", "ctrl", app.isPackaged ? "tools.json" : "tools.dev.json"))
 
-/** Opens the TUI's new-session screen with a fix-it prompt typed in, not sent. */
-const prefillFix = (prompt: string) => {
-  showOpencodeTerm()
-  terminal.prefill(prompt)
-  push()
-}
-
 const tools: ToolsService = new ToolsService(TOOLS_FILE, {
   opencode: {
     active: () => opencodeStarted,
@@ -1343,7 +1346,7 @@ const tools: ToolsService = new ToolsService(TOOLS_FILE, {
   },
   toast: (t, opts) => toast(t, opts),
   dismissToast: (id) => dismissToast(id),
-  prefill: prefillFix,
+  prefill: (prompt) => showOpencodeHome(prompt),
   openExternal: (url) => openExternal(url),
   changed: () => push(),
 })
@@ -1814,12 +1817,7 @@ const cliHost: CliHost = {
     return { visible: !!win && !win.isDestroyed() && win.isVisible(), focused: !!win && !win.isDestroyed() && win.isFocused() }
   },
   renderer: (event, arg) => send(`ui:${event}`, arg),
-  home: (prefill) => {
-    showOpencodeTerm()
-    if (prefill) terminal.prefill(prefill)
-    else terminal.home()
-    push()
-  },
+  home: (prefill) => showOpencodeHome(prefill || undefined),
   search: (query) => search.search(query),
   resources: (ids) =>
     search
