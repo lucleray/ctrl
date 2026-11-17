@@ -25,6 +25,7 @@ import {
   type ThemeInfo,
   type Toast,
   type CliToolConfig,
+  type ChatAttachment,
   type UiState,
   isResourceArchived,
 } from "../shared/types"
@@ -537,8 +538,14 @@ const chatOps = {
   page: (sessionID: string, cursor?: string) => chatPage(openCodeClient(), sessionID, cursor),
   // Steer, never queue: a message sent mid-turn reaches the agent at its next step. A shell or subagent the
   // turn waits for would hold that step back, so it goes on in the background (what ⌃B does in opencode's TUI).
-  send: async (sessionID: string, text: string, images: string[]) => {
-    const files = images.map((uri, i) => ({ uri, name: `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}` }))
+  send: async (sessionID: string, text: string, attachments: ChatAttachment[]) => {
+    const files = attachments.map(({ uri, label }, i) => {
+      const pdf = uri.startsWith("data:application/pdf;")
+      const name = pdf ? `document-${i + 1}.pdf` : `photo-${i + 1}.${uri.slice(11, uri.indexOf(";"))}`
+      // Where its placeholder sits in the text, like opencode's TUI sends it.
+      const start = label ? text.indexOf(label) : -1
+      return { uri, name, ...(start >= 0 ? { mention: { start, end: start + label!.length, text: label! } } : {}) }
+    })
     // Before sending: the turn this message starts in an idle session is not one to cut short.
     const midTurn = sessionByID(sessionID)?.status === "running"
     const sent = await openCodeClient().session.prompt({ sessionID, text, delivery: "steer", ...(files.length ? { files } : {}) })

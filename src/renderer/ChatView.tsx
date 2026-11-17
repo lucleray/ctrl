@@ -13,7 +13,7 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
+import type { ChatAttachment, ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
@@ -90,8 +90,11 @@ function renderMarkdown(text: string) {
 const TOOL_ICONS: Record<string, string> = { running: "◌", background: "↗", done: "✓", error: "✕", stopped: "■" }
 /** How a background shell or subagent ended → the tool row it's drawn as */
 const NOTE_STATUS = { finished: "done", failed: "error", stopped: "stopped" } as const
-const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp)$/
+/** What can be attached: images, and PDFs (models read both) */
+const ATTACH_TYPES = /^(image\/(png|jpeg|gif|webp)|application\/pdf)$/
 const MAX_IMAGES = 6
+/** An attachment's placeholder, `[Image 1]` or `[PDF 2]` as in opencode's TUI */
+const ATTACHMENT = /\[(?:Image|PDF) \d+\]/g
 
 /** `@session[Title](id)`, what a dropped session pastes (sessionMention in ReferenceDrop.tsx) */
 const MENTION = /@session\[([^\]\n]*)\]\(((?:ses_|fx:)[^)\s]+)\)/g
@@ -107,17 +110,24 @@ const readImage = (file: File) =>
     reader.readAsDataURL(file)
   })
 
-/** Text with session mentions drawn as chips (sent messages, and ones waiting to steer). */
+/** Text with session mentions and attachment placeholders drawn as chips (sent messages, and ones waiting to steer). */
 function withMentions(text: string): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
-  for (const m of text.matchAll(MENTION)) {
+  const chips = new RegExp(`${MENTION.source}|${ATTACHMENT.source}`, "g")
+  for (const m of text.matchAll(chips)) {
     if (m.index > last) out.push(text.slice(last, m.index))
     out.push(
-      <span key={m.index} className="chat-chip" title={m[2]}>
-        <Icon name="link" />
-        {m[1].trim() || m[2]}
-      </span>,
+      m[2] ? (
+        <span key={m.index} className="chat-chip" title={m[2]}>
+          <Icon name="link" />
+          {m[1].trim() || m[2]}
+        </span>
+      ) : (
+        <span key={m.index} className="chat-chip attachment">
+          {m[0].slice(1, -1)}
+        </span>
+      ),
     )
     last = m.index + m[0].length
   }
@@ -239,10 +249,10 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
   }, [cursor, loadingMore, sessionID])
 
   const submit = useCallback(
-    (text: string, images: string[]) => {
+    (text: string, attachments: ChatAttachment[]) => {
       scroll.current = { kind: "bottom" }
-      window.ctrl.chatSend(sessionID, text, images).then(
-        (id) => id && setSent((prev) => [...prev, { id, text, images: images.length }]),
+      window.ctrl.chatSend(sessionID, text, attachments).then(
+        (id) => id && setSent((prev) => [...prev, { id, text, images: attachments.filter((a) => a.uri.startsWith("data:image/")).length }]),
         (err) => setError(String(err?.message ?? err)),
       )
     },
@@ -349,10 +359,10 @@ export const ChatHome = forwardRef<ChatHandle>(function ChatHome(_props, ref) {
             placeholder="Start a new session…"
             sendTitle="Start (Enter)"
             disabled={busy}
-            onSubmit={(text, images) => {
+            onSubmit={(text, attachments) => {
               setBusy(true)
               setError(null)
-              window.ctrl.chatNew(text, images).catch((err) => {
+              window.ctrl.chatNew(text, attachments).catch((err) => {
                 setBusy(false)
                 setError(String(err?.message ?? err))
               })
@@ -369,7 +379,7 @@ type ComposerProps = {
   placeholder: string
   sendTitle: string
   disabled?: boolean
-  onSubmit(text: string, images: string[]): void
+  onSubmit(text: string, attachments: ChatAttachment[]): void
   /** Set while a turn runs: the button stops it when nothing's typed, and so does Esc */
   onStop?(): void
 }
@@ -381,11 +391,14 @@ const lineCount = (s: string) => s.split("\n").length
  * The message box. Long pastes and dropped sessions go in as short tokens (`[Pasted 12 lines]`, `@Title`),
  * highlighted by a backdrop drawn under the transparent textarea, and are swapped for what they stand for
  * when sent. Backspace removes a token whole; ⌘V again right after a long paste puts the full text in.
+ * Pasted or dropped images and PDFs go in at the cursor as `[Image 1]` / `[PDF 1]`, like opencode's TUI:
+ * they stay in the text so the agent sees where each one goes, and deleting one drops its attachment.
  * Its own component, so typing never re-renders the messages.
  */
 const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ placeholder, sendTitle, disabled, onSubmit, onStop }, ref) {
   const [text, setText] = useState("")
-  const [images, setImages] = useState<string[]>([])
+  /** Everything attached to this draft. Only the ones whose placeholder is still in the text are sent. */
+  const attached = useRef<{ label: string; uri: string }[]>([])
   const input = useRef<HTMLTextAreaElement>(null)
   const backdrop = useRef<HTMLDivElement>(null)
   /** Token label → the text it stands for */
@@ -429,22 +442,55 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
     if (backdrop.current) backdrop.current.scrollTop = el.scrollTop
   }, [text])
 
-  const addImages = useCallback(async (files: File[]) => {
-    const picked = files.filter((f) => IMAGE_TYPES.test(f.type))
-    const urls = await Promise.all(picked.map(readImage))
-    setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES))
-  }, [])
+  const attachments = attached.current.filter((a) => text.includes(a.label))
 
-  const labels = [...tokens.current.keys()].filter((l) => text.includes(l))
-  const empty = !text.trim() && !images.length
+  /** Attaches the images and PDFs among `files`, their placeholders typed in at the cursor. */
+  const attach = async (files: File[]) => {
+    const picked = files.filter((f) => ATTACH_TYPES.test(f.type))
+    const uris = await Promise.all(picked.map(readImage))
+    const el = input.current
+    if (!el || !uris.length) return
+    const live = attached.current.filter((a) => el.value.includes(a.label))
+    const added: string[] = []
+    for (const uri of uris.slice(0, Math.max(0, MAX_IMAGES - live.length))) {
+      const kind = uri.startsWith("data:application/pdf;") ? "PDF" : "Image"
+      // The next number for its kind, so a placeholder never means two attachments.
+      const n = Math.max(0, ...attached.current.map((a) => Number(a.label.match(new RegExp(`^\\[${kind} (\\d+)\\]$`))?.[1] ?? 0))) + 1
+      const label = `[${kind} ${n}]`
+      attached.current.push({ label, uri })
+      added.push(label)
+    }
+    if (!added.length) return
+    el.focus()
+    const before = el.value.slice(0, el.selectionStart)
+    insert(`${before && !/\s$/.test(before) ? " " : ""}${added.join(" ")} `)
+  }
+
+  /** Removes an attachment from the tray: its placeholder goes too (⌘Z brings both back). */
+  const detach = (label: string) => {
+    const el = input.current
+    const at = el ? el.value.indexOf(label) : -1
+    if (!el || at < 0) return
+    el.focus()
+    const end = at + label.length + (el.value[at + label.length] === " " ? 1 : 0)
+    el.setSelectionRange(at, end)
+    document.execCommand("delete")
+  }
+
+  const tokenLabels = [...tokens.current.keys()].filter((l) => text.includes(l))
+  const labels = [...tokenLabels, ...attachments.map((a) => a.label)]
+  const empty = !text.trim()
 
   const submit = () => {
     if (empty || disabled) return
     let out = text
-    for (const label of labels) out = out.split(label).join(tokens.current.get(label)!)
-    onSubmit(out, images)
+    for (const label of tokenLabels) out = out.split(label).join(tokens.current.get(label)!)
+    onSubmit(
+      out,
+      attachments.map(({ uri, label }) => ({ uri, label })),
+    )
     setText("")
-    setImages([])
+    attached.current = []
     tokens.current.clear()
     lastPaste.current = null
   }
@@ -478,12 +524,13 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
 
   return (
     <div className={`chat-composer${disabled ? " disabled" : ""}`}>
-      {images.length > 0 && (
+      {attachments.length > 0 && (
         <div className="chat-tray">
-          {images.map((src, n) => (
-            <div key={n} className="chat-thumb">
-              <img src={src} alt="" />
-              <button title="Remove" onClick={() => setImages((prev) => prev.filter((_, k) => k !== n))}>
+          {attachments.map((a) => (
+            <div key={a.label} className="chat-thumb" title={a.label}>
+              {a.uri.startsWith("data:image/") ? <img src={a.uri} alt={a.label} /> : <div className="chat-thumb-file">PDF</div>}
+              <span className="chat-thumb-label">{a.label.slice(1, -1)}</span>
+              <button title="Remove" onClick={() => detach(a.label)}>
                 ×
               </button>
             </div>
@@ -523,9 +570,9 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
             }}
             onPaste={(e) => {
               const files = [...e.clipboardData.files]
-              if (files.some((f) => IMAGE_TYPES.test(f.type))) {
+              if (files.some((f) => ATTACH_TYPES.test(f.type))) {
                 e.preventDefault()
-                void addImages(files)
+                void attach(files)
                 return
               }
               const pasted = e.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n")
@@ -558,9 +605,9 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
             }}
             onDrop={(e) => {
               const files = [...e.dataTransfer.files]
-              if (!files.some((f) => IMAGE_TYPES.test(f.type))) return
+              if (!files.some((f) => ATTACH_TYPES.test(f.type))) return
               e.preventDefault()
-              void addImages(files)
+              void attach(files)
             }}
           />
         </div>

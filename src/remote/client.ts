@@ -21,7 +21,7 @@ type Outbound =
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
-  | { t: "chat-send"; text: string; images?: string[] }
+  | { t: "chat-send"; text: string; images?: { uri: string; label: string }[] }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
   | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
@@ -1342,49 +1342,79 @@ function renderChat(id: string) {
   const input = h("div", { className: "composer-input", contentEditable: "true", role: "textbox", enterKeyHint: "enter" })
   input.dataset.placeholder = "Message"
   const text = () => input.innerText.replace(/\n$/, "")
-  // Deleting everything can leave a <br> behind, which hides the placeholder.
-  input.addEventListener("input", () => {
-    if (!text().trim() && input.childNodes.length && !input.querySelector("img")) input.replaceChildren()
-  })
-  let photos: string[] = []
+  // Each photo goes in the text as `[Image 1]`, like opencode's TUI, so the agent sees where it goes. Only
+  // the ones whose placeholder is still in the text are sent.
+  let photos: { label: string; uri: string }[] = []
+  const live = () => {
+    const t = text()
+    return photos.filter((p) => t.includes(p.label))
+  }
+  let shown = ""
   const tray = h("div", { className: "photo-tray", hidden: true })
   const drawTray = () => {
-    tray.hidden = !photos.length
+    const list = live()
+    const key = list.map((p) => p.label).join()
+    if (key === shown) return
+    shown = key
+    tray.hidden = !list.length
     tray.replaceChildren(
-      ...photos.map((src, n) =>
+      ...list.map((p) =>
         h(
           "div",
           { className: "photo-thumb" },
-          h("img", { src, alt: "Photo" }),
-          h(
-            "button",
-            {
-              title: "Remove",
-              onclick: () => {
-                photos = photos.filter((_, k) => k !== n)
-                drawTray()
-              },
-            },
-            "×",
-          ),
+          h("img", { src: p.uri, alt: p.label }),
+          h("span", { className: "photo-label" }, p.label.slice(1, -1)),
+          h("button", { title: "Remove", onclick: () => removeLabel(p.label) }, "×"),
         ),
       ),
     )
   }
+  /** Takes a placeholder (and the space after it) out of the text, and with it its photo. */
+  const removeLabel = (label: string) => {
+    const walker = document.createTreeWalker(input, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+      const at = node.data.indexOf(label)
+      if (at < 0) continue
+      const end = at + label.length + (node.data[at + label.length] === " " ? 1 : 0)
+      node.data = node.data.slice(0, at) + node.data.slice(end)
+      break
+    }
+    drawTray()
+  }
+  /** Types the placeholders in at the cursor when it's in the box, else at the end (a photo picked from the button). */
+  const insertLabels = (labels: string[]) => {
+    const sel = getSelection()
+    const inside = !!sel?.rangeCount && input.contains(sel.anchorNode)
+    const before = inside ? (sel!.anchorNode?.textContent ?? "").slice(0, sel!.anchorOffset) : text()
+    const s = `${before && !/\s$/.test(before) ? " " : ""}${labels.join(" ")} `
+    if (inside) document.execCommand("insertText", false, s)
+    else input.append(s)
+    drawTray()
+  }
+  // Deleting everything can leave a <br> behind, which hides the placeholder.
+  input.addEventListener("input", () => {
+    if (!text().trim() && input.childNodes.length && !input.querySelector("img")) input.replaceChildren()
+    drawTray()
+  })
   const picker = h("input", { type: "file", accept: "image/*", multiple: true, hidden: true }) as HTMLInputElement
   const addPhotos = async (picked: File[]) => {
-    const files = picked.filter((f) => f.type.startsWith("image/")).slice(0, MAX_PHOTOS - photos.length)
+    const files = picked.filter((f) => f.type.startsWith("image/")).slice(0, Math.max(0, MAX_PHOTOS - live().length))
+    const labels: string[] = []
     for (const file of files) {
       try {
-        photos = [...photos, await shrinkPhoto(file)]
+        const uri = await shrinkPhoto(file)
+        // Numbers are never reused in a draft, so a placeholder always means one photo.
+        const n = Math.max(0, ...photos.map((p) => Number(p.label.match(/^\[Image (\d+)\]$/)?.[1] ?? 0))) + 1
+        photos = [...photos, { label: `[Image ${n}]`, uri }]
+        labels.push(`[Image ${n}]`)
       } catch {
         const msg = `Couldn't read ${file.name || "that photo"}`
         notice = msg
         render()
         setTimeout(() => notice === msg && ((notice = ""), render()), 3000)
       }
-      drawTray()
     }
+    if (labels.length) insertLabels(labels)
   }
   picker.addEventListener("change", () => {
     const files = [...(picker.files ?? [])]
@@ -1406,8 +1436,9 @@ function renderChat(id: string) {
   input.addEventListener("drop", (e) => e.preventDefault())
   const submit = () => {
     const message = text()
-    if (!message.trim() && !photos.length) return
-    send({ t: "chat-send", text: message, ...(photos.length ? { images: photos } : {}) })
+    if (!message.trim()) return
+    const images = live()
+    send({ t: "chat-send", text: message, ...(images.length ? { images } : {}) })
     input.replaceChildren()
     photos = []
     drawTray()
@@ -1437,7 +1468,7 @@ function renderChat(id: string) {
           className: "attach-btn",
           title: "Add photos",
           onpointerdown: keepFocus,
-          onclick: () => photos.length < MAX_PHOTOS && picker.click(),
+          onclick: () => live().length < MAX_PHOTOS && picker.click(),
         },
         "+",
       ),

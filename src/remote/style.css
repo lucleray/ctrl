@@ -1274,6 +1274,20 @@ button {
   border-radius: 10px;
 }
 
+/* Its placeholder in the text, so you can tell which is which */
+.photo-label {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 11px;
+  line-height: 17px;
+  pointer-events: none;
+}
+
 .photo-thumb button {
   position: absolute;
   top: -6px;

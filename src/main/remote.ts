@@ -6,7 +6,7 @@ import { networkInterfaces } from "node:os"
 import { extname, join } from "node:path"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { Stage } from "../shared/adapters/adapter"
-import type { Harness, IndexStatus, RemoteStatus, SearchHit, SessionStatus, Tone } from "../shared/types"
+import type { ChatAttachment, Harness, IndexStatus, RemoteStatus, SearchHit, SessionStatus, Tone } from "../shared/types"
 import type { ChatPage } from "./remote-chat"
 
 /** A permission or question waiting on you, shown above the chat's composer */
@@ -103,8 +103,8 @@ type Deps = {
   /** opencode sessions as a chat (src/main/remote-chat.ts) */
   chat: {
     page(sessionID: string, cursor?: string): Promise<ChatPage>
-    /** images: data: URLs (see cleanImages) */
-    send(sessionID: string, text: string, images: string[]): Promise<unknown>
+    /** attachments: see cleanImages */
+    send(sessionID: string, text: string, attachments: ChatAttachment[]): Promise<unknown>
     /** An image attached to a message you sent */
     image(sessionID: string, messageID: string, index: number): Promise<{ mime: string; body: Buffer } | null>
     stop(sessionID: string): Promise<void>
@@ -140,7 +140,7 @@ type Inbound =
   | { t: "search"; q: string; seq: number }
   | { t: "chat"; id: string }
   | { t: "chat-more"; cursor: string }
-  | { t: "chat-send"; text: string; images?: string[] }
+  | { t: "chat-send"; text: string; images?: Array<string | ChatAttachment> }
   | { t: "chat-stop" }
   | { t: "chat-reply"; requestID: string; decision: "once" | "always" | "reject" }
   | { t: "chat-answer"; formID: string; answer: FormAnswer | null }
@@ -149,13 +149,23 @@ const COOKIE = "ctrl_remote"
 /** Photos per message, and the size of each once base64'd (the phone shrinks them well below this). */
 const MAX_IMAGES = 6
 const MAX_IMAGE_CHARS = 12_000_000
-const IMAGE_URL = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+const IMAGE_URL = /^data:(image\/(png|jpeg|gif|webp)|application\/pdf);base64,[A-Za-z0-9+/]+={0,2}$/
+/** A placeholder in the message text: `[Image 2]`, `[PDF 1]` */
+const ATTACHMENT_LABEL = /^\[(Image|PDF) \d+\]$/
 
-/** The images a phone attached to a message: data: URLs of formats models read, size-capped. */
-export function cleanImages(images: unknown): string[] {
+/**
+ * What a phone or the chat view attached to a message: data: URLs of formats models read (images, PDFs),
+ * size-capped, each with its placeholder in the text when it has one. Plain strings are images without one.
+ */
+export function cleanImages(images: unknown): ChatAttachment[] {
   if (!Array.isArray(images)) return []
   return images
-    .filter((i): i is string => typeof i === "string" && i.length <= MAX_IMAGE_CHARS && IMAGE_URL.test(i))
+    .map((i): ChatAttachment | null => {
+      if (typeof i === "string") return { uri: i }
+      if (!i || typeof i !== "object" || typeof i.uri !== "string") return null
+      return typeof i.label === "string" && ATTACHMENT_LABEL.test(i.label) ? { uri: i.uri, label: i.label } : { uri: i.uri }
+    })
+    .filter((i): i is ChatAttachment => !!i && i.uri.length <= MAX_IMAGE_CHARS && IMAGE_URL.test(i.uri))
     .slice(0, MAX_IMAGES)
 }
 /** Interfaces are checked this often, so Tailscale connecting (or its address changing) is picked up. */
