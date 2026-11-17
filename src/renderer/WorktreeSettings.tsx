@@ -181,17 +181,6 @@ export function WorktreeSettings({ state }: { state: AppState }) {
       <div className="settings-card">
         <div className="setting">
           <div>
-            <div className="setting-title">Checkouts for agents</div>
-            <div className="setting-desc">
-              An agent that needs to work on a repo runs <code>ctrl worktree up &lt;repo&gt;</code> and gets a git worktree
-              of its own: at the latest base branch, dependencies installed, taken from a pool ctrl keeps warm so
-              there's no wait. It belongs to the agent's session, shows in its resources, and goes back to the pool
-              when the session is archived. A session can hold several, of one repo or many.
-            </div>
-          </div>
-        </div>
-        <div className="setting">
-          <div>
             <div className="setting-title">Folder</div>
             <div className="setting-desc">
               Where worktrees are created. {total ? `${plural(total, "worktree")} now, ${inUse} in use.` : "None yet."} Changing it
