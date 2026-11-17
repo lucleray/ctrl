@@ -69,3 +69,26 @@ session per PR in the reviews space"); the `ctrl` skill tells them how.
 - Agents can archive sessions but never delete them. What they archive shows the usual undo toast, so ⌘Z
   undoes it.
 - Details: [CLI.md](CLI.md), every command: [CLI-REFERENCE.md](CLI-REFERENCE.md).
+
+## Worktrees
+
+Sessions aren't tied to a folder. When an agent needs to work on a repo, it takes a git worktree of it with
+`ctrl worktree up <repo>`: its own checkout at the latest base branch, dependencies installed. You never
+create or remove one yourself.
+
+```text
+ctrl worktree up ~/code/app ──► pool has a warm one? ──yes──► yours, right away
+                                        │ no
+                                        └─► built now (checkout + install), minutes for a big repo
+session archived ──► its worktrees go back to the pool (recycled) or are removed
+```
+
+- **Per session, as many as it needs:** a worktree belongs to the session that took it and shows in its
+  resources (click to open the folder). One session can hold worktrees of several repos, or several of one.
+- **Kept warm:** ctrl builds worktrees ahead of time, as many per repo as your last 7 days of use needed, so
+  taking one is instant. Repos you stop using stop costing anything after a month.
+- **Cleaned up for you:** archiving a session releases its worktrees half a minute later. Uncommitted changes
+  in them are discarded; branches and anything pushed stay.
+- **Settings → Worktrees** shows the folder, every repo with its pool and usage, and the background jobs that
+  do all this, each with what it last did. You can pin a repo's pool size, change its setup command, or turn
+  on the job that keeps your own checkouts up to date.

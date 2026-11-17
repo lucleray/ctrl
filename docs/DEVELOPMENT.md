@@ -61,6 +61,9 @@ npm run preview -- --name <label>  # label other than the branch (also names its
 - `state.json` (spaces, assignments, settings) and `~/.config/ctrl/tools.json` are copied in fresh on every
   launch, so edits a preview makes to them never reach the installed app. Sessions themselves are shared:
   they live in opencode and fx, so a preview drives your real sessions.
+- Worktrees are not shared: a preview has its own pool, repos and folder (`~/.ctrl/worktrees-<label>`), and
+  starts with none. Agents in your sessions still talk to the installed app's `ctrl` (the opencode service is
+  the installed app's), so try `ctrl worktree` in a preview with the `CTRL_SOCKET=…` line it prints.
 - Live reload like `npm run dev`: renderer changes hot-reload, main process changes restart the app. The phone
   view rebuilds without a restart, refresh the page.
 - It prints the phone links once the remote server is up (`[ctrl] phone: …`) and a `CTRL_SOCKET=…` line to
@@ -108,6 +111,9 @@ npm test           # CLI tests (test/): the launcher against a fake app socket, 
 - `CTRL_TOOLS_FILE=/tmp/tools.json` use that tools list instead of `~/.config/ctrl/tools.json`. Dev runs use
   `~/.config/ctrl/tools.dev.json`, `CTRL_USER_DATA` runs a `tools.json` in that folder. Delete it to see the
   scan (and the one-time toast, with `toolsPrompted` removed from `ui` in state.json) again
+- `CTRL_WORKTREE_ROOT=/tmp/worktrees` create git worktrees there (`ctrl worktree up`). Without it, the
+  installed app uses `~/.ctrl/worktrees` and every other run its own `~/.ctrl/worktrees-<state folder name>`
+  (`worktrees-ctrl-dev`, `worktrees-<preview label>`), with its own `worktrees.json` in its state folder
 - `CTRL_EVAL='...'` run JS in the renderer 3s after load
 - `CTRL_SCREENSHOT=/tmp/shot.png CTRL_SCREENSHOT_DELAY=8000` capture the window
 - `CTRL_SEND='["space:settings","spc_x"]'` send a main → renderer event 2s after load

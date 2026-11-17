@@ -58,7 +58,7 @@ export const SETTING_KEYS: SettingKey[] = [
   {
     key: "ctrlInstructions",
     type: { kind: "bool" },
-    description: "Invisible instruction on opencode sessions: tells the agent it runs in ctrl and how to look around with the ctrl CLI; spaces can override",
+    description: "Invisible instruction on opencode sessions: tells the agent it runs in ctrl, how to look around with the ctrl CLI and how to take a git worktree; spaces can override",
   },
   { key: "dockBadge", type: { kind: "bool" }, description: "Dock badge with the sessions waiting on you" },
   {

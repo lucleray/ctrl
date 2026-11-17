@@ -39,6 +39,7 @@ import { ModelPicker } from "./ModelPicker"
 import { ShortcutSettings } from "./ShortcutSettings"
 import { shortcutLabel } from "../shared/shortcuts"
 import { Toggle } from "./Toggle"
+import { WorktreeSettings } from "./WorktreeSettings"
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "system", label: "System" },
@@ -905,6 +906,7 @@ type SectionID =
   | "shortcuts"
   | "agents"
   | "tools"
+  | "worktrees"
   | "adapters"
   | "companion"
   | "remote"
@@ -918,6 +920,7 @@ const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; ke
   { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
   { id: "agents", label: "Agents", icon: "bot", group: "Integrations", keywords: "skills" },
   { id: "tools", label: "Tools", icon: "plug", group: "Integrations", keywords: "mcp servers cli credentials login aws" },
+  { id: "worktrees", label: "Worktrees", icon: "git-branch", group: "Integrations", keywords: "git checkout repo repositories pool warm branch cleanup" },
   { id: "adapters", label: "Resource adapters", icon: "link", group: "Integrations", keywords: "links" },
   { id: "companion", label: "Companion", icon: "panel-float", group: "Integrations" },
   { id: "remote", label: "Remote control", icon: "phone", group: "Integrations", keywords: "phone mobile tailscale" },
@@ -1054,6 +1057,7 @@ export function Settings({
   const alerts: Partial<Record<SectionID, boolean>> = {
     sessions: state.opencodeServer?.state === "broken",
     tools: state.tools.some((t) => TOOL_BROKEN.includes(t.state)),
+    worktrees: state.worktrees.repos.some((r) => !!r.error),
     adapters: state.adapters.some((a) => a.mode !== "off" && a.status?.state === "error"),
     about: state.update.state === "available",
   }
@@ -1282,7 +1286,7 @@ export function Settings({
             <div className="setting-title">ctrl instructions</div>
             <div className="setting-desc">
               Tells agents they run inside ctrl and how to look around with the <code>ctrl</code> command: their session,
-              space, the other sessions and links in it. Invisible in the chat. opencode only. A space can turn it on
+              space, the other sessions and links in it, and how to take a git worktree to work on a repo. Invisible in the chat. opencode only. A space can turn it on
               or off for its sessions.{" "}
               <a href="#" onClick={(e) => (e.preventDefault(), setShowCtrlText((v) => !v))}>
                 {showCtrlText ? "Hide text" : "Show text"}
@@ -1296,7 +1300,7 @@ export function Settings({
         </div>
         {showCtrlText && (
           <div className="setting-sub">
-            <textarea className="setting-textarea" readOnly value={CTRL_INSTRUCTIONS} rows={10} />
+            <textarea className="setting-textarea" readOnly value={CTRL_INSTRUCTIONS} rows={12} />
           </div>
         )}
       </div>
@@ -1360,6 +1364,8 @@ export function Settings({
     ),
 
     tools: <ToolsSection tools={state.tools} setUp={state.toolsSetUp} onFix={onFixTool} />,
+
+    worktrees: <WorktreeSettings state={state} />,
 
     adapters: (
       <div className="settings-card">

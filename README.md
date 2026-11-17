@@ -99,6 +99,9 @@ Hold ⌘ to see a number next to each session, then press it.
 Agents can run `ctrl` to create spaces and sessions, file them, start work in parallel and wait for it,
 reference other sessions, change settings and switch what's on screen.
 
+They also get their own checkout of any repo with `ctrl worktree up <repo>`: a git worktree from a pool ctrl
+keeps warm, attached to their session and released when you archive it.
+
 ## 📚 Docs
 
 - [Usage](docs/USAGE.md): install details, spaces, shortcuts, settings

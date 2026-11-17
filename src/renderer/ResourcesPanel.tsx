@@ -144,7 +144,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
           <div className="empty">Everything here is archived. Links come back when they're mentioned again.</div>
         ) : groups.length === 0 ? (
           <div className="empty">
-            No links yet. Referenced sessions, PRs, repos, Notion docs, Slack threads, Linear issues and Vercel deployments shared in this{" "}
+            No links yet. Worktrees, referenced sessions, PRs, repos, Notion docs, Slack threads, Linear issues and Vercel deployments of this{" "}
             {scope === "space" ? "space" : "session"} show up here.
           </div>
         ) : (
@@ -271,6 +271,8 @@ function metaTooltip(meta: ResourceMeta | undefined, source: AdapterInfo | undef
 function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceScope: boolean; target: Harness; archived?: boolean }) {
   const { item, source, spaceScope } = props
   const isSession = item.type === "session"
+  // A worktree the session holds (ctrl worktree up): attached by ctrl, not mentioned, so no link and no archiving.
+  const isWorktree = item.type === "worktree"
   const deleted = isSession && item.meta?.chips?.some((c) => c.text === "deleted")
   const type = resourceType(item.type)
   const meta = item.meta?.missing ? undefined : item.meta
@@ -280,13 +282,15 @@ function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceSco
   const subtitle = meta?.subtitle ?? parsed.subtitle ?? hostOf(item.url)
   const [copied, setCopied] = useState(false)
   const where = spaceScope && item.sessions > 1 ? ` in ${item.sessions} sessions` : ""
-  const tooltip = [
-    isSession ? `${title}\n${item.data.id}` : meta?.title ? `${title}\n${item.url}` : item.url,
-    ...(isSession ? (meta?.details ?? []) : metaTooltip(item.meta, source)),
-    `Mentioned ${item.mentions}×${where}, last ${age(item.last)} ago${item.sharedByYou ? " · shared by you" : ""}`,
-  ].join("\n")
+  const tooltip = isWorktree
+    ? [title, item.data.path, `Taken ${age(item.first)} ago, released when the session is archived`, "Click to open the folder"].join("\n")
+    : [
+        isSession ? `${title}\n${item.data.id}` : meta?.title ? `${title}\n${item.url}` : item.url,
+        ...(isSession ? (meta?.details ?? []) : metaTooltip(item.meta, source)),
+        `Mentioned ${item.mentions}×${where}, last ${age(item.last)} ago${item.sharedByYou ? " · shared by you" : ""}`,
+      ].join("\n")
 
-  const text = isSession ? sessionMention({ id: item.data.id, title }, props.target) : item.url
+  const text = isSession ? sessionMention({ id: item.data.id, title }, props.target) : isWorktree ? item.data.path : item.url
 
   return (
     <div
@@ -300,7 +304,8 @@ function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceSco
         e.dataTransfer.effectAllowed = "copy"
       }}
       onClick={() => {
-        if (!isSession) void window.ctrl.openExternal(item.url)
+        if (isWorktree) void window.ctrl.revealPath(item.data.path)
+        else if (!isSession) void window.ctrl.openExternal(item.url)
         else if (!deleted) void window.ctrl.openSession(item.data.id)
       }}
     >
@@ -323,19 +328,21 @@ function ResourceRow(props: { item: ResourceItem; source?: AdapterInfo; spaceSco
         </span>
       </span>
       <span className="meta">{age(item.last)}</span>
+      {!isWorktree && (
+        <button
+          className="icon-btn row-action"
+          title={props.archived ? "Unarchive" : "Archive until mentioned again"}
+          onClick={(e) => {
+            e.stopPropagation()
+            void window.ctrl.setResourcesArchived([item.id], !props.archived)
+          }}
+        >
+          <Icon name={props.archived ? "unarchive" : "archive"} />
+        </button>
+      )}
       <button
         className="icon-btn row-action"
-        title={props.archived ? "Unarchive" : "Archive until mentioned again"}
-        onClick={(e) => {
-          e.stopPropagation()
-          void window.ctrl.setResourcesArchived([item.id], !props.archived)
-        }}
-      >
-        <Icon name={props.archived ? "unarchive" : "archive"} />
-      </button>
-      <button
-        className="icon-btn row-action"
-        title={copied ? "Copied" : isSession ? "Copy reference" : "Copy link"}
+        title={copied ? "Copied" : isSession ? "Copy reference" : isWorktree ? "Copy path" : "Copy link"}
         onClick={(e) => {
           e.stopPropagation()
           void navigator.clipboard.writeText(text).then(() => {

@@ -3914,6 +3914,35 @@ body.resizing .terminal-pane.active {
   font-size: 12.5px;
 }
 
+/* ---------- worktrees (Settings → Worktrees) ---------- */
+
+.worktree-setup {
+  display: inline !important;
+}
+
+.worktree-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow: auto;
+}
+
+.worktree-job {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.worktree-job .text-btn {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.worktree-forget {
+  margin-right: auto;
+}
+
 /* Above both lists: what's watched, and Scan again (it covers MCP servers and CLIs alike) */
 .tools-header {
   display: flex;

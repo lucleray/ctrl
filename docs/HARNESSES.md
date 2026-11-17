@@ -38,6 +38,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | ⌘1–9 jump, ⌘P title search | ✅ | ✅ | |
 | ⌘P message search | ✅ | ✅ | opencode: through the service · fx: tails `events.jsonl` |
 | Resources panel (links per session / space) | ✅ | ✅ | Same index as search |
+| Worktrees (`ctrl worktree up`, shown as resources, released on archive) | ✅ | ✅ | ctrl-side · opencode: the ctrl instruction tells agents to take one, and a subagent's goes to its root session · fx: agents learn it from the ctrl skill only |
 | Referenced sessions in Resources | ✅ | ✅ | fx references show once fx writes the turn to disk |
 | ctrl Companion (sessions that mentioned what's on screen) | ✅ | ✅ | Same index as search |
 | New session from screen (⌃⌥⌘Space, or the companion's New button) | ✅ | ✅ | opencode: new-session screen with the link typed in; fx: a new session, typed in once ready |

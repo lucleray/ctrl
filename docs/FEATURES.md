@@ -328,6 +328,46 @@ where it lives.
 - About: ctrl's version, update status, Check for updates / Update and restart
 - Resizable sidebar (200–520px, double-click edge to reset), width saved (`src/renderer/ResizeHandle.tsx`)
 
+## Worktrees
+
+- A warm pool of git worktrees per repo, so an agent gets a ready checkout (latest base branch, dependencies
+  installed) with `ctrl worktree up <repo>`, usually instantly (`src/main/worktrees/`, `src/shared/worktrees.ts`)
+- Always attached to a session (the caller's, or `--session`; a subagent's goes to the session it works for).
+  A session can hold several, of one repo or many, and isn't tied to any of them: it works in them by path
+- Repos register themselves the first time a worktree of one is taken: base branch from origin, setup command
+  from the lockfile (pnpm, yarn, bun, npm, cargo, go). A path anywhere inside the repo, or its name, works
+- Pool miss: the worktree is built on the spot (`cold: true`). The build belongs to the app, not to the CLI call:
+  a call that times out or is killed leaves it running, and the session's next `up` waits for it or gets its result
+- A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
+  the error shows on the repo, and warm builds of that repo wait 30 minutes
+- `ctrl worktree down` releases one: refused while it has uncommitted files, commits no remote has, or commits on
+  a detached HEAD (`--force` discards; detached commits get a ref under `refs/ctrl/rescue/`)
+- Released worktrees are recycled (reset to the base branch, untracked files removed, setup run again, moved to
+  a new folder so the old path can't reach it) while the pool has room, removed otherwise. Removing renames the
+  folder into `.trash` and deletes it in a child process, so it never blocks
+- Archiving a session releases its worktrees 30 seconds later (if it's still archived), deleting one right away,
+  both without the unsaved-work check
+- Worktrees show in the resources panel of the session that holds them (and its space's): repo and branch, path,
+  `building` / `detached` / `setup failed` chips; click opens the folder, copy copies the path. Also in
+  `ctrl resources list` (type `worktree`) and `worktrees` on `ctrl session get`
+- Background jobs, each a row in Settings → Worktrees with what it last did and Run now:
+  - Keep pools warm (every 10 minutes and after each take or release): build up to each repo's pool size (2 at
+    a time per repo, 3 overall), recycle released ones, remove warm ones past the size once a day old, refresh
+    one warm worktree per repo when it's over a day old and the base branch moved
+  - Size pools from usage (toggle, with a largest pool size): the smallest pool that would have served the last
+    7 days of requests with at most 2% misses, replayed against the repo's measured build time. One for a repo
+    not used in a week, none after 30 days. A repo can be pinned to a size instead
+  - Clean up (toggle; every hour and after an archive): releases worktrees of archived and deleted sessions,
+    drops entries whose folder is gone, removes folders in the worktree folder nothing tracks (older than an hour)
+  - Keep your checkouts up to date (toggle, off by default; every hour): fetches repos used in the last 30 days
+    and fast-forwards your own checkout when it's on its base branch with nothing uncommitted
+- Settings → Worktrees: the folder (default `~/.ctrl/worktrees`), every repo with its pool, usage over 7 days
+  (taken, share served instantly, build time), pool size (auto or fixed), and an editor for name, base branch,
+  setup command, cap and Forget repo (`src/renderer/WorktreeSettings.tsx`)
+- Each ctrl owns its worktree folder (a marker file in it): a preview or dev run uses its own
+  (`~/.ctrl/worktrees-<state folder name>`), and never cleans up another ctrl's worktrees
+- The ctrl instruction and the ctrl skill tell agents to take a worktree to work on a repo
+
 ## Feedback
 
 - Toasts are the single in-app notification: undo (⌘Z), View, one action button, sticky mode
@@ -339,6 +379,8 @@ where it lives.
 - `ctrl` CLI for agents: JSON in/out, self-describing (`ctrl help --json`, `ctrl docs`), stable error codes
   with hints. Principles and conventions in [CLI.md](CLI.md), every command in [CLI-REFERENCE.md](CLI-REFERENCE.md)
   (`src/cli/cli.ts`, `src/shared/cli/`)
+- Worktrees: `worktree up` (take one for a session), `down`, `list` (the session's by default, `--all`), `config`
+  (every repo with pool and usage, or add / change / forget one), `prewarm`, `cleanup` (dry run unless `--apply`)
 - Sessions: list / filter / page, get, new (space settings apply, `--prompt`, background unless `--focus`,
   always replies within 12s: a stuck harness gives a `TIMEOUT` that says whether the session was created),
   focus, rename, move, archive / unarchive, send, wait for a status, stop, `ref`,

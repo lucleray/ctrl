@@ -18,6 +18,7 @@
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
 - **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
+- **worktree**: [`worktree up`](#worktree-up) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup)
 - **events**: [`events`](#events)
 
 Aliases: `status` = `app status` · `focus` = `session focus` · `ref` = `session ref` · `ls` = `session list`
@@ -1057,6 +1058,153 @@ ctrl skill uninstall read-session|ctrl
 
 **Returns:** `{name, state, path?}`
 
+### worktree up
+
+A ready-to-work git worktree of a repo for this session: checked out at the latest base branch, dependencies installed *(changes state)*
+
+```text
+ctrl worktree up <repo> [--session <session>] [--skip-setup] [--timeout <n>]
+```
+
+- Instant when the repo's pool has a warm worktree. Otherwise it's built now (checkout + the repo's setup command), which can take minutes: `cold` is true.
+- <repo> is the path of a git checkout on this Mac (anywhere inside it works), or the name of a repo ctrl already manages. A repo seen for the first time is registered on its own: base branch from origin, setup command from its lockfile.
+- The worktree is attached to the session (default: the one you run in) and shows in its resources. Each call takes another worktree, so a session can hold several, of one repo or of many: `ctrl worktree list` shows the ones it holds.
+- It's on a detached HEAD: create a branch before committing (`git switch -c <branch>`). Work in it with its `path` as working directory; the session itself doesn't move.
+- Released when its session is archived or deleted, or with `ctrl worktree down`.
+- A build outlives this call: after a TIMEOUT (or a killed command), run it again to keep waiting for the same worktree.
+
+| Argument | Meaning |
+|---|---|
+| `<repo>` | Path of a git checkout, or the name of a repo ctrl manages (`ctrl worktree config`) · required |
+| `--session <session>` | Session that holds it (selectors as for <session>); default `self` |
+| `--skip-setup / --no-skip-setup` | When it has to be built: don't run the repo's setup command (e.g. offline) |
+| `--timeout <n>` | Give up waiting for a build after this many ms (TIMEOUT); the build goes on · default: 600000 |
+
+**Returns:** `Worktree & {cold:boolean, hint?:string}`
+
+```bash
+ctrl worktree up ~/code/acme-app
+cd "$(ctrl worktree up ~/code/acme-app | jq -r .data.path)" && git switch -c my-feature
+ctrl worktree up acme-app --fields id,path,branch
+```
+
+### worktree down
+
+Gives a worktree back to its repo's pool *(changes state)*
+
+```text
+ctrl worktree down [<id|path>] [--force]
+```
+
+- Recycling resets it to the base branch, so this refuses (CONFLICT) while it has uncommitted files, commits no remote has, or commits on a detached HEAD: commit and push first, or pass --force to discard (branches stay in the repo, detached commits get a rescue ref under refs/ctrl/rescue/).
+- Its folder goes away: don't use the path afterwards.
+- Rarely needed: archiving a session releases its worktrees.
+
+| Argument | Meaning |
+|---|---|
+| `[<id\|path>]` | Worktree id or path (default: the worktree the current folder is in) |
+| `--force / --no-force` | Release it even with unsaved work |
+
+**Returns:** `{id, repo, path, released:true, branch:string|null, forced:boolean, rescueRef:string|null}`
+
+```bash
+ctrl worktree down
+ctrl worktree down k3x9qd
+ctrl worktree down ~/.ctrl/worktrees/acme-app-3f9c/k3x9qd --force
+```
+
+### worktree list
+
+Worktrees: the ones your session holds, or all of them
+
+```text
+ctrl worktree list [--all] [--session <session>] [--repo <repo>] [--status ready|attached|building|released|resetting|removing...] [--limit <n>] [--cursor <cursor>]
+```
+
+- Run inside a session: the worktrees it holds (`scope: "session"`). Outside one, or with --all: every worktree, warm ones in the pools included.
+- `branch` and `commit` are read from git as you ask.
+
+| Argument | Meaning |
+|---|---|
+| `--all / --no-all` | Every worktree, not only your session's |
+| `--session <session>` | Worktrees this session holds (selectors as for <session>) |
+| `--repo <repo>` | Only this repo's (path or name) |
+| `--status ready\|attached\|building\|released\|resetting\|removing` | Only these statuses (repeatable) · repeatable |
+| `--limit <n>` | Page size (max 500) · default: 50 |
+| `--cursor <cursor>` | `next` from the previous page |
+
+**Returns:** `{items:[Worktree], next:string|null, total:number, scope:"session"|"all"}`
+
+```bash
+ctrl worktree list --fields id,repo,path,branch
+ctrl worktree list --all --status attached
+```
+
+### worktree config
+
+Worktree settings: every repo ctrl manages, or one repo (add it, or change how its worktrees are made) *(changes state)*
+
+```text
+ctrl worktree config [<repo>] [--name <name>] [--base <base>] [--setup <setup>] [--warm <warm>] [--max-total <n>] [--forget]
+```
+
+- Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.
+- With <repo>: that repo, registered if it's new. Flags change it.
+- The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the worktreePoolMax setting. One for a repo unused for a week, none after 30 days.
+
+| Argument | Meaning |
+|---|---|
+| `[<repo>]` | Path of a git checkout, or a managed repo's name |
+| `--name <name>` | Short name to use instead of the path; "" clears it |
+| `--base <base>` | Branch worktrees start from (default: origin's default branch) |
+| `--setup <setup>` | Shell command run in every new worktree, e.g. "pnpm install --frozen-lockfile"; "" for none |
+| `--warm <warm>` | Warm pool size: a number, or `auto` to size it from usage |
+| `--max-total <n>` | Most worktrees of this repo on disk; warm ones stop being built past it (default 30) |
+| `--forget / --no-forget` | Stop managing the repo and remove its idle worktrees (refused while a session holds one) |
+
+**Returns:** `{root, settings, jobs, repos:[WorktreeRepo]}, or with <repo>: WorktreeRepo & {changed}`
+
+```bash
+ctrl worktree config
+ctrl worktree config ~/code/acme-app --name app --setup "pnpm install --frozen-lockfile"
+ctrl worktree config app --warm 3
+ctrl worktree config app --warm auto
+```
+
+### worktree prewarm
+
+Starts building warm worktrees for a repo now, without waiting for them *(changes state)*
+
+```text
+ctrl worktree prewarm <repo> [--count <n>]
+```
+
+- Up to the repo's pool size and at least one, or --count. The reply shows the pool as it is right after: `counts.building` are on their way.
+
+| Argument | Meaning |
+|---|---|
+| `<repo>` | Path of a git checkout, or a managed repo's name · required |
+| `--count <n>` | Warm worktrees to have |
+
+**Returns:** `WorktreeRepo`
+
+### worktree cleanup
+
+What the cleanup job would do, or does with --apply *(changes state)*
+
+```text
+ctrl worktree cleanup [--apply]
+```
+
+- released: worktrees whose session is archived or deleted. dropped: worktrees whose folder is gone. removed: folders in the worktree folder that ctrl doesn't track, older than an hour.
+- ctrl runs this itself every hour and after a session is archived (the worktreeCleanup setting), so it's rarely needed.
+
+| Argument | Meaning |
+|---|---|
+| `--apply / --no-apply` | Do it (default: only list) |
+
+**Returns:** `{released:[{id, path, sessionID, reason}], dropped:[{id, path}], removed:[path], applied:boolean}`
+
 ### events
 
 Streams changes as NDJSON, one event per line, until killed *(streams)*
@@ -1090,6 +1238,7 @@ ctrl events [--type <type>...] [--session <session>...]
   createdByAgent: {agent: string, by: string | null, at: number} | null   // made by an agent with `session new`; by = its own session
   parentID: string | null    // parent session (child sessions); can be in another space, or deleted
   children: string[]         // ids of its direct child sessions, archived ones too
+  worktrees: [{id, repo, path}]   // git worktrees it holds (ctrl worktree up)
   status: "needs-input" | "running" | "failed" | "unread" | "idle"
   statusDetail?: string      // e.g. "Waiting for permission: bash"
   updated: number            // ms
@@ -1119,6 +1268,47 @@ ctrl events [--type <type>...] [--session <session>...]
 }
 ```
 
+### Worktree
+
+```ts
+{
+  id: string
+  repo: string               // repo name
+  source: string             // the checkout it's a worktree of
+  path: string               // work here: pass it as working directory
+  status: "ready" | "attached" | "building" | "released" | "resetting" | "removing"
+                             // ready: warm in the pool · attached: a session holds it · released: given back, waiting to be recycled
+  sessionID: string | null   // session that holds it
+  branch: string | null      // checked out right now; null = detached HEAD
+  commit: string | null
+  baseBranch: string         // branch it started from
+  baseCommit: string | null  // commit of the base branch it was warmed at
+  warmedAt: number | null    // when it was last brought up to the base branch (ms)
+  attachedAt: number | null
+  setupFailed?: true         // the repo's setup command failed in it: run it yourself
+}
+```
+
+### WorktreeRepo
+
+```ts
+{
+  source: string             // your own checkout: worktrees are created from it
+  label: string              // name, else the folder name: `ctrl worktree up <label>`
+  name?: string
+  baseBranch: string
+  setup: string | null       // shell command run in every new worktree
+  warm: number | null        // pinned pool size; null = sized from usage
+  target: number             // pool size in effect
+  auto: boolean
+  maxTotal: number
+  counts: {ready, attached, building, released, total}
+  usage: {taken, instant, buildMs, lastTaken}   // last 7 days: worktrees taken, share that came warm (0-1), median build time
+  error?: string             // why the last build failed
+  updated?: {at, result}     // what the update job last did to the checkout
+}
+```
+
 ### Space
 
 ```ts
@@ -1144,7 +1334,7 @@ ctrl events [--type <type>...] [--session <session>...]
 ```ts
 {
   id: string                 // canonical key, e.g. "github-pr:vercel/next.js#99932"
-  type: string               // e.g. "github-pr", or "session" for a referenced session
+  type: string               // e.g. "github-pr", "session" for a referenced session, "worktree" for a git worktree it holds
   url: string                // sessions: ctrl://session/<id>
   title: string
   subtitle?: string
@@ -1165,6 +1355,7 @@ ctrl events [--type <type>...] [--session <session>...]
   //   vercel-deployment {state: ready|error|canceled|building|initializing|queued, target, url, branch, commit, creator}
   //   vercel-project {framework, productionState, productionUrl, productionCommit}
   //   slack-thread   {channel, author, text}      slack-channel {channel}
+  //   worktree       {repo, source, path, branch, status, baseCommit}   (a git worktree the session holds, url ctrl://worktree/<id>)
   pending?: true             // still being fetched when --wait ran out; live is the cached version, if any
 }
 ```
@@ -1182,13 +1373,18 @@ ctrl events [--type <type>...] [--session <session>...]
 | `defaultModelEnabled` | boolean | Off: ctrl passes no model and the harness picks its own |
 | `defaultModel` | "<provider>/<model>[#<variant>]" \| {providerID,id,variant?} \| null | opencode model for new sessions, used when defaultModelEnabled |
 | `defaultFxModel` | "<model>[#<effort>]" \| {providerID:"fx",id,variant?} \| null | fx model for new sessions, used when defaultModelEnabled |
-| `ctrlInstructions` | boolean | Invisible instruction on opencode sessions: tells the agent it runs in ctrl and how to look around with the ctrl CLI; spaces can override |
+| `ctrlInstructions` | boolean | Invisible instruction on opencode sessions: tells the agent it runs in ctrl, how to look around with the ctrl CLI and how to take a git worktree; spaces can override |
 | `dockBadge` | boolean | Dock badge with the sessions waiting on you |
 | `notifications` | boolean | macOS notifications when a background session needs you, finishes or fails |
 | `sounds` | boolean | Sounds when a session needs you, fails or finishes |
 | `soundsWhenFocused` | boolean | Also play sounds while ctrl is focused |
 | `remoteControl` | boolean | Remote control: serve a web page on your Tailscale network to use ctrl from your phone |
 | `sessionView` | "terminal" \| "chat" | How opencode sessions show: the embedded TUI (terminal) or a chat view (chat). fx sessions always use their terminal |
+| `worktreeRoot` | string \| null | Folder git worktrees are created in (`ctrl worktree up`); null = ~/.ctrl/worktrees. Worktrees that exist stay where they are |
+| `worktreePoolAuto` | boolean | Size each repo's warm worktree pool from the last 7 days of use; off = one warm worktree per repo (repos with a fixed size keep it) |
+| `worktreePoolMax` | integer 0-50 | Most warm worktrees a pool sized from usage keeps per repo |
+| `worktreeCleanup` | boolean | Every hour and after a session is archived: release the worktrees of archived and deleted sessions, remove worktree folders nothing tracks |
+| `worktreeUpdateRepos` | boolean | Every hour: fetch the repos worktrees come from and fast-forward your own checkout when it's on its base branch with nothing uncommitted |
 | `soundChoices.<event>` | system sound name \| absolute path \| null | Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null |
 | `shortcuts.<command>` | string[] \| null | Bindings for an app command, e.g. ["Cmd+Shift+N"]; [] disables it, null restores the default |
 | `companion` | boolean | ctrl Companion: always-on-top window listing the sessions that mentioned what's on screen (browser tab, Slack thread, Notion page), with a global shortcut for a new session about it |

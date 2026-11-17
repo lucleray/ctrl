@@ -1,6 +1,6 @@
 ---
 name: ctrl
-description: Know where you are and drive the ctrl app (the window running your opencode / fx sessions) with the `ctrl` CLI. Use when you run inside ctrl (CTRL_SOCKET is set) and need context about your surroundings - this session, the space it's in, the other sessions in that space, or the PRs, issues and links shared across it - or when the user mentions "this space", "my other sessions", "what I was working on" or work done in another session. Also use to create, find, file, rename, archive or open sessions or spaces, start parallel sessions and wait for them, reference or read another session, change ctrl settings, or switch what ctrl shows on screen.
+description: Know where you are and drive the ctrl app (the window running your opencode / fx sessions) with the `ctrl` CLI. Use when you run inside ctrl (CTRL_SOCKET is set) and need context about your surroundings - this session, the space it's in, the other sessions in that space, or the PRs, issues and links shared across it - or when the user mentions "this space", "my other sessions", "what I was working on" or work done in another session. Also use to create, find, file, rename, archive or open sessions or spaces, start parallel sessions and wait for them, reference or read another session, change ctrl settings, or switch what ctrl shows on screen. Also use to get a git worktree: when you need to change, build, test or review code in a repo and you're not already in a checkout meant for it, `ctrl worktree up <repo>` gives this session a ready one (latest base branch, dependencies installed), and you can hold several at once.
 ---
 
 # ctrl CLI
@@ -30,6 +30,37 @@ ctrl resources list --space self                       # PRs, issues, links and 
 ctrl session read <id>                                 # digest of another session
 ```
 
+## Work on a repo: worktrees
+
+Sessions in ctrl aren't tied to a folder. To change, build, test or review code, take a git worktree
+instead of working in the user's own checkout: ctrl keeps a pool of them warm, so it's usually instant.
+
+```bash
+ctrl worktree up ~/code/acme-app     # → data.path: this session's checkout (latest base branch, deps installed)
+git -C <path> switch -c my-feature   # it's on a detached HEAD: create a branch before committing
+ctrl worktree list                   # the worktrees this session holds (id, repo, path, branch)
+ctrl worktree down <id|path>         # give one back early (refuses unsaved work; --force discards it)
+```
+
+- **Work in `data.path`:** pass it as the working directory of every command (or `cd` there). Your session
+  doesn't move, and you can hold several worktrees, of one repo or of many: one per branch or PR you work on.
+- **`<repo>`** is the path of a git checkout on this Mac (anywhere inside it), or the name of a repo ctrl
+  already manages (`ctrl worktree config` lists them). A new repo is set up on its own.
+- **Every `up` takes another worktree.** To find the ones you already hold, use `ctrl worktree list` (or
+  `worktrees` in `ctrl session get self`), not `up` again.
+- **Read `data.hint`:** it says how old the base commit is and how to get the very latest. `cold: true`
+  means it had to be built (checkout + install), which can take minutes. If the command times out or is
+  killed, run the same command again: it waits for the same build instead of starting another.
+- **Reviewing a PR:** `up`, then `gh pr checkout <n>` in the worktree. If git says the branch is already
+  checked out elsewhere, `ctrl worktree list --all` shows which session holds it: use that worktree if it's
+  yours or your parent's, else review detached (`git fetch origin pull/<n>/head && git checkout --detach FETCH_HEAD`).
+- **Child sessions** (`ctrl session new`) can work in your worktree: give them its path. Or they take their own.
+- **No cleanup needed:** archiving the session releases its worktrees (the folder goes away, uncommitted
+  changes with it; branches and pushed work stay). So commit and push what matters before archiving, and
+  don't use a worktree's path after releasing it.
+- Don't run `git worktree add` yourself for this, and don't keep the path in a shell variable called `path`
+  (zsh ties it to `PATH`).
+
 ## Learn the commands
 
 ```bash
@@ -48,6 +79,7 @@ Don't guess flags: read `help` first. The most used ones:
 | `session reference <src> --into <dst> [--text t] [--submit]` | reference one session in another |
 | `session move <s> [--space <space\|none>] [--parent <s>\|none]` · `session archive <s>` | file / nest / archive |
 | `space create <name> [--directory d]` · `space list` | spaces |
+| `worktree up <repo>` · `worktree list` · `worktree down [<id\|path>]` | take / list / give back a git worktree (see above) |
 | `settings list` · `settings set <key> <value>` | settings |
 | `focus <s> [--raise]` | put a session on screen |
 

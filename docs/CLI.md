@@ -64,7 +64,7 @@ ctrl <noun> <verb> [positionals] [--flags]
 ctrl help [<noun> [<verb>]] [--json]
 ```
 
-- **Nouns:** `app`, `session`, `space`, `settings`, `ui`, `resources`, `models`, `mcp`, `tools`, `skill`, plus the
+- **Nouns:** `app`, `session`, `space`, `settings`, `ui`, `resources`, `models`, `mcp`, `tools`, `skill`, `worktree`, plus the
   top-level `search` and `events`. **Aliases:** `status`, `focus`, `ref`, `ls`.
 - **Flags:** long form only. Booleans are `--flag` / `--no-flag` (or `--flag=false`). Values are
   `--key value` or `--key=value`. Repeatable flags build a list (`--status running --status failed`).
@@ -162,6 +162,12 @@ Wherever a command takes a session or a space, it also takes a selector:
   status reports, so `needs-input` and `failed` never show: a turn waiting on a permission stays `running`.
 - **No session deletes:** agents archive (`session archive`, `space archive-all`). To delete, the user
   right-clicks the session in the sidebar.
+
+- **Worktrees outlive the call:** `worktree up` on an empty pool builds a worktree, which can take minutes. The
+  build runs in the app, so a call that hits its `--timeout` (or is killed by the agent's tool timeout) loses
+  nothing: the same command run again waits for that build, or returns the worktree it produced.
+- **`self` from a subagent:** opencode gives a subagent's shell the subagent's own session id, which ctrl doesn't
+  list. `worktree up` and `worktree list` resolve it to the session the subagent works for.
 
 ## Install and discovery
 

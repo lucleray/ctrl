@@ -257,6 +257,53 @@ ctrl (dist/cli/cli.cjs) ──JSON──► ctrl.sock ──► cli-server.ts �
 - **Cheap for main:** reads come from memory; waits subscribe to state pushes; `session read` runs
   `digest.mjs` in a child process.
 
+## Worktrees
+
+A warm pool of git worktrees per repo, so `ctrl worktree up <repo>` hands an agent a ready checkout without
+waiting for a checkout and an install. One module, `src/main/worktrees/` (`service.ts`, `git.ts`), plus the
+pool sizing in `src/shared/worktrees.ts`.
+
+```text
+ctrl worktree up ──► WorktreeService.up(repo, session)
+                       ├─ ready one in the pool ─────────► attached (instant)
+                       └─ none ─► build: git worktree add --detach origin/<base> + setup ─► attached (cold)
+down / session archived ─► released ─► room in the pool? ─► reset: reset --hard, clean, move, setup ─► ready
+                                                       └─ no ─► removed (rename into .trash, rm in a child)
+every 10 min + after up/down ─► rebalance(repo): build / recycle toward target, drop day-old surplus
+```
+
+- **State** is `worktrees.json` in the state folder: repos (source path, base branch, setup command, pinned pool
+  size, cap), worktrees (status, path, session), 30 days of usage events (taken warm or cold, build times) and
+  what each job last did. Written atomically, debounced.
+- **A worktree's life:** `building → ready → attached → released → resetting → ready`, or `removing`. Work in
+  progress is never resumed: everything runs in this process, so at launch a `building` entry is cleared away
+  and a `resetting` one goes back to `released`.
+- **Main never blocks:** git, setup commands and deletes are child processes. Git commands that touch a repo's
+  refs or worktree registry (`fetch`, `worktree add / move / prune`) run one at a time per repo, which is what
+  avoids `cannot lock ref` between parallel builds. Fetches are per base branch and at most one a minute per repo.
+- **Builds belong to the app.** `up` on an empty pool starts a build reserved for the session and waits on it.
+  If the caller goes away (the CLI's socket closes, or its `--timeout` passes), the build goes on and the
+  worktree stays marked `undelivered`: the session's next `up` for that repo waits on it or returns it.
+- **Pool size** (`poolTarget()`): the repo's `up` timestamps of the last 7 days are replayed against a pool of
+  1, 2, 3… worktrees refilled two at a time in the repo's median build time, and the smallest one with at most
+  2% misses wins, capped by the `worktreePoolMax` setting. No use in 7 days: 1. None in 30: 0. A pinned size
+  (`warm`) skips all that.
+- **Releasing never reuses a path.** A recycled worktree is `git worktree move`d to a new id and folder before
+  it's warm again, so a session that still remembers the old path (an unarchived one) hits a missing folder
+  instead of another session's checkout.
+- **Sessions:** main tells the service when sessions are archived (cleanup runs 30s later, after the undo toast)
+  and deleted (released right away). The hourly cleanup asks main for each holder's state: `archived` and `gone`
+  release, `unknown` (opencode not connected, an fx scan not done) keeps the worktree.
+- **One owner per folder:** the worktree folder holds a marker naming the `worktrees.json` that manages it. A
+  ctrl that finds someone else's marker (a preview started from a copy of your settings) falls back to its own
+  default folder, so the "folders nothing tracks" cleanup can never reach another ctrl's worktrees.
+- **Resources:** worktrees aren't mentioned in messages, so they don't come from the index. Main adds the ones
+  the listed sessions hold to `resources:list` and `ctrl resources list` (type `worktree`, adapter
+  `src/shared/adapters/worktrees.ts`), with the branch last read from git; a branch that changed since makes the
+  panel ask again.
+- **Bounded:** work is proportional to the repos and worktrees that exist (dozens), never to sessions. The view
+  in `AppState.worktrees` is cached until something changes.
+
 ## Notifications
 
 ctrl has **one** in-app notification: the toast (`src/renderer/Toast.tsx`). Don't add new banners,
