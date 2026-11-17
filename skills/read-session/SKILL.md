@@ -41,7 +41,8 @@ Load its context before answering.
 - opencode sessions are read through `opencode api`, which reuses the running
   opencode service and its auth. Don't pipe `opencode api` output directly (it
   gets truncated when stdout is a pipe); `digest.mjs` already handles this.
-- fx sessions are read from `~/.fx/sessions/<id>/` directly.
+- fx sessions are read from their files directly (`~/.fx/sessions/v2/<id>/log.jsonl`, or
+  `~/.fx/sessions/<id>/` for sessions from fx 0.0.16 and older).
 - The referenced session may live in another directory. Its `directory` line
   tells you where its files are; read them there if needed.
 - Reading a session is read-only. Never send prompts to, modify, or delete the

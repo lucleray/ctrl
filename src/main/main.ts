@@ -41,11 +41,12 @@ import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
 import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
-import { checkFx, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
+import { fxProfile, syncFxProfiles, type FxInstructions } from "./fx-profiles"
+import { checkFx, FX_ENV, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { sessionsOf, type HarnessSource } from "./harness"
 import { OpenCodeService } from "./opencode"
-import { checkOpencode } from "./opencode-bin"
+import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
 import { Updater } from "./updater"
 import { Search } from "./search"
@@ -208,6 +209,23 @@ const changeListeners = new Set<() => void>()
 const ctrlInstructionsOn = (spaceID: string | null | undefined) =>
   (spaceID ? store.space(spaceID)?.ctrlInstructions : undefined) ?? store.data.settings.ctrlInstructions
 
+/** What a new fx session in this space is told (src/main/fx-profiles.ts). */
+const fxInstructionsFor = (spaceID: string | null): FxInstructions => {
+  const space = spaceID ? store.space(spaceID) : undefined
+  return { spaceID: space?.id ?? null, spaceName: space?.name, instructions: space?.instructions, ctrl: ctrlInstructionsOn(spaceID) }
+}
+
+let fxProfilesKey = ""
+/** Every push: rewrites the fx profiles of spaces whose instructions changed. Free unless one did. */
+const syncFxSpaceProfiles = () => {
+  if (!fxStarted) return
+  const spaces = store.data.spaces.map((s) => fxInstructionsFor(s.id))
+  const key = JSON.stringify(spaces)
+  if (key === fxProfilesKey) return
+  fxProfilesKey = key
+  syncFxProfiles(spaces)
+}
+
 /** Every push: opening a session, moving it, or changing the setting all end here. Free unless it changed. */
 const syncCtrlInstructions = () => {
   const id = currentSessionID()
@@ -221,6 +239,7 @@ const push = () => {
   queueMicrotask(() => {
     pushQueued = false
     syncCtrlInstructions()
+    syncFxSpaceProfiles()
     attention.refreshBadge(sessions)
     send("state", state())
     companion.changed()
@@ -272,6 +291,7 @@ const fx: FxSessions = new FxSessions({
   },
   liveStatus: (id) => fxTerms.status(id),
   isOurPid: (pid) => fxTerms.isOurPid(pid),
+  ourPids: () => fxTerms.pids(),
   onOwner: (sessionID, pid) => {
     const claimed = fxTerms.claim(sessionID, pid)
     if (!claimed) return
@@ -305,11 +325,14 @@ const fxTerms: FxTerminals = new FxTerminals({
     // fx is gone: flush a rename that had to wait, and refresh the owner.
     setTimeout(() => void flushTitle(sessionID), 300)
     fx.readSoon(rawID(sessionID))
+    void fx.refreshLive()
   },
 })
 if (store.data.termSize) fxTerms.size = store.data.termSize
 
 let fxCheck: FxCheck = { state: "checking" }
+/** fx 0.0.17 added agent profiles (`--profile`) and a first prompt as an argument (`fx "<prompt>"`). */
+const fxModern = () => fxCheck.state === "ok" && compareVersions(fxCheck.version, "0.0.17") >= 0
 let fxStarted = false
 
 /** fx is optional: its sessions show up once it's installed. */
@@ -956,6 +979,8 @@ type NewSessionOptions = {
   model?: ModelRef
   /** Makes it a child session of this one */
   parentID?: string | null
+  /** fx: start it with this first prompt, passed as an argument (see fxPromptArg) */
+  prompt?: string
 }
 
 /** Returns the new session's id, or for fx the terminal that will report it (onOwner). */
@@ -963,8 +988,8 @@ const newSession = async (
   spaceID: string | null,
   directory?: string,
   harness?: Harness,
-  { focus = true, model: modelOverride, parentID }: NewSessionOptions = {},
-): Promise<{ id: string } | { pending: true; terminal: string }> => {
+  { focus = true, model: modelOverride, parentID, prompt }: NewSessionOptions = {},
+): Promise<{ id: string } | { pending: true; terminal: string; prompted?: boolean }> => {
   const space = spaceID ? store.space(spaceID) : undefined
   harness ??= harnessFor(space)
   const cwd = directory || space?.directory || defaultDirectory()
@@ -972,11 +997,15 @@ const newSession = async (
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
     const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
+    // Space instructions and the ctrl instruction go in through an agent profile, kept when fx resumes it.
+    const profile = fxModern() ? fxProfile(fxInstructionsFor(spaceID)) : undefined
+    if (profile) args.push("--profile", profile)
+    const promptArg = fxPromptArg(prompt)
     if (focus) showFxTerm()
-    // The session joins the space once fx reports its id (onOwner).
-    const terminal = fxTerms.create({ cwd, args, env: {}, spaceID, parentID }, focus)
+    // The session joins the space once fx reports its id (onOwner). fx ≥ 0.0.17 creates it at the first prompt.
+    const terminal = fxTerms.create({ cwd, args: [...args, ...promptArg], env: {}, spaceID, parentID }, focus)
     push()
-    return { pending: true, terminal }
+    return { pending: true, terminal, prompted: promptArg.length > 0 }
   }
   if (!opencodeStarted)
     throw new CliError("HARNESS_MISSING", "opencode isn't installed, so ctrl can't start an opencode session")
@@ -1041,8 +1070,8 @@ const saveOpen = () => {
 
 /**
  * fx has no background service, so its processes die with ctrl. Bring back the fx sessions that
- * were open, in the background one at a time, and whichever session was on screen. `fx resume`
- * reprints each conversation.
+ * were open, in the background one at a time, and whichever session was on screen. `fx --resume`
+ * reprints each conversation, and fx 0.0.17+ sends a request that quitting interrupted again on its own.
  */
 const restoreOpen = () => {
   const { sessions: open, current } = store.data.open
@@ -1074,6 +1103,7 @@ const renameSession = async (sessionID: string, title: string) => {
   title = title.trim()
   if (!title) return
   // fx rewrites session.json while it runs, so the rename waits in state.json until no fx owns the session.
+  // fx ≥ 0.0.17 keeps titles in its checksummed log instead: there the rename stays in state.json.
   store.setTitle(sessionID, title)
   fx.rebuild()
   await flushTitle(sessionID)
@@ -1083,6 +1113,8 @@ const flushTitle = async (sessionID: string) => {
   const title = store.data.titles[sessionID]
   const session = fx.get(sessionID)
   if (!title || !session) return
+  // v2 sessions keep their title in fx's log: the rename stays ctrl's own.
+  if (!fx.canWriteTitle(sessionID)) return
   if (session.ownerPid !== undefined || fxTerms.bySession(sessionID)) return
   try {
     await fx.writeTitle(sessionID, title)
@@ -1275,8 +1307,9 @@ const commitDelete = async (sessionID: string) => {
         // Let fx release its lock and finish writing before the folder moves.
         await new Promise((r) => setTimeout(r, 500))
       }
-      // The Trash, not rm: a mistaken delete can still be recovered from Finder.
-      await shell.trashItem(join(SESSIONS_DIR, rawID(sessionID)))
+      // The Trash, not rm: a mistaken delete can still be recovered from Finder. fx drops a v2 session
+      // whose folder is gone from its list on its own.
+      for (const folder of fx.folders(sessionID)) await shell.trashItem(folder)
       fx.forget(sessionID)
     } else await opencode.removeSession(sessionID)
     store.forgetSession(sessionID)
@@ -1696,7 +1729,7 @@ function registerIpc() {
             { type: "separator" as const },
             {
               label: "Reveal session folder",
-              click: () => shell.showItemInFolder(join(SESSIONS_DIR, rawID(sessionID), "session.json")),
+              click: () => shell.showItemInFolder(fx.folders(sessionID)[0]),
             },
             ...(fxTerm ? [{ label: "Quit fx process", click: () => fxTerms.close(fxTerm.id) }] : []),
           ]
@@ -1864,6 +1897,25 @@ const fxTermFor = async (sessionID: string) => {
   return termID
 }
 
+/**
+ * fx takes a first prompt as its last argument (`fx "<prompt>"`, `fx --resume <id> "<prompt>"`), so it's sent
+ * without typing it in and waiting for fx to be ready. One that looks like a flag is typed in instead.
+ */
+const fxPromptArg = (prompt?: string) => (fxModern() && prompt?.trim() && !prompt.startsWith("-") ? [prompt] : [])
+
+/** Sends a prompt to an fx session: typed into its running fx, or passed to a new one (fxPromptArg). */
+const promptFx = async (sessionID: string, text: string) => {
+  const session = fx.get(sessionID)
+  const arg = fxPromptArg(text)
+  if (session && !fxTerms.bySession(sessionID) && arg.length) {
+    if (session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid))
+      throw new CliError("CONFLICT", `${sessionID} is open in fx in another terminal`, { hint: "Quit fx there first" })
+    fxTerms.open(sessionID, { cwd: session.directory, env: {} }, true, arg)
+    return
+  }
+  return typeIntoFx(await fxTermFor(sessionID), text, true)
+}
+
 /** Typed into fx: bracketed paste (no @file search, newlines kept), then Enter to send. */
 const typeIntoFx = async (termID: string, text: string, submit: boolean) => {
   fxTerms.write(termID, `\x1b[200~${text}\x1b[201~`)
@@ -1888,10 +1940,11 @@ const cliHost: CliHost = {
     cli: cliInstall.refresh(),
     problem: state().problem,
   }),
-  newSession: ({ spaceID, harness, directory, model, focus, parentID }) =>
-    newSession(spaceID, directory, harness, { focus, model, parentID }),
+  newSession: ({ spaceID, harness, directory, model, focus, parentID, prompt }) =>
+    newSession(spaceID, directory, harness, { focus, model, parentID, prompt }),
   openSession,
   renameSession,
+  fxTitleWaits: (id) => fx.canWriteTitle(id),
   move: (id, spaceID) => {
     const moved = store.assignTree(id, spaceID)
     if (store.data.archived[id]) store.setArchived([id], false)
@@ -1907,7 +1960,7 @@ const cliHost: CliHost = {
   createSpace: (name) => store.createSpace(name),
   changed: push,
   prompt: async (id, text) => {
-    if (harnessOf(id) === "fx") return typeIntoFx(await fxTermFor(id), text, true)
+    if (harnessOf(id) === "fx") return promptFx(id, text)
     if (!opencode.client) throw new CliError("HARNESS_MISSING", "The opencode service isn't connected")
     await opencode.client.session.prompt({ sessionID: id, text })
   },
@@ -2000,7 +2053,8 @@ const cliHost: CliHost = {
   },
   digestScript: () =>
     join(app.isPackaged ? join(process.resourcesPath, "skills") : join(root, "skills"), "read-session", "digest.mjs"),
-  nodeRunner: () => ({ command: process.execPath, env: { ELECTRON_RUN_AS_NODE: "1" } }),
+  // FX_ENV: the digest reads fx sessions from the same folder ctrl does (CTRL_FX_HOME).
+  nodeRunner: () => ({ command: process.execPath, env: { ELECTRON_RUN_AS_NODE: "1", ...FX_ENV } }),
   onChange: (cb) => {
     changeListeners.add(cb)
     return () => changeListeners.delete(cb)

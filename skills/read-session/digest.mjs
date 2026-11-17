@@ -7,7 +7,8 @@
 // opencode ("ses_…"): reads through `opencode api`, which reuses the TUI's service
 // discovery + auth. Its stdout gets truncated when piped, so responses go through a
 // temp file.
-// fx ("fx:<id>"): reads ~/.fx/sessions/<id>/ directly (session.json, events.jsonl).
+// fx ("fx:<id>"): reads its files directly. fx ≥ 0.0.17: ~/.fx/sessions/v2/<id>/log.jsonl; older
+// sessions (until fx opens them once): ~/.fx/sessions/<id>/ (session.json, events.jsonl).
 import { execFileSync } from "node:child_process"
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -142,7 +143,9 @@ function readOpencode() {
 }
 
 function readFx(rawID) {
-  const dir = join(process.env.FX_HOME || join(homedir(), ".fx"), "sessions", rawID)
+  const sessions = join(process.env.FX_HOME || join(homedir(), ".fx"), "sessions")
+  if (existsSync(join(sessions, "v2", rawID, "log.jsonl"))) return readFxV2(join(sessions, "v2", rawID))
+  const dir = join(sessions, rawID)
   let info, lines
   try {
     info = JSON.parse(readFileSync(join(dir, "session.json"), "utf8"))
@@ -219,4 +222,68 @@ function readFxRecovery(dir) {
     }
   }
   return t
+}
+
+// fx ≥ 0.0.17: one log, one event per line ({ seq, ts, kind, … }). A turn runs from turn_started to
+// turn_committed / turn_interrupted, and its pieces (prompt, replies, tool calls) are `item` lines.
+function readFxV2(dir) {
+  let lines
+  try {
+    lines = readFileSync(join(dir, "log.jsonl"), "utf8").split("\n").filter(Boolean)
+  } catch (err) {
+    console.error(`can't read fx session in ${dir}: ${err.message}`)
+    process.exit(1)
+  }
+  const info = {}
+  const turns = []
+  let created = 0
+  let last = 0
+  for (const line of lines) {
+    let e
+    try {
+      e = JSON.parse(line)
+    } catch {
+      continue
+    }
+    last = Math.max(last, e.ts ?? 0)
+    if (e.kind === "session_created") {
+      created = e.ts
+      info.workspace = e.workspace
+    } else if (e.kind === "set") {
+      if (e.key === "title") info.title = e.value
+      if (e.key === "workspace") info.workspace = e.value
+      if (e.key === "prefs") info.prefs = e.value
+    } else if (e.kind === "turn_started") {
+      turns.push({ prompt: "", texts: [], tools: [], outcome: "in progress (or fx stopped mid-turn)" })
+    } else if (e.kind === "turn_committed" && turns.length) {
+      turns.at(-1).outcome = "completed"
+    } else if (e.kind === "turn_interrupted" && turns.length) {
+      turns.at(-1).outcome = `interrupted (${e.reason ?? "?"})`
+    } else if (e.kind === "item" && turns.length) {
+      const t = turns.at(-1)
+      const d = e.data ?? {}
+      if (e.type === "user" && d.text) t.prompt = t.prompt ? `${t.prompt}\n\n${d.text}` : d.text
+      if (e.type === "steering" && d.text) t.prompt += `\n\n[steering] ${d.text}`
+      if (e.type === "assistant" && d.text?.trim()) t.texts.push(d.text)
+      if (e.type === "tool_call") {
+        let input = {}
+        try {
+          input = JSON.parse(d.arguments_json ?? "{}")
+        } catch {}
+        t.tools.push({ name: d.tool_name, input })
+      }
+    }
+  }
+  return {
+    title: info.title,
+    header: [
+      `- harness: fx`,
+      `- directory: ${info.workspace ?? "?"}`,
+      `- model: ${info.prefs?.model ?? "?"} (${info.prefs?.provider ?? "?"})`,
+      `- created ${when(created)} · last activity ${when(last)}`,
+      `- ${turns.length} turn(s), ${lines.length} events`,
+      `- subagents: \`fx session ${dir.split("/").pop()}/<name>\` reads one (\`fx sessions --live\` lists them)`,
+    ],
+    turns,
+  }
 }

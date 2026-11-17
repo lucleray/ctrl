@@ -6,6 +6,8 @@ Sessions of both kinds sit side by side in the sidebar, in Recents and inside th
 - **Pick the harness for new sessions** on the welcome screen at first launch, or later in
   **Settings → Sessions → Harness**. A space can override it in
   its space settings. The space ⋯ menu also offers a new session with the other harness.
+- **fx 0.0.17 or newer** for everything below. Older fx still lists and opens, without profiles (instructions)
+  or prompts passed as arguments.
 - **Only one needs to be installed.** ctrl shows the sessions of whichever harnesses it finds.
   **Settings → Sessions** shows what's installed, with the install command for what isn't.
 - **fx sessions have an `fx` tag** in the sidebar. opencode sessions have no tag.
@@ -15,8 +17,8 @@ Sessions of both kinds sit side by side in the sidebar, in Recents and inside th
 ```text
 opencode: 1 TUI ◄── bridge plugin "navigate to ses_x" ──► opencode service
           (switched in place)                              (owns sessions + running turns)
-fx:       1 pty per open session: `fx resume --id <id>`, up to 12 live
-          (no server, no plugin API: ctrl reads ~/.fx/sessions)
+fx:       1 pty per open session: `fx --resume <id>`, up to 12 live
+          (no server, no plugin API: ctrl reads ~/.fx/sessions, asks `fx sessions --live`)
 ```
 
 The difference comes from the harnesses themselves. opencode has a background service and a plugin API,
@@ -34,37 +36,37 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Archive / unarchive | ✅ | ✅ | ctrl-side; archiving also marks the session read |
 | Archived sessions open read-only | ✅ | ✅ | scrolling still works; Unarchive in the bar unlocks it |
 | Move between spaces, drag and drop | ✅ | ✅ | |
-| Child sessions (tree in the sidebar, `--parent`) | ✅ | ✅ | ctrl-side · fx: a new child gets its parent once fx reports its id |
+| Child sessions (tree in the sidebar, `--parent`) | ✅ | ✅ | ctrl-side · fx: a new child gets its parent once fx reports its id (at its first prompt) |
 | ⌘1–9 jump, ⌘P title search | ✅ | ✅ | |
-| ⌘P message search | ✅ | ✅ | opencode: through the service · fx: tails `events.jsonl` |
+| ⌘P message search | ✅ | ✅ | opencode: through the service · fx: tails each session's log |
 | Resources panel (links per session / space) | ✅ | ✅ | Same index as search |
 | Worktrees (`ctrl worktree up`, shown as resources, released on archive) | ✅ | ✅ | ctrl-side · opencode: the ctrl instruction tells agents to take one, and a subagent's goes to its root session · fx: agents learn it from the ctrl skill only |
-| Referenced sessions in Resources | ✅ | ✅ | fx references show once fx writes the turn to disk |
+| Referenced sessions in Resources | ✅ | ✅ | |
 | ctrl Companion (sessions that mentioned what's on screen) | ✅ | ✅ | Same index as search |
 | New session from screen (⌃⌥⌘Space, or the companion's New button) | ✅ | ✅ | opencode: new-session screen with the link typed in; fx: a new session, typed in once ready |
-| Links and search updated during a turn | ⚠️ | ⚠️ | opencode: links in your prompt right away, the agent's at the end of the turn · fx: everything at the end of the turn, since fx only saves a turn (your prompt included) once it's done |
-| Rename | ✅ | ⚠️ | fx rewrites its title while it runs, so the rename is written once no fx process has the session |
-| Delete | ✅ | ✅ | fx: the session folder goes to the Trash |
+| Links and search updated during a turn | ⚠️ | ✅ | opencode: links in your prompt right away, the agent's at the end of the turn · fx: each step as fx logs it (within ~5s) |
+| Rename | ✅ | ⚠️ | fx 0.0.17 keeps titles in a log only fx writes, so ctrl keeps the rename (fx's own `/resume` picker still shows fx's title). Older sessions: written once no fx process has the session |
+| Delete | ✅ | ✅ | fx: the session folder (and its subagents') goes to the Trash |
 | New session in a space's folder | ✅ | ✅ | |
 | Harness per space / app default | ✅ | ✅ | |
 | Custom model per space / app default | ✅ | ✅ | Picked separately per harness · fx: `--model` and `--effort` |
-| Variant / effort picker | ✅ | ⏳ | fx: waiting on a release with [vercel-labs/fx#1171](https://github.com/vercel-labs/fx/pull/1171) (merged after v0.0.13), which adds each model's `efforts` to `fx models --json`. ctrl already reads it, so the picker fills in after `fx upgrade`. Until then, set it with the CLI: `--fx-model "<model>#<effort>"` |
-| Space instructions | ✅ | ❌ | fx has no way to take extra instructions for a session |
-| ctrl instructions (agent knows it's in ctrl) | ✅ | ❌ | Same reason. fx agents still find `ctrl` through the `ctrl` skill |
-| Switching sessions | ✅ instant | ⚠️ | fx: instant once open, about 1s the first time (`fx resume`) |
+| Variant / effort picker | ✅ | ✅ | fx: each model's `efforts` from `fx models --json` |
+| Space instructions | ✅ | ⚠️ | fx: an agent profile per space (`~/.fx/agents/ctrl-<space id>`, `fx --profile`). An edit reaches its sessions the next time fx opens them; a session moved to another space keeps its first space's |
+| ctrl instructions (agent knows it's in ctrl) | ✅ | ⚠️ | fx: in the same profile (or `~/.fx/agents/ctrl`), from creation: turning it off later doesn't reach sessions started with it |
+| Switching sessions | ✅ instant | ⚠️ | fx: instant once open, about 1s the first time (`fx --resume`) |
 | Many sessions open at once | ✅ | ⚠️ | fx: up to 12 live processes, the least recently used idle ones are closed past that |
-| Turns keep running when ctrl quits | ✅ | ❌ | fx has no background service: quitting stops the turn, send `continue` after reopening |
-| Sessions open at quit come back | ✅ | ⚠️ | fx: reopened at launch (`fx resume`), with a compact transcript instead of the full screen |
+| Turns keep running when ctrl quits | ✅ | ⚠️ | fx has no background service: quitting stops the turn. Sessions that were open come back at launch, and fx sends the interrupted request again on its own |
+| Sessions open at quit come back | ✅ | ⚠️ | fx: reopened at launch (`fx --resume`), with a compact transcript instead of the full screen |
 | Status: running | ✅ | ✅ | fx: OSC 7501 status reports, else `recovery.json` (the turn in progress) or the last line of `events.jsonl` |
-| Status: needs you (permission, question) | ✅ | ⚠️ | fx: only for sessions open in ctrl, with an fx that sends OSC 7501 (0.0.13 doesn't) |
-| Status: failed | ✅ | ⚠️ | fx: only for sessions open in ctrl, with an fx that sends OSC 7501 (0.0.13 doesn't) |
-| `ctrl session read` of a turn in progress | ✅ | ✅ | fx: from `recovery.json`, since fx logs a turn only once it ends |
+| Status: needs you (permission, question) | ✅ | ⚠️ | fx: only for sessions open in ctrl (OSC 7501 status reports) |
+| Status: failed | ✅ | ⚠️ | fx: only for sessions open in ctrl (OSC 7501 status reports) |
+| `ctrl session read` of a turn in progress | ✅ | ✅ | fx: logs each step as it happens |
 | Status: finished, unread | ✅ | ✅ | fx: read state kept by ctrl |
-| Background shells and subagents (sidebar icon once the turn is over) | ✅ | ❌ | opencode: shell events + subagent sessions; shells already running at launch are found in the folders of sessions updated in the last 6 hours · fx: doesn't expose them |
-| A message sent mid-turn moves the shell or subagent holding the turn to the background (chat view, phone) | ✅ | ❌ | opencode: `session.background`, the TUI's own ⌃B, after 3 seconds · fx: no way to do it, and no chat view |
-| List the shells and subagents still running, and stop one (chat view: click the count under the composer) | ✅ | ❌ | opencode: `shell.remove`, `session.interrupt` on the subagent · fx: doesn't expose them |
+| Background shells and subagents (sidebar icon once the turn is over) | ✅ | ⚠️ | opencode: shell events + subagent sessions; shells already running at launch are found in the folders of sessions updated in the last 6 hours · fx: subagents from `fx sessions --live`; its background shells aren't exposed |
+| A message sent mid-turn moves the shell or subagent holding the turn to the background (chat view, phone) | ✅ | ❌ | opencode: `session.background`, the TUI's own ⌃B, after 3 seconds · fx: no chat view (in its terminal, fx 0.0.17 moves a running shell to the background itself when you steer) |
+| List the shells and subagents still running, and stop one (chat view: click the count under the composer) | ✅ | ❌ | opencode: `shell.remove`, `session.interrupt` on the subagent · fx: no chat view, and no way to stop a subagent from outside (its agent list, ⌃X, does it in the terminal) |
 | Background shells and subagents in the prompt footer | ✅ | ❌ | opencode's own TUI shows `1 subagent · 1 shell` before context and cost; the chat view shows them after |
-| Status of sessions that aren't open | ✅ live | ⚠️ | fx: read from files on disk |
+| Status of sessions that aren't open | ✅ live | ⚠️ | fx: from its logs and `fx sessions --live` (running, finished), polled every 2s |
 | Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
 | Sessions open in another terminal | ✅ | ⚠️ | fx allows one process per session: shown, but ctrl can't open or delete them until that fx quits |
 | Reference a session (drag onto the terminal) | ✅ | ✅ | Works across harnesses, with the `read-session` skill |
@@ -77,8 +79,8 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | `/new`, `/resume` inside the terminal followed by the sidebar | ✅ | ✅ | |
 | `ctrl` CLI: list, file, archive, focus, rename, reference, read | ✅ | ✅ | [CLI.md](CLI.md) |
 | `ctrl` CLI: `self` | ✅ | ✅ | opencode: `OPENCODE_SESSION_ID` · fx: `CTRL_TERM_ID`, only in fx processes ctrl runs |
-| `ctrl session new` | ✅ | ⚠️ | fx: waits up to 15s for fx to report the new session's id |
-| `ctrl session send` | ✅ background | ⚠️ | fx: typed into its fx process (started in the background), CONFLICT when open in another terminal |
+| `ctrl session new` | ✅ | ⚠️ | fx creates a session at its first prompt: with `--prompt` (passed as an argument) the id comes in a second or two, without it the reply is `pending` until you type |
+| `ctrl session send` | ✅ background | ⚠️ | fx: typed into its running fx process, or passed to a new one (`fx --resume <id> "<prompt>"`, in the background); CONFLICT when open in another terminal |
 | `ctrl` typing without sending (`--no-submit`, `reference`) | ⚠️ | ✅ | opencode: one TUI, so the session must be on screen (`--focus`) |
 | `ctrl session stop` | ✅ | ⚠️ | fx: Escape to its fx process, only for sessions open in ctrl |
 | Remote control: chat on the phone | ✅ | ❌ | fx sessions are listed (rename, move, archive) but open on the Mac only |

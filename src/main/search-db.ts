@@ -41,7 +41,7 @@ export function openSearchDb(path: string, opts: { readOnly?: boolean } = {}) {
       indexed_updated INTEGER,
       -- messages created before this are indexed (in-progress replies hold it back)
       watermark INTEGER NOT NULL DEFAULT 0,
-      -- fx sessions ("fx:…"): bytes of events.jsonl already indexed (fx only appends to it)
+      -- fx sessions ("fx:…"): bytes of its log already indexed (fx only appends to it); watermark = which layout
       offset INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS messages (

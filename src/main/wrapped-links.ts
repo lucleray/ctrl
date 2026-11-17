@@ -9,9 +9,9 @@
 // src/renderer/wrapped-links.ts, then the lines tagged `wrapped-links`.
 import type { OpenCode } from "@opencode/client"
 import { open, stat } from "node:fs/promises"
-import { join } from "node:path"
 import { harnessOf } from "../shared/types"
-import { rawID, SESSIONS_DIR } from "./fx"
+import { rawID } from "./fx"
+import { sessionLog } from "./fx-store"
 
 type Client = ReturnType<typeof OpenCode.make>
 const URL_RE = /https?:\/\/[^\s"'<>`\\]+/g
@@ -96,7 +96,7 @@ function collect(value: unknown, out: Set<string>) {
 }
 
 async function fxTail(sessionID: string) {
-  const file = join(SESSIONS_DIR, rawID(sessionID), "events.jsonl")
+  const { file } = sessionLog(rawID(sessionID))
   const { size } = await stat(file)
   const len = Math.min(size, TAIL_BYTES)
   const fh = await open(file, "r")
