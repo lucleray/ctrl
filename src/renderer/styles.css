@@ -3916,8 +3916,17 @@ body.resizing .terminal-pane.active {
 
 /* ---------- worktrees (Settings → Worktrees) ---------- */
 
-.worktree-setup {
-  display: inline !important;
+/* Path, base branch and setup command of a repo: one line, cut with an ellipsis when it doesn't fit */
+.worktree-line {
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-line code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
 }
 
 .worktree-error {

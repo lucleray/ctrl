@@ -124,8 +124,8 @@ function RepoRow({ repo, onEdit }: { repo: WorktreeRepoView; onEdit(): void }) {
         <span className={`mcp-dot ${repo.error ? "failed" : repo.counts.building ? "pending" : repo.counts.ready ? "connected" : "disabled"}`} />
         <div style={{ minWidth: 0 }}>
           <div className="setting-title">{repo.label}</div>
-          <div className="setting-desc tool-check" title={repo.source}>
-            {shortPath(repo.source)} · {repo.baseBranch} · {repo.setup ? <code className="worktree-setup">{repo.setup}</code> : "no setup"}
+          <div className="setting-desc worktree-line" title={`${repo.source} · ${repo.baseBranch} · ${repo.setup ?? "no setup"}`}>
+            {shortPath(repo.source)} · {repo.baseBranch} · {repo.setup ? <code>{repo.setup}</code> : "no setup"}
           </div>
           <div className="setting-desc">{poolText(repo)}</div>
           {repo.updated && (
