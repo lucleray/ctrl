@@ -315,6 +315,7 @@ ctrl session wait <session> [--for done|idle|needs-input|running|failed] [--time
 
 - `done`: idle, unread, failed or needs-input (the turn is over or needs you).
 - Returns right away when the session is already there.
+- Keeps waiting through a ctrl restart (an update, say), within the same --timeout. Fails with APP_NOT_RUNNING when ctrl doesn't come back within a minute.
 
 | Argument | Meaning |
 |---|---|

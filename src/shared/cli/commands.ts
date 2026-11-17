@@ -38,6 +38,8 @@ export type CommandSpec = {
   stream?: boolean
   /** Changes state (visible to the user; an `undo` command in the reply where the UI would offer undo) */
   mutates?: boolean
+  /** Safe to send again: when ctrl restarts mid-request, the CLI waits for it and asks again */
+  resumes?: boolean
 }
 
 export type AliasSpec = { name: string; target: string }
@@ -330,6 +332,7 @@ export const COMMANDS: CommandSpec[] = [
     details: [
       "`done`: idle, unread, failed or needs-input (the turn is over or needs you).",
       "Returns right away when the session is already there.",
+      "Keeps waiting through a ctrl restart (an update, say), within the same --timeout. Fails with APP_NOT_RUNNING when ctrl doesn't come back within a minute.",
     ],
     args: [
       session(),
@@ -348,6 +351,7 @@ export const COMMANDS: CommandSpec[] = [
       "fx: `needs-input` and `failed` only show for sessions open in ctrl, and only with an fx that sends OSC 7501 status reports (fx 0.0.13 doesn't). Without them, a turn stuck on a permission prompt stays `running`, so pass a --timeout.",
     ],
     examples: ["ctrl session wait ses_x --for done --timeout 1800000"],
+    resumes: true,
   },
   {
     name: "session ref",
