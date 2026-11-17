@@ -61,6 +61,8 @@ type Persisted = {
   titles: Record<string, string>
   /** fx sessions open at quit, most recently used first, and the one on screen: reopened at launch */
   open: { sessions: string[]; current: string | null }
+  /** fx sessions created as a chat (src/main/fx-chat.ts): they open as one, never in a terminal */
+  fxChat: Record<string, true>
   /** Terminal area size, so restored and new fx processes start at the right size */
   termSize?: { cols: number; rows: number }
   /** Secret in the remote control URL (src/main/remote.ts), kept so the link saved on the phone keeps working */
@@ -86,6 +88,7 @@ export class Store {
       viewedSince: Date.now(),
       titles: {},
       open: { sessions: [], current: null },
+      fxChat: {},
       ...loaded,
       ui: { ...DEFAULT_UI, ...loaded.ui },
       settings: {
@@ -211,6 +214,17 @@ export class Store {
     this.saveSoon()
   }
 
+  /** An fx session created as a chat stays one. */
+  setFxChat(sessionID: string) {
+    if (this.data.fxChat[sessionID]) return
+    this.data.fxChat[sessionID] = true
+    this.save()
+  }
+
+  isFxChat(sessionID: string) {
+    return !!this.data.fxChat[sessionID]
+  }
+
   setTitle(sessionID: string, title: string | null) {
     if (title) this.data.titles[sessionID] = title
     else delete this.data.titles[sessionID]
@@ -232,6 +246,7 @@ export class Store {
     }
     delete this.data.viewed[sessionID]
     delete this.data.titles[sessionID]
+    delete this.data.fxChat[sessionID]
     this.save()
   }
 

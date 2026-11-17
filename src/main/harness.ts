@@ -65,6 +65,8 @@ export interface HarnessSource {
  * harness that doesn't have them.
  */
 export interface HarnessChat {
+  /** Whether this session opens as a chat. Missing: every session of the harness does. */
+  handles?(sessionID: string): boolean
   /** The newest page of messages (no cursor), or the page before `cursor`, oldest first. `detail` adds what
    *  only the desktop shows (thinking text, full commands). */
   page(sessionID: string, cursor?: string, detail?: boolean): Promise<ChatPage>

@@ -170,3 +170,18 @@ describe("sessions", () => {
     assert.equal(JSON.parse(readFileSync(path, "utf8")).remoteToken, token)
   })
 })
+
+describe("fx chat sessions", () => {
+  test("an fx session created as a chat is remembered until it's forgotten, and the file reads back", () => {
+    const s = fresh()
+    assert.equal(s.isFxChat("fx:a"), false)
+    s.setFxChat("fx:a")
+    s.setFxChat("fx:a")
+    assert.equal(s.isFxChat("fx:a"), true)
+    assert.equal(new Store(s.file).isFxChat("fx:a"), true)
+    s.forgetSession("fx:a")
+    assert.equal(s.isFxChat("fx:a"), false)
+    // State saved before the flag existed loads with none.
+    assert.deepEqual(fresh().data.fxChat, {})
+  })
+})

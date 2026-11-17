@@ -24,7 +24,10 @@ type Deps = {
 export function createChat(deps: Deps) {
   const schedule = deps.schedule ?? ((run, ms) => void setTimeout(run, ms))
 
-  const chatOf = (sessionID: string): HarnessChat | undefined => deps.source(sessionID)?.chat
+  const chatOf = (sessionID: string): HarnessChat | undefined => {
+    const chat = deps.source(sessionID)?.chat
+    return chat && (chat.handles?.(sessionID) ?? true) ? chat : undefined
+  }
   const need = (sessionID: string): HarnessChat => {
     const chat = chatOf(sessionID)
     if (!chat) throw new Error("This session can't open as a chat")

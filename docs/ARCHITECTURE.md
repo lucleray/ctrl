@@ -238,8 +238,8 @@ phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: sn
 
 - **Listens only on the Tailscale interface** (100.64.0.0/10), or localhost without one, rechecked every 15s.
   The MagicDNS name comes from `tailscale status --json` when the CLI is around.
-- **Chat only, no terminal:** the phone never runs or mirrors a TUI. fx has no chat API, so fx sessions are
-  listed but open on the Mac only.
+- **Chat only, no terminal:** the phone never runs or mirrors a TUI. fx sessions created as a chat open
+  (`fx acp`, below); terminal fx sessions are listed but open on the Mac only.
 - **Board:** main places cards with the same `boardPlacement()` as the desktop and sends them flattened
   (title, reason, chips, sessions). Opening it asks the adapter service for live details that are due
   (`request()`, like the CLI); new mentions and landing details resend it, batched every 500ms, only to
@@ -247,8 +247,17 @@ phone ──http──► 100.x.y.z:7337 (src/main/remote.ts) ──► list: sn
 - **Chat, per harness:** the phone and the desktop's chat view both call `src/main/chat.ts`, which sends each
   call to the session's harness (`HarnessSource.chat`, `src/main/harness.ts`) and keeps what's common: a
   message sent mid-turn that still waits after 3s moves what holds the turn to the background. Each harness
-  translates its own messages into ctrl's chat items (`ChatItem`); only opencode has one so far
-  (`src/main/opencode-chat.ts`).
+  translates its own messages into ctrl's chat items (`ChatItem`): opencode from its client
+  (`src/main/opencode-chat.ts`), fx from `fx acp` (`src/main/fx-chat.ts`).
+- **fx over ACP:** a chat fx session runs in its own `fx acp` process, the Agent Client Protocol
+  (newline-delimited JSON-RPC) on its stdio: `src/main/acp/client.ts` is the generic client, and
+  `src/main/acp/transcript.ts` turns the session's updates (message chunks, thoughts, tool calls) into chat
+  items, both free of anything fx-specific. `FxChat` loads the session (`session/load` replays it), runs
+  turns (`session/prompt`; a steer mid-turn with `_meta.fx.steer`), answers `session/request_permission`
+  from the chat, and reports status and pids to `FxTerminals`, where the process stands in for a pty
+  (`openChat`): the pane, current session, restore and the live cap all work as for terminals. fx holds the
+  session's lock while the process runs, so a session is a chat one or a terminal one, never both
+  (`store.fxChat`, decided when it's created).
 - **Chat view (opencode):** `src/main/remote-chat.ts` reads one page of `message.list` (newest 40, older ones
   by cursor) and flattens it (text, thinking markers, tool one-liners). Any event about a session someone is
   chatting in re-reads the newest page, at most every 300ms, and the phone patches messages by id. Sending is

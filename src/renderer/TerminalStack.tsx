@@ -132,7 +132,7 @@ export const TerminalStack = forwardRef<TerminalHandle, Props>(function Terminal
   const active = terms.find((t) => t.id === activeID)
   return (
     <div className={`terminal-stack${concealed ? " concealed" : ""}`} style={{ background: palette(active?.harness ?? "fx", dark).background }}>
-      {terms.map((t) => (
+      {terms.filter((t) => t.view !== "chat").map((t) => (
         <TermPane
           key={t.id}
           id={t.id}

@@ -19,9 +19,14 @@ export const MAX_LIVE = 12
 
 const OSC_7501 = "\x1b]7501;"
 
+/** A chat session's `fx acp` process (src/main/fx-chat.ts), standing in for a pty: no screen, only a process. */
+export type ChatProc = { pid: number; kill(): void }
+
 type Term = {
   id: string
-  proc: IPty
+  proc: IPty | ChatProc
+  /** terminal: fx in a pty · chat: fx acp, drawn by the chat view (the pane itself shows nothing) */
+  view: "terminal" | "chat"
   /** How it was started, to restart it in place */
   opts: SpawnOptions
   /** fx exited with this code; the pane stays so you can read why, Enter restarts it */
@@ -84,6 +89,10 @@ function parseStatus(body: string): LiveStatus | "clear" | undefined {
  * plugin API to switch sessions in place, so switching shows another pty
  * instead, and the processes stay alive so their scrollback and running turns
  * survive switching back and forth. Session ids are ctrl's ("fx:…").
+ *
+ * Chat sessions (src/main/fx-chat.ts) have a pane here too, with their `fx acp` process in place of a pty
+ * (`openChat`), so what's built on panes (the current session, restoring at launch, ⌃1–9, status and pids
+ * for the sidebar, the cap on live processes) treats them like terminal ones.
  */
 export class FxTerminals {
   private terms = new Map<string, Term>()
@@ -96,7 +105,65 @@ export class FxTerminals {
   constructor(private events: Events) {}
 
   list(): TermInfo[] {
-    return [...this.terms.values()].map((t) => ({ id: t.id, harness: "fx" as const, sessionID: t.sessionID, exited: t.exited }))
+    return [...this.terms.values()].map((t) => ({
+      id: t.id,
+      harness: "fx" as const,
+      sessionID: t.sessionID,
+      exited: t.exited,
+      ...(t.view === "chat" ? { view: "chat" as const } : {}),
+    }))
+  }
+
+  /**
+   * A chat session's pane, for the `fx acp` process FxChat started for it: made, or the one it has, and shown
+   * unless `background`. A pane whose process exited gets the new one.
+   */
+  openChat(sessionID: string, proc: ChatProc, cwd: string, background: boolean) {
+    const existing = this.bySession(sessionID)
+    if (existing) {
+      existing.proc = proc
+      existing.exited = undefined
+      existing.status = undefined
+      existing.view = "chat"
+      this.events.onChange()
+      return background ? existing.id : this.activate(existing.id)
+    }
+    const id = `fx_${++this.seq}`
+    this.terms.set(id, {
+      id,
+      proc,
+      view: "chat",
+      opts: { cwd, args: [], env: {} },
+      sessionID,
+      backlog: [],
+      backlogSize: 0,
+      total: 0,
+      carry: "",
+      lastOutput: 0,
+      lastUsed: background ? Date.now() - 3_600_000 : Date.now(),
+    })
+    if (!background) this.activeID = id
+    this.trim()
+    this.events.onChange()
+    return id
+  }
+
+  /** A chat session's status, from its process (FxChat), like OSC 7501 for a pty. */
+  setStatus(sessionID: string, status: LiveStatus | undefined) {
+    const term = this.bySession(sessionID)
+    if (!term || term.view !== "chat") return
+    term.status = status
+    this.events.onStatus(sessionID)
+  }
+
+  /** A chat session's process is gone: its pane stays, and opening the session starts another. */
+  chatExited(sessionID: string, code: number | null) {
+    const term = this.bySession(sessionID)
+    if (!term || term.view !== "chat" || term.exited !== undefined) return
+    term.exited = code ?? 0
+    term.status = undefined
+    this.events.onExit(term.id, sessionID, term.exited)
+    this.events.onChange()
   }
 
   bySession(sessionID: string) {
@@ -139,6 +206,7 @@ export class FxTerminals {
    */
   open(sessionID: string, opts: Omit<SpawnOptions, "args">, background = false, prompt: string[] = []) {
     const existing = this.bySession(sessionID)
+    if (existing?.view === "chat") throw new Error("This session runs as a chat")
     if (existing?.exited !== undefined) this.restart(existing.id)
     if (existing) return background ? existing.id : this.activate(existing.id)
     return this.spawn({ ...opts, args: [...resumeArgs(sessionID), ...prompt] }, sessionID, background)
@@ -188,6 +256,7 @@ export class FxTerminals {
     const term: Term = {
       id,
       proc: undefined as unknown as IPty,
+      view: "terminal",
       opts,
       sessionID,
       spaceID: opts.spaceID,
@@ -250,7 +319,7 @@ export class FxTerminals {
 
   restart(id: string) {
     const term = this.terms.get(id)
-    if (!term || term.exited === undefined) return
+    if (!term || term.exited === undefined || term.view === "chat") return
     this.data(term, "\x1bc")
     this.start(term)
     this.events.onChange()
@@ -341,24 +410,24 @@ export class FxTerminals {
 
   write(id: string, data: string) {
     const term = this.terms.get(id)
-    if (!term) return
+    if (!term || term.view === "chat") return
     term.lastUsed = Date.now()
-    if (term.exited === undefined) term.proc.write(data)
+    if (term.exited === undefined) (term.proc as IPty).write(data)
     else if (data === "\r") this.restart(id)
   }
 
   /** Tells every fx the terminal's color scheme changed (DSR 997, fx enables mode 2031 for it). */
   colorScheme(dark: boolean) {
-    for (const t of this.terms.values()) if (t.exited === undefined) t.proc.write(`\x1b[?997;${dark ? 1 : 2}n`)
+    for (const t of this.terms.values()) if (t.exited === undefined && t.view !== "chat") (t.proc as IPty).write(`\x1b[?997;${dark ? 1 : 2}n`)
   }
 
   resize(cols: number, rows: number) {
     if (cols === this.size.cols && rows === this.size.rows) return
     this.size = { cols, rows }
     for (const t of this.terms.values()) {
-      if (t.exited !== undefined) continue
+      if (t.exited !== undefined || t.view === "chat") continue
       try {
-        t.proc.resize(cols, rows)
+        ;(t.proc as IPty).resize(cols, rows)
       } catch {}
     }
   }

@@ -55,6 +55,8 @@ export type RemoteSnapshot = {
     parentID?: string
     /** When it was archived (archived sessions only) */
     archived?: number
+    /** An fx session that runs as a chat, so the phone can open it (other fx sessions open on the Mac only) */
+    view?: "chat"
   }[]
 }
 
@@ -233,8 +235,8 @@ const cookieOf = (req: IncomingMessage) => {
 
 /**
  * Remote control: a small web app (src/remote) served on this Mac's Tailscale address, so a phone on the
- * same tailnet lists spaces and sessions and chats in opencode ones (src/main/remote-chat.ts). fx sessions
- * are listed but open on the Mac only.
+ * same tailnet lists spaces and sessions and chats in those that have a chat (src/main/chat.ts): opencode
+ * ones, and fx ones created as a chat. Other fx sessions are listed but open on the Mac only.
  *
  * - Access: only the Tailscale interface listens (localhost when there's none), and the URL carries a
  *   token that becomes an HttpOnly cookie on first visit.
@@ -475,7 +477,6 @@ export class RemoteServer {
     if (typeof sessionID !== "string") return
     const problem = this.deps.cantOpen(sessionID)
     if (problem) throw new Error(problem)
-    if (sessionID.startsWith("fx:")) throw new Error("fx sessions open on your Mac")
     this.leave(viewer)
     viewer.chat = sessionID
     const seq = viewer.seq
