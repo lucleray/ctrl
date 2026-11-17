@@ -3,7 +3,7 @@
 ```bash
 npm install
 npm run dev     # vite + esbuild watch + electron
-npm run preview # same, as a separate ctrl per branch on a fresh copy of your real state (see Previews)
+npm run preview # same, as a separate ctrl per branch in a seeded sandbox (see Previews)
 npm start       # production build + electron
 npm run package       # build release/mac-*/ctrl.app for this Mac (see Signing)
 npm run install-app   # build + replace /Applications/ctrl.app (restarts it if running)
@@ -42,36 +42,40 @@ launches get a bare PATH), and ships the bridge plugin unbundled in
 installed app keeps its state in `~/Library/Application Support/ctrl`; `npm run dev`
 uses `ctrl-dev` next to it, so both can run side by side. `ctrl-dev` is copied from
 the real state only on its very first run and drifts from it after that: delete
-`ctrl-dev/state.json` to start over, or use a preview, which copies it on every launch.
+`ctrl-dev/state.json` to start over, or use a preview, which runs in a sandbox of its own.
 
 ## Previews
 
-To try a branch on your real spaces and sessions, next to the installed app and to other branches:
+To try a branch next to the installed app and to other branches, in a sandbox that never touches your real
+ctrl state, opencode or fx sessions:
 
 ```bash
-npm run preview                    # labelled with the current branch, fresh copy of your state
-npm run preview -- --keep          # keep this preview's state from last time
-npm run preview -- --name <label>  # label other than the branch (also names its state folder)
+npm run preview                    # labelled with the current branch, keeps its sandbox from last time
+npm run preview -- --reset         # reseed the sandbox from scratch
+npm run preview -- --auth          # copy your opencode login in, for real models (stays until --reset)
+npm run preview -- --name <label>  # label other than the branch (also names its folder)
 ```
 
-- Each label gets its own state folder (`~/Library/Application Support/ctrl-preview/<label>`), CLI socket
-  and phone port (7340 and up, the same one every time), so previews never step on each other or on the
-  installed app.
-- The label shows next to "ctrl" in the sidebar and on the phone, so you know which window runs which branch.
-- `state.json` (spaces, assignments, settings) and `~/.config/ctrl/tools.json` are copied in fresh on every
-  launch, so edits a preview makes to them never reach the installed app. Sessions themselves are shared:
-  they live in opencode and fx, so a preview drives your real sessions.
-- Your installed agent skills are left alone: a preview keeps its copies in its state folder (`CTRL_SKILLS_DIR`),
-  so agents keep reading the installed app's skills and running its CLI.
-- Worktrees are not shared: a preview has its own pool, repos and folder (`~/.ctrl/worktrees-<label>`), and
-  starts with none. Agents in your sessions still talk to the installed app's `ctrl` (the opencode service is
-  the installed app's), so try `ctrl worktree` in a preview with the `CTRL_SOCKET=…` line it prints.
+- The sandbox (`~/Library/Application Support/ctrl-preview/<label>/sandbox`) is seeded on the first run by
+  `scripts/demo/seed.mjs --preview`: the README demo spaces and sessions plus `PREVIEW_SESSIONS` (a parent
+  with agent-created children, ...). It keeps what you do in it until `--reset`. Grow the seed when a change
+  needs data it lacks, so the next preview has it too.
+- It has its own HOME, so opencode runs as a separate service (port 49440 and up, paired with the phone port)
+  with its own database, and fx, worktrees and skills live in the sandbox too. Agents use the free
+  `opencode/big-pickle` model unless you pass `--auth`, which copies your `auth.json` and default model in.
+- Why not a copy of your real state: a preview used to reopen your current session in its own TUI, and the
+  agent in it then sent its `ctrl` commands (like `session new`) to the preview, whose changes were lost.
+- Each label gets its own folder, CLI socket (`ctrl-preview/<label>/ctrl.sock`) and phone port (7340 and up,
+  the same one every time), so previews never step on each other or on the installed app. The label shows
+  next to "ctrl" in the sidebar and on the phone.
+- `~/.config/ctrl/tools.json` is copied in on the first run; gh's token is passed in (`GH_TOKEN`) so the
+  resources panel shows live PR status.
 - Live reload like `npm run dev`: renderer changes hot-reload, main process changes restart the app. The phone
   view rebuilds without a restart, refresh the page.
 - It prints the phone links once the remote server is up (`[ctrl] phone: …`) and a `CTRL_SOCKET=…` line to
   drive that preview with the CLI.
-- Stop it with Ctrl+C (or by killing the script, or quitting the app). Old state folders stay until you delete
-  them.
+- Stop it with Ctrl+C (or by killing the script, or quitting the app): its opencode service stops with it.
+  Old folders stay until you delete them.
 
 One worktree per branch (`git worktree add ../ctrl-<branch> -b <branch>`) lets several previews run at once:
 each builds into its own `dist/`.

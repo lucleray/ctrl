@@ -16,9 +16,10 @@ When asked to build something in ctrl, unless told otherwise:
 1. **One branch, one worktree.** Branch off the latest `origin/main` in a git worktree of its own, so changes
    running in parallel don't mix. Never work in a checkout that someone else's preview is running from.
 2. **Run it as a preview.** `npm install` if needed, then `npm run preview` in the background (one per
-   worktree). It's a separate ctrl labelled with the branch, on a fresh copy of the user's state, next to the
-   installed app: never replace or restart the installed `/Applications/ctrl.app` (agents usually run inside
-   it). See `docs/DEVELOPMENT.md` → Previews.
+   worktree). It's a separate ctrl labelled with the branch, in a sandbox of seeded spaces and sessions with
+   its own opencode, next to the installed app: never replace or restart the installed `/Applications/ctrl.app`
+   (agents usually run inside it). `--reset` reseeds it. When a change needs data the seed lacks, add it to
+   `PREVIEW_SESSIONS` in `scripts/demo/seed.mjs`. See `docs/DEVELOPMENT.md` → Previews.
 3. **Hand it over.** Tell the user the branch, that the preview is up, and the phone link it printed when the
    change touches the phone view (`src/remote`).
 4. **Iterate.** Live reload picks up edits: say whether the user needs to do anything (refresh the phone, wait
@@ -26,9 +27,9 @@ When asked to build something in ctrl, unless told otherwise:
 5. **Check before saying it's done.** `npm run typecheck`, and `npm test` when CLI code changed. Drive the
    preview with the CLI line it printed, or take a screenshot with the debug hooks.
 6. **Commit and push** the branch as you go. Open a pull request only when asked.
-7. **Clean up** when the work is dropped: stop the preview, remove the worktree, and delete its
-   `ctrl-preview/<label>` folder. If the preview handed out git worktrees (`ctrl worktree up`), delete its
-   `~/.ctrl/worktrees-<label>` folder too and run `git worktree prune` in the repos they came from.
+7. **Clean up** when the work is dropped: stop the preview (that stops its opencode service too), remove the
+   worktree, and delete its `ctrl-preview/<label>` folder. If the preview handed out git worktrees
+   (`ctrl worktree up`, kept in its sandbox), run `git worktree prune` in the repos they came from.
    Publishing cleans up too.
 
 ## Publishing
@@ -43,8 +44,8 @@ When asked to publish, all the way to the user's installed app:
    (`0.30.0`), push to `main`.
 3. **Release** from that clean commit: `npm run release` (a few minutes: builds and signs arm64 + x64, then
    creates the GitHub release; `docs/DEVELOPMENT.md` → Releasing).
-4. **Clean up:** stop the preview, remove the worktree, delete its `ctrl-preview/<label>` folder (and its
-   `~/.ctrl/worktrees-<label>` folder, as in step 7 above).
+4. **Clean up:** stop the preview, remove the worktree, delete its `ctrl-preview/<label>` folder (as in
+   step 7 above).
 5. **Update the installed app last:** `ctrl app update check`, then `ctrl app update install`. ctrl quits,
    swaps itself and relaunches, and the agent doing it may be running inside it: make it the very last
    command. This is the only time an agent restarts the installed app.

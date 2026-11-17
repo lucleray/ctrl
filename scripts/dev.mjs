@@ -13,6 +13,9 @@ const url = server.resolvedUrls.local[0]
 // Started from an agent inside ctrl, the shell carries that ctrl's socket and TUI bridge: the dev app has its own.
 const devEnv = { ...process.env }
 for (const v of ["CTRL_SOCKET", "CTRL_BRIDGE_URL", "CTRL_TERM_ID", "OPENCODE_SESSION_ID"]) delete devEnv[v]
+// Set by a caller for the app only, not the build (npm run preview: the sandbox HOME and opencode).
+Object.assign(devEnv, JSON.parse(process.env.CTRL_DEV_APP_ENV ?? "{}"))
+delete devEnv.CTRL_DEV_APP_ENV
 
 let app
 const restart = () => {
