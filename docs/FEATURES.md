@@ -110,6 +110,8 @@ where it lives.
 - Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
   commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable,
   hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
+- Grouped by type, pull requests at the top, then worktrees, sessions, the rest of GitHub, Linear, Notion,
+  Slack and Vercel (`PANEL_TYPES`, `src/shared/adapters`)
 - Most recently mentioned first, except pull requests: open and draft ones come first, then merged, then closed
   (each type's `rank`, `src/shared/adapters`). `ctrl resources list` orders them the same way
 - Archive button on each row (hover): the resource leaves the list for a folded **Archived** section at the

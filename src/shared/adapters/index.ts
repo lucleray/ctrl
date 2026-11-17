@@ -26,6 +26,15 @@ export const RESOURCES_VERSION = 3
 /** Every link type, in priority order: the first type that parses a URL wins. */
 export const RESOURCE_TYPES: ResourceType[] = ADAPTERS.flatMap((a) => a.types)
 
+/** Pinned to the top of the resources panel, before every other group. */
+const PANEL_FIRST = ["github-pr"]
+
+/** Resources panel group order: pull requests first, then the rest in RESOURCE_TYPES order. */
+export const PANEL_TYPES: ResourceType[] = [
+  ...PANEL_FIRST.flatMap((id) => RESOURCE_TYPES.filter((t) => t.id === id)),
+  ...RESOURCE_TYPES.filter((t) => !PANEL_FIRST.includes(t.id)),
+]
+
 const ADAPTER_OF = new Map(ADAPTERS.flatMap((a) => a.types.map((t) => [t.id, a] as const)))
 export const adapterOf = (typeID: string) => ADAPTER_OF.get(typeID)
 

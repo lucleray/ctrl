@@ -5,10 +5,10 @@ import { before, describe, test } from "node:test"
 import { load, tmpDir } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-adapters-test-")
-let parseResourceUrl, extractResources, byRank, boardPlacement, adapterMode, ADAPTERS
+let parseResourceUrl, extractResources, byRank, boardPlacement, adapterMode, ADAPTERS, PANEL_TYPES, RESOURCE_TYPES
 
 before(async () => {
-  ;[{ parseResourceUrl, extractResources, byRank, boardPlacement, adapterMode, ADAPTERS }] = await load(tmp, "src/shared/adapters/index.ts")
+  ;[{ parseResourceUrl, extractResources, byRank, boardPlacement, adapterMode, ADAPTERS, PANEL_TYPES, RESOURCE_TYPES }] = await load(tmp, "src/shared/adapters/index.ts")
 })
 
 /** url → [key, canonical url] */
@@ -119,4 +119,10 @@ describe("ranking and the Board", () => {
     const ids = ADAPTERS.flatMap((a) => a.types.map((t) => t.id))
     assert.equal(new Set(ids).size, ids.length)
   })
+})
+
+test("resources panel lists pull requests first, then every other type in parse order", () => {
+  const ids = PANEL_TYPES.map((t) => t.id)
+  assert.equal(ids[0], "github-pr")
+  assert.deepEqual(ids.slice(1), RESOURCE_TYPES.map((t) => t.id).filter((id) => id !== "github-pr"))
 })

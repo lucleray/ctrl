@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { byRank, RESOURCE_TYPES, resourceType } from "../shared/adapters"
+import { byRank, PANEL_TYPES, resourceType } from "../shared/adapters"
 import type { AdapterInfo, AppState, Harness, ResourceItem, ResourceMeta } from "../shared/types"
 import { harnessOf, isResourceArchived } from "../shared/types"
 import { age, shortPath } from "./format"
@@ -85,7 +85,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
   const [archivedOpen, setArchivedOpen] = useState(false)
   const groups = useMemo(
     () =>
-      RESOURCE_TYPES.map((type) => ({ type, items: byRank(active.filter((i) => i.type === type.id)) })).filter(
+      PANEL_TYPES.map((type) => ({ type, items: byRank(active.filter((i) => i.type === type.id)) })).filter(
         (g) => g.items.length,
       ),
     [active],
