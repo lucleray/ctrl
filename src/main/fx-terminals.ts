@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import type { IPty } from "node-pty"
 import type { TermInfo } from "../shared/types"
 import { childEnv } from "./child-env"
-import { findFx, rawID, type LiveStatus } from "./fx"
+import { findFx, FX_ENV, rawID, type LiveStatus } from "./fx"
 
 const pty: typeof import("node-pty") = createRequire(import.meta.url)("node-pty")
 
@@ -55,6 +55,9 @@ type Events = {
   onExit(termID: string, sessionID: string | null, code: number): void
 }
 
+/** `fx --resume <id>` (fx 0.0.17 removed `fx resume --id`; `--resume` works in older ones too). */
+const resumeArgs = (sessionID: string) => ["--resume", rawID(sessionID)]
+
 type SpawnOptions = { cwd: string; args: string[]; env: Record<string, string>; spaceID?: string | null; parentID?: string | null }
 
 /** Parses `state=working:app=fx:msg=…` (base64 msg) per the Program Status Protocol. */
@@ -104,6 +107,11 @@ export class FxTerminals {
     return this.activeID ? this.terms.get(this.activeID) : undefined
   }
 
+  /** pids of the fx processes running now */
+  pids() {
+    return [...this.terms.values()].filter((t) => t.exited === undefined).map((t) => t.proc.pid)
+  }
+
   isOurPid(pid: number) {
     return [...this.terms.values()].some((t) => t.exited === undefined && t.proc.pid === pid)
   }
@@ -125,14 +133,15 @@ export class FxTerminals {
   }
 
   /**
-   * Shows the pty for this session, starting `fx resume <id>` when none has it open.
-   * `background`: start it without showing it (restoring sessions at launch).
+   * Shows the pty for this session, starting `fx --resume <id>` when none has it open.
+   * `background`: start it without showing it (restoring sessions at launch). `prompt`: arguments sent as its
+   * first prompt when it starts (not when it's already running).
    */
-  open(sessionID: string, opts: Omit<SpawnOptions, "args">, background = false) {
+  open(sessionID: string, opts: Omit<SpawnOptions, "args">, background = false, prompt: string[] = []) {
     const existing = this.bySession(sessionID)
     if (existing?.exited !== undefined) this.restart(existing.id)
     if (existing) return background ? existing.id : this.activate(existing.id)
-    return this.spawn({ ...opts, args: ["resume", "--id", rawID(sessionID)] }, sessionID, background)
+    return this.spawn({ ...opts, args: [...resumeArgs(sessionID), ...prompt] }, sessionID, background)
   }
 
   /** Sessions with a pane, most recently used first. */
@@ -204,6 +213,7 @@ export class FxTerminals {
     const bin = findFx()
     const env = {
       ...childEnv({ CTRL_TERM_ID: term.id }),
+      ...FX_ENV,
       ...term.opts.env,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
@@ -213,8 +223,9 @@ export class FxTerminals {
       // ctrl plays its own sounds (or none when they're off), so fx's would double up.
       FX_SOUND: "off",
     } as Record<string, string>
-    // A known session resumes; a new one that never got an id starts fresh again.
-    const args = term.sessionID ? ["resume", "--id", rawID(term.sessionID)] : term.opts.args
+    // First start: as asked (a prompt included). A restart resumes a known session without resending its prompt;
+    // a new one that never got an id starts fresh again.
+    const args = !term.proc ? term.opts.args : term.sessionID ? resumeArgs(term.sessionID) : term.opts.args
     // Fall back to a login shell so PATH is resolved when fx lives somewhere unusual.
     const quote = (a: string) => `'${a.replaceAll("'", "'\\''")}'`
     const [file, argv] = bin

@@ -102,5 +102,5 @@ Don't guess flags: read `help` first. The most used ones:
 - Pass long or multi-line text on stdin, not inline: `--prompt - < prompt.md`, `--text - <<'EOF'`.
 - Use `--fields id,title` on lists to keep output small.
 - To check a prompt was taken (`session new --prompt`, `session send`), look for status `running`, then
-  `session wait <s> --for done`. fx only logs a turn once it ends, so `session read` shows an fx turn in
-  progress as `Turn N · running`. fx can't report `needs-input`, so give waits on fx a `--timeout`.
+  `session wait <s> --for done`. `session read` shows an fx turn in progress with what it did so far. fx
+  only reports `needs-input` for sessions open in ctrl, so give waits on fx a `--timeout`.

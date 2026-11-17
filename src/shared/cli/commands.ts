@@ -253,7 +253,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Puts a session on screen",
     args: [session(), { name: "raise", type: "bool", description: "Also bring ctrl's window to the front" }],
     returns: "Session",
-    harness: ["fx: starts `fx resume` if the session has no process yet (about 1s)."],
+    harness: ["fx: starts `fx --resume` if the session has no process yet (about 1s)."],
     mutates: true,
   },
   {
@@ -261,7 +261,9 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Renames a session",
     args: [session(), { name: "title", type: "string", positional: true, required: true, placeholder: "<title>", description: "New title" }],
     returns: "Session & {changed, pending?}",
-    harness: ["fx: `pending:true` while an fx process has the session; the title is written once it quits."],
+    harness: [
+      "fx: ctrl keeps the title (fx ≥ 0.0.17 keeps titles in a log only fx writes, so fx's own /resume picker still shows its title). Sessions from fx 0.0.16 and older: `pending:true` while an fx process has the session; the title is written once it quits.",
+    ],
     mutates: true,
   },
   {
@@ -348,7 +350,7 @@ export const COMMANDS: CommandSpec[] = [
     returns: "Session",
     harness: [
       "fx: `running` while a turn is in progress, `done` once it ends.",
-      "fx: `needs-input` and `failed` only show for sessions open in ctrl, and only with an fx that sends OSC 7501 status reports (fx 0.0.13 doesn't). Without them, a turn stuck on a permission prompt stays `running`, so pass a --timeout.",
+      "fx: `needs-input` and `failed` only show for sessions open in ctrl (from fx's OSC 7501 status reports). A session open in another terminal that waits on a permission prompt stays `running`, so pass a --timeout.",
     ],
     examples: ["ctrl session wait ses_x --for done --timeout 1800000"],
     resumes: true,
@@ -394,7 +396,7 @@ export const COMMANDS: CommandSpec[] = [
     details: ["The same digest the read-session skill prints."],
     args: [session(), { name: "turn", type: "int", description: "Everything said in this turn instead" }],
     returns: "{id, digest:string}",
-    harness: ["fx: a turn still in progress shows as `Turn N · running` with what it did so far (fx logs a turn only once it ends)."],
+    harness: ["fx: a turn still in progress shows with what it did so far. fx ≥ 0.0.17 logs each step as it happens; older fx kept the turn in progress in `recovery.json`."],
     examples: ["ctrl session read ses_abc | jq -r .data.digest"],
   },
   {

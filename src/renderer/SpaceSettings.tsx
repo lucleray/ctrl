@@ -202,8 +202,9 @@ export function SpaceSettings({
         <div className="settings-card">
           <div className="setting setting-stack">
             <div className="setting-desc wide">
-              Added to every new opencode session in this space as extra instructions. They don't show up in the chat,
-              and the model sees them on every turn. fx has no way to take them, so fx sessions don't get them.
+              Added to every new session in this space as extra instructions. They don't show up in the chat, and the
+              model sees them on every turn. fx sessions get them through an agent profile (fx 0.0.17+), so an edit
+              reaches them the next time fx opens them.
             </div>
             <textarea
               className="setting-textarea"

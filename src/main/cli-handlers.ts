@@ -63,9 +63,13 @@ export type CliHost = {
     model?: ModelRef
     focus: boolean
     parentID?: string | null
-  }): Promise<{ id: string } | { pending: true; terminal: string }>
+    /** fx: started with this first prompt (`prompted` in the reply); others ignore it */
+    prompt?: string
+  }): Promise<{ id: string } | { pending: true; terminal: string; prompted?: boolean }>
   openSession(sessionID: string): void
   renameSession(sessionID: string, title: string): Promise<void>
+  /** fx: a rename waits to be written into the session's own files (fx ≤ 0.0.16); false when ctrl keeps it */
+  fxTitleWaits?(sessionID: string): boolean
   /** Moves it with the descendants that shared its space; returns those descendants. */
   move(sessionID: string, spaceID: string | null): string[]
   /** No toast: the CLI returns an undo command instead (principle 8) */
@@ -860,7 +864,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const directory = args.directory ? folder(args.directory, req.caller) : fromParent?.directory
       const model = args.model ? parseModelArg(args.model, harness ?? space?.harness ?? store.data.settings.defaultHarness) : undefined
       const created = await bounded(
-        host.newSession({ spaceID, harness, directory, model, focus: !!args.focus, parentID: parent?.id ?? null }),
+        host.newSession({ spaceID, harness, directory, model, focus: !!args.focus, parentID: parent?.id ?? null, prompt: args.prompt }),
         left(),
         "the harness to create the session",
         "Check the harness: ctrl app status. The session may still show up: ctrl session list --limit 5",
@@ -870,10 +874,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         args.prompt ? `${id} was created, the prompt may not have been sent: ctrl session read ${id}, then ctrl session send ${id} --text -` : undefined
       if ("pending" in created) {
         const sentAt = Date.now()
-        if (args.prompt) {
+        if (args.prompt && !created.prompted) {
           await bounded(host.promptTerminal(created.terminal, args.prompt), left(), "fx to take the prompt", "ctrl session list --harness fx --limit 5")
         }
-        // fx reports the id once its process is up (and, for some versions, after the first prompt).
+        // fx reports the id once its process is up (fx ≥ 0.0.17: once the first prompt starts).
         const id = await waitFor(() => host.termSession(created.terminal) ?? undefined, left(), "fx to report the new session's id").catch(
           () => undefined,
         )
@@ -910,7 +914,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       if (!title) throw new CliError("USAGE", "Title can't be empty")
       const changed = s.title !== title
       if (changed) await host.renameSession(s.id, title)
-      const pending = s.harness === "fx" && !!store.data.titles[s.id]
+      const pending = s.harness === "fx" && !!store.data.titles[s.id] && (host.fxTitleWaits?.(s.id) ?? true)
       return { ...sessionView(byID(s.id) ?? s), title, changed, ...(pending ? { pending } : {}) }
     },
     "session move": (args, req) => {

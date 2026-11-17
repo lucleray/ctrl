@@ -21,7 +21,7 @@ share one), see which ones need you, and switch between them instantly.
 
 ## 📦 Install
 
-You need a Mac and [fx](https://fx.sh), [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), or both:
+You need a Mac and [fx](https://fx.sh) (0.0.17 or newer), [opencode V2](https://opencode.ai/v2/docs/) (2.0.25 or newer), or both:
 
 ```bash
 curl -fsSL https://fx.sh/setup.sh | bash           # fx
