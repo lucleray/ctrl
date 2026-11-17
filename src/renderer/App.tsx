@@ -204,6 +204,12 @@ export function App() {
     [],
   )
   useEffect(() => window.ctrl.onChatDraft((text) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 }))), [])
+  // A draft for a session's chat (an fx chat session just created with text): into its composer once it's up.
+  useEffect(() => {
+    if (!draft?.text || !chatID || !chat.current) return
+    chat.current.paste(draft.text)
+    setDraft((d) => (d ? { ...d, text: "" } : d))
+  }, [draft, chatID])
   useEffect(
     () =>
       window.ctrl.onUiPalette((query) => {

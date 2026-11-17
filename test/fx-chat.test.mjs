@@ -436,10 +436,11 @@ describe("FxChat turns", () => {
   test("model: read from fx's config options, set through set_config_option; stats from usage updates", async () => {
     const fx = fakeFx({ turn: async (p, proc) => (proc.update({ sessionUpdate: "usage_update", used: 1200, size: 200000 }), { stopReason: "end_turn" }) })
     const { chat, events } = chatWith(fx)
-    assert.equal(await chat.model.get("fx:abc123"), null)
     assert.deepEqual(await chat.stats("fx:abc123"), { cost: 0, context: null })
-    await chat.page("fx:abc123")
+    // Reading the model opens the session.
     assert.deepEqual(await chat.model.get("fx:abc123"), { providerID: "fx", id: "anthropic/claude-opus-5.5", variant: "high" })
+    assert.equal(fx.procs.length, 1)
+    assert.equal(await chat.model.get("fx:missing"), null)
     await chat.model.set("fx:abc123", { providerID: "fx", id: "anthropic/claude-sonnet-5.5", variant: "low" })
     assert.deepEqual(
       fx.procs[0].received.filter((m) => m.method === "session/set_config_option").map((m) => m.params),

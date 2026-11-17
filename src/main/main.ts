@@ -974,7 +974,7 @@ const newSession = async (
       if (parentID) store.setParent(id, parentID)
       if (focus) openSession(id)
       else push()
-      if (prompt?.trim()) void chat.send(id, prompt, []).catch(report)
+      // `prompt` is the caller's to send, as for opencode (the CLI does, once the session is listed).
       return { id }
     }
     const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
@@ -1026,7 +1026,7 @@ const newSessionWith = async (text: string) => {
     if (prompt && "pending" in created) {
       await fxTerms.ready(created.terminal)
       await typeIntoFx(created.terminal, prompt, false)
-    }
+    } else if (prompt && "id" in created && store.isFxChat(created.id)) send("chat:draft", prompt)
   }
   // Out of Settings or the palette, onto the prompt.
   send("shortcut", "companion-new-session")

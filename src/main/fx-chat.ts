@@ -431,7 +431,7 @@ export class FxChat implements HarnessChat {
 
   model = {
     get: async (sessionID: string): Promise<ModelRef | null> => {
-      const session = this.open.get(sessionID)
+      const session = await this.ensure(sessionID).catch(() => undefined)
       if (!session) return null
       const model = session.config.find((c) => c.id === "model")?.currentValue
       if (typeof model !== "string" || !model) return null
