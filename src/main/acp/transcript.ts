@@ -33,6 +33,12 @@ type Live = ChatItem & { kind: "assistant" }
 /** Messages per page: the newest on open, then older ones on "Load earlier" (same as opencode's). */
 const PAGE = 40
 
+/**
+ * fx 0.0.17 sends its operational notices (skill warnings, context limits) as reply text, in chunks of their
+ * own before the reply (vercel-labs/fx#1016; #1739 makes them `notice` updates). They aren't the agent's words.
+ */
+const NOTICE = /^(skill discovery warning:|\[context\] )/
+
 /** Tool statuses as ACP names them → the chat's. Anything unknown is still running. */
 const TOOL_STATUS: Record<string, "done" | "error"> = {
   completed: "done",
@@ -154,7 +160,7 @@ export class Transcript {
   private agentText(update: SessionUpdate, type: "text" | "reasoning") {
     const content = update.content as Content | undefined
     const text = content?.type === "text" ? (content.text ?? "") : ""
-    if (!text) return false
+    if (!text || (type === "text" && NOTICE.test(text))) return false
     const item = this.reply()
     const last = item.parts.at(-1)
     if (last?.type === type) last.text = (last.text ?? "") + text

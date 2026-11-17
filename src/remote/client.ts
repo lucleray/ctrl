@@ -128,7 +128,12 @@ const routeChat = () => {
 }
 
 const isFx = (id: string) => id.startsWith("fx:")
-/** Where tapping a session goes: its chat (fx ones bounce back to the list with a notice, see route()). */
+/** An fx session that opens on the Mac only (one created as a chat opens here like an opencode one). Unknown ones are tried: the Mac answers. */
+const macOnly = (id: string) => {
+  const s = snapshot.sessions.find((x) => x.id === id)
+  return isFx(id) && !!s && s.view !== "chat"
+}
+/** Where tapping a session goes: its chat (terminal fx ones bounce back to the list with a notice, see route()). */
 const sessionHref = (id: string) => `#/s/${encodeURIComponent(id)}`
 
 const onBoard = () => location.hash === "#/board"
@@ -137,7 +142,7 @@ window.addEventListener("hashchange", () => route())
 
 function route() {
   const chatID = routeChat()
-  if (chatID && isFx(chatID)) {
+  if (chatID && macOnly(chatID)) {
     const msg = "fx sessions open on your Mac"
     notice = msg
     setTimeout(() => notice === msg && ((notice = ""), render()), 3000)
@@ -332,7 +337,7 @@ function sessionMenu(s: Session, from?: "chat") {
   const parent = s.parentID ? snapshot.sessions.find((x) => x.id === s.parentID) : undefined
   const sub = [s.archived ? "Archived" : spaceLabel(s.spaceID), fx ? "fx" : "opencode"].join(" · ")
   openSheet(s.title || "Untitled", sub, [
-    ...(fx || from ? [] : [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]),
+    ...(macOnly(s.id) || from ? [] : [sheetAction("Open", () => (location.hash = sessionHref(s.id)))]),
     sheetAction("New child session", () => {
       creating = `child:${s.id}`
       notice = ""

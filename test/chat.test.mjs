@@ -263,6 +263,18 @@ describe("createChat", () => {
     }
   })
 
+  test("a harness chat that handles only some sessions: the others can't open as one", async () => {
+    const h = fakeHarnessChat()
+    h.chat.handles = (id) => id === "op:chatty"
+    const { chat } = router({ harness: h })
+    assert.equal(chat.can("op:chatty"), true)
+    assert.equal(chat.can("op:1"), false)
+    assert.deepEqual(chat.pending("op:1"), [])
+    await assert.rejects(chat.send("op:1", "hi", []), /can't open as a chat/)
+    await chat.send("op:chatty", "hi", [])
+    assert.deepEqual(h.calls.at(-1), ["send", "op:chatty", "hi", []])
+  })
+
   test("a harness chat without the optional parts gets empty answers", async () => {
     const { page, pending, send, stop, reply } = fakeHarnessChat().chat
     const { chat } = router({ harness: { chat: { page, pending, send, stop, reply } } })

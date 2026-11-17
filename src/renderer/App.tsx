@@ -85,14 +85,17 @@ export function App() {
   const activeTerm = state.terms.find((t) => t.id === state.activeTermID)
   // Its terminal is read-only (TerminalStack) until it's unarchived.
   const archivedOnScreen = activeTerm?.sessionID && state.archived[activeTerm.sessionID] ? activeTerm.sessionID : null
-  // Sessions as chat: opencode sessions show as a chat over the TUI, which keeps running underneath.
+  // Sessions as chat: opencode sessions show as a chat over the TUI, which keeps running underneath. fx sessions
+  // created as a chat have no TUI: their pane is the chat.
   const chatID =
-    state.settings.sessionView === "chat" &&
-    activeTerm?.harness === "opencode" &&
-    state.currentSessionID &&
-    harnessOf(state.currentSessionID) === "opencode"
-      ? state.currentSessionID
-      : null
+    activeTerm?.view === "chat"
+      ? activeTerm.sessionID
+      : state.settings.sessionView === "chat" &&
+          activeTerm?.harness === "opencode" &&
+          state.currentSessionID &&
+          harnessOf(state.currentSessionID) === "opencode"
+        ? state.currentSessionID
+        : null
   // No session on screen (the TUI's new-session screen, e.g. after archiving): a centered composer instead.
   const chatHome =
     state.settings.sessionView === "chat" && activeTerm?.harness === "opencode" && !state.currentSessionID && state.opencode.state === "ok"

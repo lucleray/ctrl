@@ -310,6 +310,20 @@ describe("Transcript", () => {
     assert.equal(t.items.length, 1)
   })
 
+  test("fx's notices sent as reply text are left out", () => {
+    const t = transcript([
+      user("a"),
+      agent('skill discovery warning: candidate "/x" was skipped', "n1"),
+      agent("[context] skill descriptions shortened: 15; source=compiled default\n", "n1"),
+      agent("OK", "r1"),
+      thought("[context] in a thought is fine"),
+    ])
+    assert.deepEqual(t.items[1].parts, [
+      { type: "text", text: "OK" },
+      { type: "reasoning", text: "[context] in a thought is fine" },
+    ])
+  })
+
   test("times only grow, even when the clock stands still", () => {
     const t = transcript([user("a", "1"), user("b", "2"), user("c", "3")])
     assert.deepEqual(

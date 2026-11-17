@@ -13,7 +13,7 @@ import {
 } from "react"
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
-import type { ChatAttachment, ChatStats, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
+import type { ChatAttachment, ChatStats, Harness, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
 import { age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
@@ -331,7 +331,7 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
             />
             <div className="chat-meta">
               <Stats sessionID={sessionID} running={running} activity={session?.activity} />
-              <ModelButton sessionID={sessionID} directory={session?.directory} onPicked={() => composer.current?.focus()} />
+              <ModelButton sessionID={sessionID} harness={session?.harness ?? "opencode"} directory={session?.directory} onPicked={() => composer.current?.focus()} />
             </div>
           </div>
         </div>
@@ -957,7 +957,7 @@ function Question({ sessionID, pending }: { sessionID: string; pending: Extract<
 }
 
 /** The composer's model: the session's own, switched for its next turns (the TUI follows). */
-function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; directory?: string; onPicked(): void }) {
+function ModelButton({ sessionID, harness, directory, onPicked }: { sessionID: string; harness: Harness; directory?: string; onPicked(): void }) {
   const [model, setModel] = useState<ModelRef | null>(null)
   const [choices, setChoices] = useState<ModelChoices | null>(null)
   const [open, setOpen] = useState(false)
@@ -977,11 +977,11 @@ function ModelButton({ sessionID, directory, onPicked }: { sessionID: string; di
 
   useEffect(() => {
     let live = true
-    void window.ctrl.listModels("opencode", directory).then((c) => live && setChoices(c), () => {})
+    void window.ctrl.listModels(harness, directory).then((c) => live && setChoices(c), () => {})
     return () => {
       live = false
     }
-  }, [directory])
+  }, [harness, directory])
 
   const current = model && choices?.models.find((m) => keyOf(m) === keyOf(model))
   const pick = (m: ModelRef) => {

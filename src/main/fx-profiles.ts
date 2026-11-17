@@ -50,6 +50,13 @@ function write(name: string, files: { profile: string; prompt: string }) {
   put(join(dir, "prompt.md"), files.prompt)
 }
 
+/** The same text, for a chat session: `fx acp` takes it as the session's system prompt (src/main/fx-chat.ts). */
+export function fxInstructionsText(opts: FxInstructions): string | undefined {
+  const hasSpace = !!opts.spaceID && !!opts.instructions?.trim()
+  if (!hasSpace && !opts.ctrl) return undefined
+  return content(hasSpace ? opts : { spaceID: null, ctrl: true }).prompt.trim() || undefined
+}
+
 /**
  * The profile a new fx session should start in (written or refreshed now), or undefined when there's
  * nothing to tell it: no space instructions and the ctrl instruction off.

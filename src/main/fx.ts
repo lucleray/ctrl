@@ -3,7 +3,7 @@ import { existsSync, watch, type FSWatcher } from "node:fs"
 import { readdir, readFile, rename, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { HarnessSource } from "./harness"
+import type { HarnessChat, HarnessSource } from "./harness"
 import { FX_PREFIX, type FxCheck, type SessionActivity, type SessionItem, type SessionStatus } from "../shared/types"
 import {
   FX_ENV,
@@ -100,6 +100,8 @@ type Deps = {
   viewedAt(sessionID: string): number | undefined
   titleOverride(sessionID: string): string | undefined
   currentSessionID(): string | null
+  /** The session was created as a chat (src/main/fx-chat.ts); unset: every session is a terminal one */
+  isChat?(sessionID: string): boolean
 }
 
 const alive = (pid: number) => {
@@ -125,6 +127,8 @@ export class FxSessions implements HarnessSource {
   readonly harness = "fx" as const
   sessions: SessionItem[] = []
   problem: string | null = null
+  /** Chat sessions over fx acp (src/main/fx-chat.ts), set by main. */
+  chat?: HarnessChat
   private all = new Map<string, FxSession>()
   private index = new Map<string, IndexEntry>()
   private indexOffset = 0
@@ -380,6 +384,7 @@ export class FxSessions implements HarnessSource {
           directory: s.directory,
           updated: s.updated,
           elsewhere: s.ownerPid !== undefined && !ours,
+          ...(this.deps.isChat?.(id) ? { view: "chat" as const } : {}),
           ...this.statusOf(s, id, ours),
         }
       })

@@ -105,6 +105,8 @@ export type SessionItem = {
   statusDetail?: string
   /** fx: open in an fx outside ctrl (another terminal), so it can't be opened here */
   elsewhere?: boolean
+  /** An fx session created as a chat (src/main/fx-chat.ts): it opens as one, on the desktop and the phone */
+  view?: "chat"
   /** Work still going on in the background. Unset when nothing runs, or the harness can't tell (src/main/harness.ts) */
   activity?: SessionActivity
 }
@@ -119,7 +121,8 @@ export type RunningWork = { id: string; kind: "shell" | "subagent"; title: strin
  * One terminal on the right. "opencode" is the single embedded opencode TUI, switched between
  * sessions in place. fx has no way to do that, so each open fx session gets its own process.
  */
-export type TermInfo = { id: string; harness: Harness; sessionID: string | null; exited?: number }
+/** A pane on the right: a pty (the opencode TUI, an fx process), or an fx session that runs as a chat (`view`) */
+export type TermInfo = { id: string; harness: Harness; sessionID: string | null; exited?: number; view?: "chat" }
 
 export type UiState = {
   recentsCollapsed: boolean

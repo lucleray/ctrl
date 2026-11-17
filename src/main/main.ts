@@ -31,7 +31,7 @@ import {
 } from "../shared/types"
 import { accelFromInput, bindings, commandFor, type CommandID } from "../shared/shortcuts"
 import { Attention } from "./attention"
-import { setChildEnv } from "./child-env"
+import { childEnv, setChildEnv } from "./child-env"
 import { createHandlers, type CliHost } from "./cli-handlers"
 import { CliInstall } from "./cli-install"
 import { CliServer } from "./cli-server"
@@ -39,7 +39,8 @@ import { CliError, SOCKET_NAME } from "../shared/cli/protocol"
 import { playSound } from "./sound"
 import { ADAPTERS, adapterOf, boardPlacement, resourceType } from "../shared/adapters"
 import { AdapterService } from "./adapters/service"
-import { fxProfile, syncFxProfiles, type FxInstructions } from "./fx-profiles"
+import { fxInstructionsText, fxProfile, syncFxProfiles, type FxInstructions } from "./fx-profiles"
+import { FxChat } from "./fx-chat"
 import { checkFx, FX_ENV, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { sessionsOf, type HarnessSource } from "./harness"
@@ -304,6 +305,7 @@ const fx: FxSessions = new FxSessions({
   viewedAt: (id) => Math.max(store.data.viewed[id] ?? 0, store.data.viewedSince),
   titleOverride: (id) => store.data.titles[id],
   currentSessionID,
+  isChat: (id) => store.isFxChat(id),
 })
 
 const fxTerms: FxTerminals = new FxTerminals({
@@ -327,6 +329,25 @@ const fxTerms: FxTerminals = new FxTerminals({
   },
 })
 if (store.data.termSize) fxTerms.size = store.data.termSize
+
+/** fx sessions created as a chat run over `fx acp`, one process per open session, with a pane in fxTerms. */
+const fxChat = new FxChat(
+  {
+    bin: () => (fxCheck.state === "ok" ? fxCheck.bin : undefined),
+    env: () => ({ ...childEnv(), ...FX_ENV, FX_AUTO_UPGRADE: "0", FX_SOUND: "off" }),
+    isChat: (id) => store.isFxChat(id),
+    directory: (id) => fx.get(id)?.directory,
+    onOpen: (id, proc, cwd, background) => {
+      fxTerms.openChat(id, proc, cwd, background)
+      // fx holds the session's lock now: the owner shows as ours.
+      void fx.refreshLive()
+    },
+    onStatus: (id, status) => fxTerms.setStatus(id, status),
+    onExit: (id, code) => fxTerms.chatExited(id, code),
+  },
+  app.getVersion(),
+)
+fx.chat = fxChat
 
 let fxCheck: FxCheck = { state: "checking" }
 /** fx 0.0.17 added agent profiles (`--profile`) and a first prompt as an argument (`fx "<prompt>"`). */
@@ -468,6 +489,7 @@ const remoteSnapshot = (): RemoteSnapshot => {
       directory: s.directory,
       ...(parents[s.id] ? { parentID: parents[s.id] } : {}),
       ...(archived[s.id] ? { archived: archived[s.id] } : {}),
+      ...(s.view ? { view: s.view } : {}),
     })),
   }
 }
@@ -618,6 +640,7 @@ const remote: RemoteServer = new RemoteServer({
     const session = sessionByID(sessionID)
     if (!session) return "This session doesn't exist anymore"
     if (session.harness === "opencode" && !opencodeStarted) return "opencode isn't installed on this Mac"
+    if (session.harness === "fx" && !chat.can(session.id)) return "fx sessions open on your Mac"
     if (session.elsewhere) return "This session is open in fx in another terminal"
     return null
   },
@@ -875,6 +898,14 @@ const openFxSession = (sessionID: string) => {
     return
   }
   showFxTerm()
+  if (store.isFxChat(sessionID)) {
+    // Its process puts its pane on screen (fxTerms.openChat) once started; while it loads, the pane it has.
+    const pane = fxTerms.bySession(sessionID)
+    if (pane) fxTerms.activate(pane.id)
+    void fxChat.ensure(sessionID).then(() => markFxViewed(sessionID), report).finally(push)
+    push()
+    return
+  }
   void flushTitle(sessionID).finally(() => {
     fxTerms.open(sessionID, { cwd: session.directory, env: {} })
     markFxViewed(sessionID)
@@ -935,6 +966,17 @@ const newSession = async (
   const model = modelOverride ?? modelFor(harness, space)
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
+    // Sessions as chat (fx ≥ 0.0.17): a chat session, over fx acp, for good. It has its id right away.
+    if (store.data.settings.sessionView === "chat" && fxModern()) {
+      const id = await fxChat.create({ cwd, model, instructions: fxInstructionsText(fxInstructionsFor(spaceID)) })
+      store.setFxChat(id)
+      if (spaceID) store.assign(id, spaceID)
+      if (parentID) store.setParent(id, parentID)
+      if (focus) openSession(id)
+      else push()
+      if (prompt?.trim()) void chat.send(id, prompt, []).catch(report)
+      return { id }
+    }
     const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
     // Space instructions and the ctrl instruction go in through an agent profile, kept when fx resumes it.
     const profile = fxModern() ? fxProfile(fxInstructionsFor(spaceID)) : undefined
@@ -1028,7 +1070,9 @@ const restoreOpen = () => {
   rest.reverse().forEach((id, i) =>
     setTimeout(() => {
       const s = fx.get(id)
-      if (s && !fxTerms.bySession(id)) fxTerms.open(id, { cwd: s.directory, env: {} }, true)
+      if (!s || fxTerms.bySession(id)) return
+      if (store.isFxChat(id)) void fxChat.ensure(id, true).catch((err) => console.error("[ctrl] couldn't reopen", id, err))
+      else fxTerms.open(id, { cwd: s.directory, env: {} }, true)
     }, RESTORE_STAGGER_MS * (i + 1)),
   )
   restored = true
@@ -1815,6 +1859,12 @@ const fxPromptArg = (prompt?: string) => (fxModern() && prompt?.trim() && !promp
 /** Sends a prompt to an fx session: typed into its running fx, or passed to a new one (fxPromptArg). */
 const promptFx = async (sessionID: string, text: string) => {
   const session = fx.get(sessionID)
+  if (store.isFxChat(sessionID)) {
+    if (session?.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid))
+      throw new CliError("CONFLICT", `${sessionID} is open in fx elsewhere`, { hint: "Quit fx there first" })
+    await chat.send(sessionID, text, [])
+    return
+  }
   const arg = fxPromptArg(text)
   if (session && !fxTerms.bySession(sessionID) && arg.length) {
     if (session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid))
@@ -1878,11 +1928,19 @@ const cliHost: CliHost = {
     await typeIntoFx(termID, text, true)
   },
   type: async (id, text) => {
-    if (harnessOf(id) === "fx") return typeIntoFx(await fxTermFor(id), text, false)
+    if (harnessOf(id) === "fx") {
+      if (store.isFxChat(id)) throw new CliError("UNSUPPORTED_HARNESS", `${id} runs as a chat, which has nothing to type into: send the text instead`, { hint: "Drop --no-submit" })
+      return typeIntoFx(await fxTermFor(id), text, false)
+    }
     terminal.paste(text)
   },
   stop: async (id) => {
     if (harnessOf(id) === "fx") {
+      if (store.isFxChat(id)) {
+        if (sessionByID(id)?.status !== "running") return false
+        await chat.stop(id)
+        return true
+      }
       const term = fxTerms.bySession(id)
       if (!term) return false
       fxTerms.write(term.id, "\x1b")
@@ -2230,6 +2288,7 @@ app.on("will-quit", () => {
   remote.stop()
   terminal.dispose()
   fxTerms.dispose()
+  fxChat.dispose()
   fx.stop()
   search.stop()
   companion.dispose()
