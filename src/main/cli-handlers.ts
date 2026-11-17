@@ -1384,7 +1384,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       // A caller that's gone (killed by a tool timeout) or gave up doesn't get the worktree: its next `up` does.
       let alive = true
       void stream.closed.then(() => (alive = false))
-      const timeout = Math.max(1000, Number(args.timeout ?? 600_000))
+      const timeout = Math.max(1, Number(args.timeout ?? 600_000))
       let timer: ReturnType<typeof setTimeout> | undefined
       const gaveUp = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {

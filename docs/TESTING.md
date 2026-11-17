@@ -17,7 +17,7 @@ fakes:
 | Layer | What runs | Talks to | Files |
 | --- | --- | --- | --- |
 | Pure logic | store, adapters, shortcuts, chat items, tool alerts… | nothing, or a temp folder | `store`, `adapters`, `shared`, `remote-chat`, `tools`, `opencode` |
-| CLI handlers | `createHandlers()`, the code behind every `ctrl` command | a fake host + a real `Store` | `handlers`, `cli` |
+| CLI handlers | `createHandlers()`, the code behind every `ctrl` command | a fake host + a real `Store` | `handlers`, `cli`, `worktrees` |
 | CLI launcher | `bin/ctrl` + `dist/cli/cli.cjs` as a real process | a fake app socket | `cli` (`ctrl launcher`) |
 | UI | React components in happy-dom (`loadUi()`) | a fake `window.ctrl` | `ui` |
 
@@ -62,3 +62,11 @@ promises (like a `window.ctrl.search` reply) settle. See `test/ui.test.mjs`.
   covers everything.
 
 End-to-end runs of the real app (Electron) take seconds each, so they stay out of `npm test`.
+
+## Slow tests
+
+`npm run test:slow` runs `test/slow/*.test.mjs`: tests that need real processes and take seconds, so they
+can't live in `npm test`. Today that's the worktree pool (`src/main/worktrees`) against throwaway git repos:
+real `git worktree add`, setup commands, recycling and cleanup. Run it when you touch that code. The same
+reliability rules apply (temp folders only, no shared state), with a 60s timeout per test. The pool's pure
+parts (pool sizing) and the `ctrl worktree` handlers over a fake pool are in `npm test` (`worktrees`).

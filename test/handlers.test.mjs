@@ -32,6 +32,7 @@ function setup({ sessions = [], current = null } = {}) {
     currentSessionID: () => current,
     termSession: () => undefined,
     isLive: () => false,
+    worktrees: { ofSession: () => [], name: () => "" },
     changed: () => listeners.forEach((cb) => cb()),
     onChange: (cb) => (listeners.add(cb), () => listeners.delete(cb)),
     createSpace: (name) => store.createSpace(name),

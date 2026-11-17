@@ -85,6 +85,7 @@ Point it at a running dev or test ctrl with `CTRL_SOCKET`:
 CTRL_SOCKET="$HOME/Library/Application Support/ctrl-dev/ctrl.sock" node dist/cli/cli.cjs status --pretty
 npm run cli-docs   # regenerate docs/CLI-REFERENCE.md after changing src/shared/cli/commands.ts
 npm test           # unit tests (test/), well under a second
+npm run test:slow  # tests that run real git (test/slow/): the worktree pool, a few seconds
 ```
 
 ## Tests

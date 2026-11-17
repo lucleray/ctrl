@@ -1,79 +1,15 @@
-// The worktree pool (src/main/worktrees): pool sizing, and the service against throwaway git repos
-// (take, release, recycle, cleanup), all inside a temp folder.
-import * as esbuild from "esbuild"
+// Worktrees, the fast part: pool sizing (src/shared/worktrees.ts) and the `ctrl worktree` handlers over a
+// fake pool. The pool itself runs real git, so its tests are in test/slow (npm run test:slow).
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs"
-import { createRequire } from "node:module"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { after, before, describe, test } from "node:test"
+import { before, describe, test } from "node:test"
+import { load, tmpDir } from "./helpers.mjs"
 
-const tmp = realpathSync(mkdtempSync(join(tmpdir(), "ctrl-worktrees-test-")))
-let WorktreeService, poolTarget, simulateMisses, MINUTE, DAY, createHandlers
-
-const load = async (entry) => {
-  const outfile = join(tmp, entry.replace(/\W/g, "_") + ".cjs")
-  await esbuild.build({ entryPoints: [entry], outfile, bundle: true, platform: "node", format: "cjs", logLevel: "warning" })
-  return createRequire(import.meta.url)(outfile)
-}
+const tmp = tmpDir("ctrl-worktrees-test-")
+let createHandlers, poolTarget, simulateMisses, MINUTE, DAY
 
 before(async () => {
-  ;({ WorktreeService } = await load("src/main/worktrees/service.ts"))
-  ;({ poolTarget, simulateMisses, MINUTE, DAY } = await load("src/shared/worktrees.ts"))
-  ;({ createHandlers } = await load("src/main/cli-handlers.ts"))
+  ;[{ createHandlers }, { poolTarget, simulateMisses, MINUTE, DAY }] = await load(tmp, "src/main/cli-handlers.ts", "src/shared/worktrees.ts")
 })
-
-after(() => rmSync(tmp, { recursive: true, force: true }))
-
-const sh = (cwd, ...args) => execFileSync(args[0], args.slice(1), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
-
-let n = 0
-/** A repo with an origin, one commit on main, node_modules ignored. */
-const makeRepo = (name = `repo${++n}`) => {
-  const origin = join(tmp, `${name}-origin.git`)
-  const source = join(tmp, name)
-  mkdirSync(source)
-  sh(tmp, "git", "init", "--bare", "-b", "main", origin)
-  sh(source, "git", "init", "-b", "main")
-  sh(source, "git", "config", "user.email", "test@example.com")
-  sh(source, "git", "config", "user.name", "Test")
-  writeFileSync(join(source, ".gitignore"), "node_modules\n")
-  writeFileSync(join(source, "README.md"), "hello\n")
-  sh(source, "git", "add", ".")
-  sh(source, "git", "commit", "-m", "init")
-  sh(source, "git", "remote", "add", "origin", origin)
-  sh(source, "git", "push", "-u", "origin", "main")
-  return source
-}
-
-const SETUP = "mkdir -p node_modules && echo installed > node_modules/marker"
-
-/** A service on its own state file and folder, with sessions the test controls. */
-const makeService = (settings = {}) => {
-  const dir = mkdtempSync(join(tmp, "svc-"))
-  const sessions = new Map()
-  const changes = []
-  const service = new WorktreeService(join(dir, "worktrees.json"), join(dir, "worktrees"), {
-    settings: () => ({ root: null, poolAuto: true, cleanup: true, updateRepos: false, ...settings }),
-    sessionState: async (id) => sessions.get(id) ?? "active",
-    changed: (ids) => changes.push(...ids),
-  })
-  return { service, sessions, changes, dir }
-}
-
-const until = async (check, what, ms = 20000) => {
-  const end = Date.now() + ms
-  for (;;) {
-    const value = check()
-    if (value) return value
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`)
-    await new Promise((r) => setTimeout(r, 25))
-  }
-}
-
-const ready = (service, source) => service.all().filter((w) => w.repo === source && w.status === "ready")
-const settled = (service) => until(() => service.all().every((w) => ["ready", "attached"].includes(w.status)), "the pool to settle")
 
 describe("pool sizing", () => {
   test("a request finding the pool empty is a miss, and refills come back after the build time", () => {
@@ -99,335 +35,187 @@ describe("pool sizing", () => {
   })
 })
 
-describe("WorktreeService", () => {
-  test("up registers a new repo, builds a worktree for the session, then keeps one warm", async () => {
-    const source = makeRepo()
-    const { service, changes } = makeService()
-    await service.configure(source, { setup: SETUP })
-    const { worktree, cold } = await service.up(source, "ses_a")
-    assert.equal(cold, true)
-    assert.equal(worktree.status, "attached")
-    assert.equal(worktree.sessionID, "ses_a")
-    assert.equal(readFileSync(join(worktree.path, "node_modules/marker"), "utf8").trim(), "installed")
-    assert.equal(sh(worktree.path, "git", "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
-    assert.ok(changes.includes("ses_a"))
-    const repo = await service.repo(source)
-    assert.deepEqual([repo.baseBranch, repo.setup, repo.auto, repo.target], ["main", SETUP, true, 1])
+/** What the pool throws for "no such repo", "unsaved work"… (WorktreeError in src/main/worktrees/service.ts). */
+const poolError = (code, message, extra = {}) => Object.assign(new Error(message), { name: "WorktreeError", code, extra })
 
-    // One request in the last week: the pool keeps one warm, and the next request gets it right away.
-    await until(() => ready(service, source).length === 1, "a warm worktree")
-    const second = await service.up(source, "ses_b")
-    assert.equal(second.cold, false)
-    assert.notEqual(second.worktree.path, worktree.path)
-    assert.deepEqual(service.ofSession("ses_a").map((w) => w.id), [worktree.id])
-    const view = await service.repo(source)
-    assert.equal(view.usage.taken, 2)
-    assert.equal(view.usage.instant, 0.5)
-    await settled(service)
-    service.stop()
-  })
+const repoView = (label, extra = {}) => ({ source: `/src/${label}`, label, baseBranch: "main", setup: "npm ci", warm: null, target: 1, auto: true, ...extra })
 
-  test("a path inside the repo, one of its worktrees, or its name all mean the same repo", async () => {
-    const source = makeRepo("named")
-    mkdirSync(join(source, "packages/app"), { recursive: true })
-    const { service } = makeService()
-    const first = await service.up(join(source, "packages/app"), "ses_a")
-    const viaWorktree = await service.repo(first.worktree.path)
-    const viaName = await service.repo("named")
-    assert.equal(viaWorktree.source, source)
-    assert.equal(viaName.source, source)
-    await assert.rejects(service.repo("nope"), /No repo called/)
-    await assert.rejects(service.up(tmp, "ses_a"), /isn't a git repo/)
-    await settled(service)
-    service.stop()
-  })
+/** The pool as the handlers see it, in memory: worktrees are plain records, nothing touches git. */
+function fakePool() {
+  const worktrees = []
+  const calls = []
+  const pool = {
+    worktrees,
+    calls,
+    up: async (repo, sessionID, opts) => {
+      calls.push(["up", repo, sessionID, opts.skipSetup])
+      const id = `w${worktrees.length + 1}`
+      const wt = { id, repo: `/src/${repo}`, path: `/wt/${repo}/${id}`, status: "attached", sessionID, baseCommit: "abc123", warmedAt: Date.now(), attachedAt: Date.now(), since: 1 }
+      worktrees.push(wt)
+      return { worktree: wt, cold: worktrees.length === 1 }
+    },
+    all: () => worktrees,
+    ofSession: (id) => worktrees.filter((w) => w.sessionID === id),
+    name: (w) => w.repo.split("/").pop(),
+    describe: async (w) => ({ ...w, name: pool.name(w), branch: w.branch ?? null, commit: "abc1234" }),
+    find: (selector, cwd) => {
+      const wt = worktrees.find((w) => w.id === selector || w.path === (selector ?? cwd))
+      if (!wt) throw poolError("NOT_FOUND", `No worktree ${selector ?? cwd}`, { hint: "ctrl worktree list --all shows ids and paths" })
+      return wt
+    },
+    down: async (wt, { force }) => {
+      if (wt.dirty && !force) throw poolError("CONFLICT", `Worktree ${wt.id} has 1 uncommitted file (x.txt)`, { hint: "Commit and push first, or pass --force" })
+      worktrees.splice(worktrees.indexOf(wt), 1)
+      return { branch: wt.branch ?? null, forced: !!force && !!wt.dirty, rescueRef: null }
+    },
+    view: () => ({ root: "/wt", repos: [repoView("app")], jobs: { pool: { at: 1, summary: "1 warm" }, cleanup: { at: null, summary: null }, update: { at: null, summary: null } } }),
+    repo: async (token) => {
+      if (token !== "app") throw poolError("NOT_FOUND", `No repo called "${token}"`, { candidates: ["app"] })
+      return repoView("app")
+    },
+    configure: async (token, patch) => (calls.push(["configure", token, patch]), { repo: repoView(token, patch), changed: true }),
+    forget: async (token) => (calls.push(["forget", token]), { source: `/src/${token}`, removed: 1 }),
+    prewarm: async (token, count) => (calls.push(["prewarm", token, count]), repoView(token)),
+    cleanup: async ({ apply }) => (calls.push(["cleanup", apply]), { released: [], dropped: [], removed: ["/wt/app/stray"] }),
+    update: async () => "1 already up to date",
+  }
+  return pool
+}
 
-  test("down refuses unsaved work, and a released worktree comes back warm in a new folder", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    await service.configure(source, { setup: SETUP, warm: 1 })
-    const { worktree } = await service.up(source, "ses_a")
-    await settled(service)
-    const path = worktree.path
+function setup() {
+  const pool = fakePool()
+  const data = { assignments: {}, archived: {}, createdByAgent: {}, parents: {}, spaces: [], settings: { worktreeRoot: null, worktreePoolAuto: true, worktreeCleanup: true, worktreeUpdateRepos: false } }
+  const sessions = ["ses_a", "ses_b"].map((id) => ({ id, harness: "opencode", title: id, directory: "/", status: "idle", updated: 1 }))
+  const host = {
+    store: { data },
+    sessions: () => sessions,
+    currentSessionID: () => null,
+    termSession: () => undefined,
+    isLive: () => false,
+    worktrees: pool,
+    // ses_sub is a subagent of ses_a: ctrl doesn't list it.
+    rootSession: async (id) => (id === "ses_sub" ? "ses_a" : null),
+  }
+  const handlers = createHandlers(host)
+  const run = (command, args = {}, caller = { opencodeSessionID: "ses_a" }, closed = new Promise(() => {})) =>
+    handlers[command](args, { v: 1, command, args, caller }, { emit: () => {}, closed })
+  return { pool, data, run }
+}
 
-    writeFileSync(join(path, "scratch.txt"), "work in progress\n")
-    await assert.rejects(service.down(service.find(path)), /1 uncommitted file \(scratch.txt\)/)
-    sh(path, "git", "switch", "-c", "feature")
-    sh(path, "git", "add", ".")
-    sh(path, "git", "commit", "-m", "wip")
-    await assert.rejects(service.down(service.find(worktree.id)), /1 commit on feature that no remote has/)
-    sh(path, "git", "push", "-u", "origin", "feature")
-
-    // Found from a folder inside it, like an agent running `ctrl worktree down` there.
-    mkdirSync(join(path, "src"))
-    const res = await service.down(service.find(undefined, join(path, "src")))
-    assert.deepEqual(res, { branch: "feature", forced: false, rescueRef: null })
-    // The pool is full (one warm already), so the released one is removed: nothing left at its path.
-    await until(() => !existsSync(path), "the released worktree to go")
-    assert.equal(ready(service, source).length, 1)
-
-    // With room in the pool it's recycled instead: reset to main, under another id and folder.
-    const next = await service.up(source, "ses_b")
-    writeFileSync(join(next.worktree.path, "README.md"), "changed\n")
-    const forced = await service.down(next.worktree, { force: true })
-    assert.equal(forced.forced, true)
-    const [warm] = await until(() => (ready(service, source).length === 1 ? ready(service, source) : null), "the recycled worktree")
-    assert.notEqual(warm.path, next.worktree.path)
-    assert.equal(existsSync(next.worktree.path), false)
-    assert.equal(readFileSync(join(warm.path, "README.md"), "utf8"), "hello\n")
-    assert.equal(sh(source, "git", "worktree", "list").split("\n").length, 2)
-    service.stop()
-  })
-
-  test("a build goes on when its caller leaves, and the session's next up gets that worktree", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    await service.configure(source, { setup: `sleep 0.3 && ${SETUP}`, warm: 0 })
-    const gone = await service.up(source, "ses_a", { alive: () => false })
-    assert.equal(gone.worktree.undelivered, true)
-    const again = await service.up(source, "ses_a")
-    assert.equal(again.worktree.id, gone.worktree.id)
-    assert.equal(again.worktree.undelivered, undefined)
-    // Delivered now: the next one is a worktree of its own.
-    const other = await service.up(source, "ses_a")
-    assert.notEqual(other.worktree.id, gone.worktree.id)
-    assert.equal(service.ofSession("ses_a").length, 2)
-    service.stop()
-  })
-
-  test("a failing setup: warm builds are dropped and remembered, a session still gets its checkout", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    await service.configure(source, { setup: "echo nope >&2; exit 3", warm: 1 })
-    const { worktree } = await service.up(source, "ses_a")
-    assert.equal(worktree.setupFailed, true)
-    assert.ok(existsSync(join(worktree.path, "README.md")))
-    await until(() => service.all().length === 1, "the failed warm build to be dropped")
-    const repo = await service.repo(source)
-    assert.match(repo.error, /Setup failed: echo nope/)
-    assert.equal(repo.counts.ready, 0)
-    service.stop()
-  })
-
-  test("cleanup releases the worktrees of archived and deleted sessions and removes folders nothing tracks", async () => {
-    const source = makeRepo()
-    const { service, sessions, dir } = makeService()
-    await service.configure(source, { warm: 0 })
-    const kept = await service.up(source, "ses_active")
-    const archived = await service.up(source, "ses_archived")
-    const deleted = await service.up(source, "ses_deleted")
-    const unknown = await service.up(source, "ses_unknown")
-    writeFileSync(join(archived.worktree.path, "dirty.txt"), "never committed\n")
-    sessions.set("ses_archived", "archived").set("ses_deleted", "gone").set("ses_unknown", "unknown")
-
-    const slugDir = join(dir, "worktrees", readdirOnly(join(dir, "worktrees")))
-    const stray = join(slugDir, "stray")
-    const fresh = join(slugDir, "fresh")
-    mkdirSync(stray)
-    mkdirSync(fresh)
-    const old = new Date(Date.now() - 2 * 3600_000)
-    utimesSync(stray, old, old)
-
-    const preview = await service.cleanup({ apply: false })
-    assert.deepEqual(preview.released.map((r) => [r.sessionID, r.reason]).sort(), [
-      ["ses_archived", "session archived"],
-      ["ses_deleted", "session deleted"],
-    ])
-    assert.deepEqual(preview.removed, [stray])
-    assert.equal(service.ofSession("ses_archived").length, 1)
-
-    assert.match(await service.runJob("cleanup"), /released 2 worktrees.*removed 1 folder/)
-    await until(() => service.all().length === 2, "released worktrees to go")
-    assert.deepEqual(service.all().map((w) => w.sessionID).sort(), ["ses_active", "ses_unknown"])
-    assert.equal(existsSync(archived.worktree.path), false)
-    assert.equal(existsSync(deleted.worktree.path), false)
-    assert.equal(existsSync(stray), false)
-    assert.ok(existsSync(fresh))
-    assert.ok(existsSync(kept.worktree.path) && existsSync(unknown.worktree.path))
-    service.stop()
-  })
-
-  test("releasing a session keeps commits made on a detached HEAD under a rescue ref", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    await service.configure(source, { warm: 0 })
-    const { worktree } = await service.up(source, "ses_a")
-    writeFileSync(join(worktree.path, "new.txt"), "x\n")
-    sh(worktree.path, "git", "add", ".")
-    sh(worktree.path, "git", "commit", "-m", "detached work")
-    const commit = sh(worktree.path, "git", "rev-parse", "HEAD")
-    await service.releaseSession("ses_a")
-    await until(() => service.all().length === 0, "the worktree to go")
-    assert.match(sh(source, "git", "for-each-ref", "--format=%(objectname) %(refname)", "refs/ctrl/rescue"), new RegExp(`^${commit} refs/ctrl/rescue/${worktree.id}-`))
-    service.stop()
-  })
-
-  test("a repo added by hand gets a warm worktree right away, one an agent brings along only once it's used", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    const { repo, changed } = await service.configure(source, {})
-    assert.deepEqual([changed, repo.target, repo.usage.taken], [true, 1, 0])
-    await until(() => ready(service, source).length === 1, "a warm worktree")
-    assert.equal((await service.configure(source, {})).changed, false)
-    service.stop()
-  })
-
-  test("a folder another ctrl owns is never used: this one falls back to its own", async () => {
-    const shared = mkdtempSync(join(tmp, "shared-"))
-    const a = makeService({ root: shared })
-    const b = makeService({ root: shared })
-    assert.equal(a.service.root(), shared)
-    assert.equal(b.service.root(), join(b.dir, "worktrees"))
-  })
-
-  test("state survives a restart, and a build cut short by one is cleared away", async () => {
-    const source = makeRepo()
-    const first = makeService()
-    await first.service.configure(source, { warm: 0 })
-    const { worktree } = await first.service.up(source, "ses_a")
-    first.service.stop()
-    const file = join(first.dir, "worktrees.json")
-    const saved = JSON.parse(readFileSync(file, "utf8"))
-    const half = join(first.dir, "worktrees", "half")
-    mkdirSync(half)
-    saved.worktrees.push({ id: "half", repo: source, path: half, status: "building", sessionID: null, baseCommit: null, warmedAt: null, attachedAt: null, since: 0 })
-    writeFileSync(file, JSON.stringify(saved))
-
-    const service = new WorktreeService(file, join(first.dir, "worktrees"), {
-      settings: () => ({ root: null, poolAuto: true, cleanup: true, updateRepos: false }),
-      sessionState: async () => "active",
-      changed: () => {},
-    })
-    service.start()
-    await until(() => service.all().length === 1, "the half-built worktree to be cleared")
-    assert.equal(existsSync(half), false)
-    assert.deepEqual(service.ofSession("ses_a").map((w) => w.path), [worktree.path])
-    service.stop()
-  })
-
-  test("forget stops managing a repo once no session holds a worktree of it", async () => {
-    const source = makeRepo()
-    const { service } = makeService()
-    await service.configure(source, { warm: 1 })
-    const { worktree } = await service.up(source, "ses_a")
-    await settled(service)
-    await assert.rejects(service.forget(source), /1 session still holds a worktree/)
-    await service.releaseSession("ses_a")
-    await until(() => !existsSync(worktree.path), "the released worktree to go")
-    await settled(service)
-    const { removed } = await service.forget(source)
-    assert.equal(removed, 1)
-    assert.equal(service.view().repos.length, 0)
-    assert.equal(service.all().length, 0)
-    service.stop()
-  })
-})
+const fails = (promise, code, hint) =>
+  assert.rejects(promise, (err) => (assert.equal(err.code, code, err.message), hint && assert.match(err.extra.hint, hint), true))
 
 describe("worktree handlers", () => {
-  const setup = () => {
-    const { service, sessions } = makeService()
-    const data = { assignments: {}, archived: {}, createdByAgent: {}, parents: {}, spaces: [], settings: { worktreePoolAuto: true } }
-    const list = ["ses_a", "ses_b"].map((id) => ({ id, harness: "opencode", title: id, directory: "/", status: "idle", updated: 1 }))
-    const host = {
-      store: { data },
-      sessions: () => list,
-      currentSessionID: () => null,
-      termSession: () => undefined,
-      isLive: () => false,
-      worktrees: service,
-      // ses_sub is a subagent of ses_a: ctrl doesn't list it.
-      rootSession: async (id) => (id === "ses_sub" ? "ses_a" : null),
-    }
-    const handlers = createHandlers(host)
-    const call = (command, args = {}, caller = { opencodeSessionID: "ses_a" }) =>
-      handlers[command](args, { v: 1, command, args, caller }, { emit: () => {}, closed: new Promise(() => {}) })
-    return { service, sessions, data, call }
-  }
+  test("up takes a worktree for the calling session, and a subagent's goes to the session it works for", async () => {
+    const { pool, data, run } = setup()
+    const first = await run("worktree up", { repo: "app", "skip-setup": true })
+    assert.deepEqual([first.sessionID, first.repo, first.path, first.cold, first.branch, first.baseBranch], ["ses_a", "app", "/wt/app/w1", true, null, "main"])
+    assert.match(first.hint, /Detached at main as of just now: create a branch before committing/)
+    assert.match(first.hint, /Work in \/wt\/app\/w1/)
+    assert.deepEqual(pool.calls[0], ["up", "app", "ses_a", true])
 
-  test("up takes a worktree for the calling session, a subagent's goes to the session it works for", async () => {
-    const source = makeRepo()
-    const { service, data, call } = setup()
-    await service.configure(source, { warm: 0 })
-    const first = await call("worktree up", { repo: source })
-    assert.equal(first.sessionID, "ses_a")
-    assert.equal(first.cold, true)
-    assert.equal(first.branch, null)
-    assert.equal(first.baseBranch, "main")
-    assert.match(first.hint, /create a branch before committing/)
-    assert.ok(existsSync(join(first.path, "README.md")))
-
-    const second = await call("worktree up", { repo: source }, { opencodeSessionID: "ses_sub" })
+    const second = await run("worktree up", { repo: "app" }, { opencodeSessionID: "ses_sub" })
     assert.equal(second.sessionID, "ses_a")
-    assert.match(second.hint, new RegExp(`also holds 1 other worktree .*${first.id}`))
+    assert.match(second.hint, /also holds 1 other worktree of app \(w1\)/)
 
-    await assert.rejects(call("worktree up", { repo: source }, {}), (err) => err.code === "NO_SELF" && /--session/.test(err.extra.hint))
-    const forB = await call("worktree up", { repo: source, session: "ses_b" }, {})
-    assert.equal(forB.sessionID, "ses_b")
+    assert.equal((await run("worktree up", { repo: "app", session: "ses_b" }, {})).sessionID, "ses_b")
+    await fails(run("worktree up", { repo: "app" }, {}), "NO_SELF", /--session/)
+    await fails(run("worktree up", { repo: "app" }, { opencodeSessionID: "ses_gone" }), "NOT_FOUND")
     data.archived.ses_b = 1
-    await assert.rejects(call("worktree up", { repo: source, session: "ses_b" }), (err) => err.code === "CONFLICT")
+    await fails(run("worktree up", { repo: "app", session: "ses_b" }), "CONFLICT", /session unarchive ses_b/)
 
-    const session = await call("session get", { session: "ses_a" })
-    assert.deepEqual(session.worktrees.map((w) => w.path).sort(), [first.path, second.path].sort())
-    service.stop()
+    const session = await run("session get", { session: "ses_a" })
+    assert.deepEqual(session.worktrees, [
+      { id: "w1", repo: "app", path: "/wt/app/w1" },
+      { id: "w2", repo: "app", path: "/wt/app/w2" },
+    ])
   })
 
-  test("list shows the session's worktrees by default, down releases the one you're in", async () => {
-    const source = makeRepo()
-    const { service, call } = setup()
-    await service.configure(source, { warm: 1, name: "app" })
-    const mine = await call("worktree up", { repo: "app" })
-    const theirs = await call("worktree up", { repo: "app", session: "ses_b" })
-    await settled(service)
+  test("up gives up after its timeout or when the caller leaves, and tells the pool nobody is waiting", async () => {
+    const { pool, run } = setup()
+    let alive
+    pool.up = (_repo, _session, opts) => ((alive = opts.alive), new Promise(() => {}))
+    await fails(run("worktree up", { repo: "app", timeout: 5 }), "TIMEOUT", /run the same command again/)
+    assert.equal(alive(), false)
 
-    const listed = await call("worktree list")
-    assert.equal(listed.scope, "session")
-    assert.deepEqual(listed.items.map((w) => w.id), [mine.id])
-    const all = await call("worktree list", { all: true })
-    assert.equal(all.scope, "all")
-    assert.deepEqual(all.items.map((w) => w.status).sort(), ["attached", "attached", "ready"])
-    const outside = await call("worktree list", {}, {})
-    assert.equal(outside.scope, "all")
-
-    sh(mine.path, "git", "switch", "-c", "feature")
-    assert.equal((await call("worktree list", { repo: "app" })).items[0].branch, "feature")
-    writeFileSync(join(mine.path, "x.txt"), "x\n")
-    await assert.rejects(call("worktree down", {}, { opencodeSessionID: "ses_a", cwd: mine.path }), (err) => err.code === "CONFLICT" && /--force/.test(err.extra.hint))
-    // The checkout worktrees come from is on main with nothing to pull.
-    const updated = await call("worktree update")
-    assert.equal(updated.summary, "1 already up to date")
-    assert.deepEqual(updated.repos.map((r) => [r.repo, r.result]), [["app", "Up to date"]])
-    const down = await call("worktree down", { force: true }, { opencodeSessionID: "ses_a", cwd: mine.path })
-    assert.deepEqual([down.id, down.released, down.forced, down.branch], [mine.id, true, true, "feature"])
-    assert.equal((await call("worktree down", { worktree: theirs.path })).id, theirs.id)
-    await assert.rejects(call("worktree down", { worktree: "nope" }), (err) => err.code === "NOT_FOUND")
-    await settled(service)
-    service.stop()
+    let left, building, started
+    const closed = new Promise((r) => (left = r))
+    const asked = new Promise((r) => (started = r))
+    pool.up = (_repo, _session, opts) => ((alive = opts.alive), started(), new Promise((r) => (building = r)))
+    const call = run("worktree up", { repo: "app", timeout: 2000 }, { opencodeSessionID: "ses_a" }, closed)
+    await asked
+    assert.equal(alive(), true)
+    left()
+    await closed
+    assert.equal(alive(), false)
+    building({ worktree: { id: "w1", repo: "/src/app", path: "/wt/app/w1", status: "attached", sessionID: "ses_a" }, cold: true })
+    await call
   })
 
-  test("config shows every repo, or registers and changes one", async () => {
-    const source = makeRepo()
-    const { service, call } = setup()
-    const added = await call("worktree config", { repo: source, name: "lib", warm: "2", setup: SETUP })
-    assert.deepEqual([added.label, added.warm, added.target, added.auto, added.setup, added.changed], ["lib", 2, 2, false, SETUP, true])
-    await until(() => ready(service, source).length === 2, "two warm worktrees")
-    const auto = await call("worktree config", { repo: "lib", warm: "auto", setup: "" })
-    assert.deepEqual([auto.warm, auto.auto, auto.setup], [null, true, null])
-    await assert.rejects(call("worktree config", { repo: "lib", warm: "many" }), (err) => err.code === "USAGE")
-    await assert.rejects(call("worktree config", { warm: "2" }), (err) => err.code === "USAGE")
-    const overview = await call("worktree config")
-    assert.deepEqual(overview.repos.map((r) => r.label), ["lib"])
-    assert.equal(overview.settings.worktreePoolAuto, true)
-    assert.equal(overview.root, service.root())
-    const preview = await call("worktree cleanup")
-    assert.deepEqual([preview.applied, preview.released, preview.removed], [false, [], []])
-    await settled(service)
-    assert.equal((await call("worktree config", { repo: "lib", forget: true })).removed, 2)
-    service.stop()
+  test("list shows the session's worktrees by default, everything with --all or outside a session", async () => {
+    const { pool, run } = setup()
+    await run("worktree up", { repo: "app" })
+    await run("worktree up", { repo: "app", session: "ses_b" })
+    pool.worktrees.push({ id: "warm", repo: "/src/app", path: "/wt/app/warm", status: "ready", sessionID: null })
+
+    const mine = await run("worktree list")
+    assert.deepEqual([mine.scope, mine.items.map((w) => w.id), mine.total], ["session", ["w1"], 1])
+    const all = await run("worktree list", { all: true })
+    assert.deepEqual([all.scope, all.items.map((w) => w.status)], ["all", ["attached", "attached", "ready"]])
+    assert.equal((await run("worktree list", {}, {})).scope, "all")
+    assert.deepEqual((await run("worktree list", { session: "ses_b" }, {})).items.map((w) => w.id), ["w2"])
+    assert.deepEqual((await run("worktree list", { all: true, status: ["ready"], repo: "app" })).items.map((w) => w.id), ["warm"])
+    await fails(run("worktree list", { repo: "nope" }), "NOT_FOUND")
+  })
+
+  test("down releases by id, path or the folder you're in, and passes the pool's refusal on with its hint", async () => {
+    const { pool, run } = setup()
+    const a = await run("worktree up", { repo: "app" })
+    const b = await run("worktree up", { repo: "app" })
+    pool.worktrees[0].dirty = true
+    pool.worktrees[0].branch = "feature"
+    await fails(run("worktree down", {}, { cwd: a.path }), "CONFLICT", /--force/)
+    assert.deepEqual(await run("worktree down", { force: true }, { cwd: a.path }), {
+      id: a.id,
+      repo: "app",
+      path: a.path,
+      released: true,
+      branch: "feature",
+      forced: true,
+      rescueRef: null,
+    })
+    assert.equal((await run("worktree down", { worktree: b.id })).forced, false)
+    await fails(run("worktree down", { worktree: "nope" }), "NOT_FOUND", /worktree list --all/)
+  })
+
+  test("config shows everything, adds or changes a repo, and forgets one", async () => {
+    const { pool, run } = setup()
+    const overview = await run("worktree config")
+    assert.deepEqual(Object.keys(overview), ["root", "settings", "jobs", "repos"])
+    assert.deepEqual(overview.settings, { worktreeRoot: null, worktreePoolAuto: true, worktreeCleanup: true, worktreeUpdateRepos: false })
+    assert.deepEqual(overview.repos.map((r) => r.label), ["app"])
+
+    const changed = await run("worktree config", { repo: "app", name: "", base: "dev", setup: "", warm: "3", "max-total": 10 })
+    assert.deepEqual(pool.calls.at(-1), ["configure", "app", { name: null, baseBranch: "dev", setup: null, warm: 3, maxTotal: 10 }])
+    assert.equal(changed.changed, true)
+    await run("worktree config", { repo: "app", warm: "auto" })
+    assert.deepEqual(pool.calls.at(-1), ["configure", "app", { warm: null }])
+    await run("worktree config", { repo: "/src/new" })
+    assert.deepEqual(pool.calls.at(-1), ["configure", "/src/new", {}])
+
+    await fails(run("worktree config", { repo: "app", warm: "many" }), "USAGE")
+    await fails(run("worktree config", { warm: "2" }), "USAGE")
+    await fails(run("worktree config", { repo: "app", forget: true, warm: "2" }), "USAGE")
+    assert.deepEqual(await run("worktree config", { repo: "app", forget: true }), { source: "/src/app", removed: 1, changed: true })
+  })
+
+  test("prewarm, cleanup and update run the pool's jobs", async () => {
+    const { pool, run } = setup()
+    assert.equal((await run("worktree prewarm", { repo: "app", count: 2 })).label, "app")
+    assert.deepEqual(pool.calls.at(-1), ["prewarm", "app", 2])
+    assert.deepEqual(await run("worktree cleanup"), { released: [], dropped: [], removed: ["/wt/app/stray"], applied: false })
+    assert.equal((await run("worktree cleanup", { apply: true })).applied, true)
+    assert.deepEqual(pool.calls.at(-1), ["cleanup", true])
+    assert.deepEqual(await run("worktree update"), { summary: "1 already up to date", repos: [] })
   })
 })
-
-function readdirOnly(dir) {
-  const entries = execFileSync("ls", [dir], { encoding: "utf8" }).trim().split("\n").filter(Boolean)
-  assert.equal(entries.length, 1, `expected one folder in ${dir}, got ${entries}`)
-  return entries[0]
-}

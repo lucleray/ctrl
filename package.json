@@ -11,6 +11,7 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-timeout=5000 test/*.test.mjs",
+    "test:slow": "node --test --test-timeout=60000 test/slow/*.test.mjs",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true; node scripts/brand-electron.mjs",
     "icon": "node scripts/icon.mjs",
     "brand": "node scripts/brand-electron.mjs",
