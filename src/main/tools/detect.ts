@@ -19,18 +19,31 @@ export type DetectSources = {
   path?: string
 }
 
-/** fx keeps profile servers in ~/.fx/mcp.json, in the usual mcpServers shape. */
+/**
+ * fx keeps profile servers in ~/.fx/mcp.json, in the usual mcpServers shape (what `fx mcp add` writes) or in
+ * opencode's `mcp` shape (what `kit setup` writes): fx reads both.
+ */
 export const fxMcpConfigs = (fxHome: string): McpServerConfig[] => {
-  let raw: { mcpServers?: Record<string, Record<string, unknown>> }
+  let raw: { mcpServers?: Record<string, Record<string, unknown>>; mcp?: Record<string, Record<string, unknown>> }
   try {
     raw = JSON.parse(readFileSync(join(fxHome, "mcp.json"), "utf8"))
   } catch {
     return []
   }
   const out: McpServerConfig[] = []
+  const strings = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, string>) : undefined)
+  for (const [name, s] of Object.entries(raw.mcp ?? {})) {
+    if (!s || typeof s !== "object" || s.enabled === false) continue
+    if (s.type === "remote" && typeof s.url === "string") {
+      const headers = strings(s.headers)
+      out.push({ name, type: "remote", url: s.url, ...(headers ? { headers } : {}) })
+    } else if (Array.isArray(s.command) && s.command.length && s.command.every((c) => typeof c === "string")) {
+      const env = strings(s.environment)
+      out.push({ name, type: "local", command: s.command, ...(env ? { env } : {}) })
+    }
+  }
   for (const [name, s] of Object.entries(raw.mcpServers ?? {})) {
-    if (!s || typeof s !== "object") continue
-    const strings = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, string>) : undefined)
+    if (!s || typeof s !== "object" || out.some((o) => o.name === name)) continue
     if (typeof s.url === "string") {
       const headers = strings(s.headers)
       out.push({ name, type: "remote", url: s.url, ...(headers ? { headers } : {}) })

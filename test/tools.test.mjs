@@ -109,6 +109,27 @@ sso_start_url = https://c
     )
   })
 
+  test("reads fx's mcp.json in opencode's mcp shape too (what kit setup writes)", () => {
+    const fxHome = join(tmp, "fx-home-mcp")
+    mkdirSync(fxHome, { recursive: true })
+    writeFileSync(
+      join(fxHome, "mcp.json"),
+      JSON.stringify({
+        mcp: {
+          kit: { type: "local", command: ["kit", "mcp"], enabled: true, environment: { V: "1" } },
+          off: { type: "remote", url: "https://off", enabled: false },
+          r: { type: "remote", url: "https://r", headers: { H: "x" } },
+        },
+        mcpServers: { kit: { url: "https://dup" }, other: { url: "https://o" } },
+      }),
+    )
+    assert.deepEqual(fxMcpConfigs(fxHome), [
+      { name: "kit", type: "local", command: ["kit", "mcp"], env: { V: "1" } },
+      { name: "r", type: "remote", url: "https://r", headers: { H: "x" } },
+      { name: "other", type: "remote", url: "https://o" },
+    ])
+  })
+
   test("merges MCP servers across harnesses by name, finds CLIs on PATH only", async () => {
     const fxHome = join(tmp, "fx-home")
     mkdirSync(fxHome, { recursive: true })
