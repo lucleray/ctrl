@@ -2905,6 +2905,7 @@ body.resizing .terminal-pane.active {
 }
 
 .chat-list {
+  container-type: inline-size;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3036,13 +3037,42 @@ body.resizing .terminal-pane.active {
 }
 
 /* As wide as its content up to the chat's width; past that, it scrolls sideways */
-.chat-table {
+.chat-table-wrap {
   margin: 0 0 10px;
+}
+
+.chat-table {
   width: fit-content;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* In a reply, a wide table spills into the empty space on both sides of the chat column (up to 1400px):
+   the wrapper spans that space, with a gutter on each side. A table that fits stays on the column's left
+   edge (only the right gutter grows); a wider one eats into both gutters equally, so it stays centered on
+   the column, and scrolls once it fills the whole width. */
+.chat-msg.assistant > .chat-md > .chat-table-wrap {
+  /* 780px: .chat-column's max-width. No percentage, so the pseudo-elements' flex-basis reads the same length */
+  --gutter: max(0px, (min(100cqw, 1400px) - min(100cqw, 780px)) / 2);
+  display: flex;
+  margin-inline: calc(-1 * var(--gutter));
+}
+
+.chat-msg.assistant > .chat-md > .chat-table-wrap::before,
+.chat-msg.assistant > .chat-md > .chat-table-wrap::after {
+  content: "";
+  flex: 0 1 var(--gutter);
+}
+
+.chat-msg.assistant > .chat-md > .chat-table-wrap::after {
+  flex-grow: 1;
+}
+
+.chat-msg.assistant > .chat-md > .chat-table-wrap > .chat-table {
+  flex: none;
+  width: max-content;
 }
 
 .chat-table table {
