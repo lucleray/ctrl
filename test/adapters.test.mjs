@@ -17,22 +17,22 @@ const CASES = {
   "https://github.com/vercel/next.js/issues/9": ["github-issue:vercel/next.js#9", "https://github.com/vercel/next.js/issues/9"],
   "https://github.com/vercel/next.js/commit/abc123def": ["github-commit:vercel/next.js@abc123def", "https://github.com/vercel/next.js/commit/abc123def"],
   "https://github.com/vercel/next.js/tree/canary/packages": ["github-repo:vercel/next.js", "https://github.com/vercel/next.js"],
-  "https://linear.app/vercel/issue/OBS-123/some-title": ["linear-issue:vercel/OBS-123", "https://linear.app/vercel/issue/OBS-123"],
-  "https://app.notion.com/p/vercel/agent-docs-381e06b059c480d2b767c878ff0e1820": [
-    "notion-page:381e06b059c480d2b767c878ff0e1820",
-    "https://www.notion.so/381e06b059c480d2b767c878ff0e1820",
+  "https://linear.app/acme/issue/DX-123/some-title": ["linear-issue:acme/DX-123", "https://linear.app/acme/issue/DX-123"],
+  "https://app.notion.com/p/acme/team-docs-3f2a9c1e8b7d4e6fa1c2b3d4e5f60718": [
+    "notion-page:3f2a9c1e8b7d4e6fa1c2b3d4e5f60718",
+    "https://www.notion.so/3f2a9c1e8b7d4e6fa1c2b3d4e5f60718",
   ],
-  "https://www.notion.so/vercel/My-Page-381e06b059c480d2b767c878ff0e1820": [
-    "notion-page:381e06b059c480d2b767c878ff0e1820",
-    "https://www.notion.so/381e06b059c480d2b767c878ff0e1820",
+  "https://www.notion.so/acme/My-Page-3f2a9c1e8b7d4e6fa1c2b3d4e5f60718": [
+    "notion-page:3f2a9c1e8b7d4e6fa1c2b3d4e5f60718",
+    "https://www.notion.so/3f2a9c1e8b7d4e6fa1c2b3d4e5f60718",
   ],
-  "https://vercel.enterprise.slack.com/archives/C0BQ9MRSSPJ": ["slack-channel:C0BQ9MRSSPJ", "https://vercel.slack.com/archives/C0BQ9MRSSPJ"],
-  "https://vercel.enterprise.slack.com/archives/C0BQ9MRSSPJ/p1700000000123456": [
-    "slack-thread:C0BQ9MRSSPJ/1700000000.123456",
-    "https://vercel.slack.com/archives/C0BQ9MRSSPJ/p1700000000123456",
+  "https://acme.enterprise.slack.com/archives/C07DEVTOOLS": ["slack-channel:C07DEVTOOLS", "https://acme.slack.com/archives/C07DEVTOOLS"],
+  "https://acme.enterprise.slack.com/archives/C07DEVTOOLS/p1700000000123456": [
+    "slack-thread:C07DEVTOOLS/1700000000.123456",
+    "https://acme.slack.com/archives/C07DEVTOOLS/p1700000000123456",
   ],
-  "https://vercel.com/vercel/front/deployments": ["vercel-project:vercel/front", "https://vercel.com/vercel/front"],
-  "https://front-abc123-vercel.vercel.app": ["vercel-deployment:front-abc123-vercel.vercel.app", "https://front-abc123-vercel.vercel.app"],
+  "https://vercel.com/acme/web/deployments": ["vercel-project:acme/web", "https://vercel.com/acme/web"],
+  "https://web-abc123-acme.vercel.app": ["vercel-deployment:web-abc123-acme.vercel.app", "https://web-abc123-acme.vercel.app"],
   "ctrl://session/ses_abc?title=Hi": ["session:ses_abc", "ctrl://session/ses_abc"],
 }
 
@@ -47,7 +47,7 @@ describe("parseResourceUrl", () => {
   })
 
   test("titles come from the URL's slug, without fetching", () => {
-    assert.equal(parseResourceUrl("https://linear.app/vercel/issue/OBS-1/fix-the-thing").data.title, "Fix the thing")
+    assert.equal(parseResourceUrl("https://linear.app/acme/issue/DX-1/fix-the-thing").data.title, "Fix the thing")
     assert.equal(parseResourceUrl("ctrl://session/ses_a?title=Hello").data.title, "Hello")
   })
 
@@ -61,19 +61,19 @@ describe("extractResources", () => {
   test("finds session mentions and URLs once each, without trailing punctuation", () => {
     const text = [
       "see @session[My (one)](ses_abc1) and https://github.com/vercel/next.js/pull/1.",
-      "again (https://github.com/vercel/next.js/pull/1/files) and `https://linear.app/vercel/issue/OBS-1`",
+      "again (https://github.com/vercel/next.js/pull/1/files) and `https://linear.app/acme/issue/DX-1`",
       "fx one: session[Other](fx:abc_1-2), nothing at https://example.com",
     ].join("\n")
     const found = extractResources(text)
     assert.deepEqual(
       found.map((r) => r.key),
-      ["session:ses_abc1", "session:fx:abc_1-2", "github-pr:vercel/next.js#1", "linear-issue:vercel/OBS-1"],
+      ["session:ses_abc1", "session:fx:abc_1-2", "github-pr:vercel/next.js#1", "linear-issue:acme/DX-1"],
     )
     assert.equal(found[0].data.title, "My (one)")
   })
 
   test("later mentions of the same resource add what the URL says", () => {
-    const [issue] = extractResources("https://linear.app/vercel/issue/OBS-1 then https://linear.app/vercel/issue/OBS-1/a-title")
+    const [issue] = extractResources("https://linear.app/acme/issue/DX-1 then https://linear.app/acme/issue/DX-1/a-title")
     assert.equal(issue.data.title, "A title")
   })
 })
@@ -91,7 +91,7 @@ describe("ranking and the Board", () => {
 
   test("PR stages: your turn, someone else's, moving, done", () => {
     const now = Date.now()
-    const at = (fields, me = "luc") => boardPlacement(pr({ author: "luc", state: "open", ...fields }), { me, now })
+    const at = (fields, me = "alice") => boardPlacement(pr({ author: "alice", state: "open", ...fields }), { me, now })
     assert.deepEqual(at({ state: "merged" }), { stage: "done", reason: "Merged" })
     assert.equal(at({ ci: "failure" }).stage, "you")
     assert.equal(at({ mergeable: "conflicting" }).reason, "Merge conflicts")

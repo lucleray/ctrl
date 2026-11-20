@@ -145,7 +145,7 @@ export function describeType(t: SettingType): string {
   }
 }
 
-/** "vercel/anthropic/claude-x#high" → {providerID:"vercel", id:"anthropic/claude-x", variant:"high"}; fx has no provider part. */
+/** "openrouter/anthropic/claude-x#high" → {providerID:"openrouter", id:"anthropic/claude-x", variant:"high"}; fx has no provider part. */
 export function parseModel(value: string, harness: "opencode" | "fx"): ModelRef | undefined {
   const [ref, variant] = value.split("#", 2)
   if (harness === "fx") return ref ? { providerID: "fx", id: ref, ...(variant ? { variant } : {}) } : undefined

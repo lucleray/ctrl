@@ -82,17 +82,17 @@ describe("CliTools", () => {
 describe("detection", () => {
   test("AWS: one check per SSO session (profile named like it, else its first), plus old-style SSO profiles", () => {
     const checks = awsChecks(`
-[profile vc-read]
-sso_session = vercel
-[profile vercel]
-sso_session = vercel
+[profile work-read]
+sso_session = work
+[profile work]
+sso_session = work
 [profile dev admin]
 sso_session = iso
 [profile static]
 region = us-east-1
 [profile legacy]
 sso_start_url = https://x.awsapps.com/start
-[sso-session vercel]
+[sso-session work]
 sso_start_url = https://a
 [sso-session iso]
 sso_start_url = https://b
@@ -102,29 +102,29 @@ sso_start_url = https://c
     assert.deepEqual(
       checks.map((c) => [c.key, c.check, c.fix.command]),
       [
-        ["aws:sso:vercel", "aws sts get-caller-identity --profile vercel", "aws sso login --sso-session vercel"],
+        ["aws:sso:work", "aws sts get-caller-identity --profile work", "aws sso login --sso-session work"],
         ["aws:sso:iso", "aws sts get-caller-identity --profile 'dev admin'", "aws sso login --sso-session iso"],
         ["aws:profile:legacy", "aws sts get-caller-identity --profile legacy", "aws sso login --profile legacy"],
       ],
     )
   })
 
-  test("reads fx's mcp.json in opencode's mcp shape too (what kit setup writes)", () => {
+  test("reads fx's mcp.json in opencode's mcp shape too (what some MCP installers write)", () => {
     const fxHome = join(tmp, "fx-home-mcp")
     mkdirSync(fxHome, { recursive: true })
     writeFileSync(
       join(fxHome, "mcp.json"),
       JSON.stringify({
         mcp: {
-          kit: { type: "local", command: ["kit", "mcp"], enabled: true, environment: { V: "1" } },
+          acme: { type: "local", command: ["acme", "mcp"], enabled: true, environment: { V: "1" } },
           off: { type: "remote", url: "https://off", enabled: false },
           r: { type: "remote", url: "https://r", headers: { H: "x" } },
         },
-        mcpServers: { kit: { url: "https://dup" }, other: { url: "https://o" } },
+        mcpServers: { acme: { url: "https://dup" }, other: { url: "https://o" } },
       }),
     )
     assert.deepEqual(fxMcpConfigs(fxHome), [
-      { name: "kit", type: "local", command: ["kit", "mcp"], env: { V: "1" } },
+      { name: "acme", type: "local", command: ["acme", "mcp"], env: { V: "1" } },
       { name: "r", type: "remote", url: "https://r", headers: { H: "x" } },
       { name: "other", type: "remote", url: "https://o" },
     ])
@@ -284,21 +284,21 @@ describe("tools handlers", () => {
     const { host, data, checked } = fakeHost()
     const h = createHandlers(host)
     const added = await call(h, "tools add", {
-      name: "AWS (vercel)",
-      check: "aws sts get-caller-identity --profile vercel",
-      "fix-command": "aws sso login --profile vercel",
+      name: "AWS (work)",
+      check: "aws sts get-caller-identity --profile work",
+      "fix-command": "aws sso login --profile work",
       label: "Log in",
     })
-    assert.equal(added.id, "cli:aws-vercel")
-    assert.deepEqual(data.cli[0].fix, { kind: "command", command: "aws sso login --profile vercel" })
-    await assert.rejects(call(h, "tools add", { name: "x", check: "x", id: "aws-vercel", "fix-session": true }), { code: "CONFLICT" })
+    assert.equal(added.id, "cli:aws-work")
+    assert.deepEqual(data.cli[0].fix, { kind: "command", command: "aws sso login --profile work" })
+    await assert.rejects(call(h, "tools add", { name: "x", check: "x", id: "aws-work", "fix-session": true }), { code: "CONFLICT" })
     await assert.rejects(call(h, "tools add", { name: "x", check: "x" }), { code: "USAGE" })
-    assert.deepEqual(call(h, "tools list", {}).items.map((t) => t.id), ["mcp:linear", "cli:aws-vercel"])
-    await call(h, "tools check", { id: ["aws-vercel", "linear"] })
-    assert.deepEqual(checked.slice(-2), ["mcp:linear", ["aws-vercel"]])
+    assert.deepEqual(call(h, "tools list", {}).items.map((t) => t.id), ["mcp:linear", "cli:aws-work"])
+    await call(h, "tools check", { id: ["aws-work", "linear"] })
+    assert.deepEqual(checked.slice(-2), ["mcp:linear", ["aws-work"]])
     const scan = await call(h, "tools scan", { apply: true, skip: ["gh"] })
     assert.deepEqual(checked.at(-1), ["apply", ["mcp:linear"]])
     assert.deepEqual(scan.items.map((i) => i.watched), [true, false])
-    assert.deepEqual(call(h, "tools remove", { id: "aws-vercel" }), { id: "cli:aws-vercel", changed: true })
+    assert.deepEqual(call(h, "tools remove", { id: "aws-work" }), { id: "cli:aws-work", changed: true })
   })
 })

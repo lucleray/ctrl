@@ -445,7 +445,7 @@ export const COMMANDS: CommandSpec[] = [
     args: [space(), ...spaceSettingFlags],
     returns: "Space & {changed}",
     harness: ["Instructions apply to opencode sessions only."],
-    examples: ['ctrl space set name:front --directory ~/w/vercel/front --harness fx --fx-model "anthropic/claude-x#high"'],
+    examples: ['ctrl space set name:front --directory ~/code/acme-app --harness fx --fx-model "anthropic/claude-x#high"'],
     mutates: true,
   },
   {
@@ -507,7 +507,7 @@ export const COMMANDS: CommandSpec[] = [
       { name: "value", type: "string", positional: true, required: true, placeholder: "<value>", description: "New value" },
     ],
     returns: "{key, value, changed}",
-    examples: ["ctrl settings set appearance dark", 'ctrl settings set defaultModel "vercel/anthropic/claude-x#high"'],
+    examples: ["ctrl settings set appearance dark", 'ctrl settings set defaultModel "openrouter/anthropic/claude-x#high"'],
     mutates: true,
   },
   {
@@ -671,7 +671,7 @@ export const COMMANDS: CommandSpec[] = [
     ],
     args: [{ name: "resource", type: "string", positional: true, required: true, list: true, placeholder: "<id|url>...", description: "Resource ids (as `resources list` returns them) or URLs" }],
     returns: "{archived:[id], changed, undo?}",
-    examples: ["ctrl resources archive github-pr:vvo/review-factory#51", "ctrl resources archive https://github.com/vvo/review-factory/pull/51"],
+    examples: ["ctrl resources archive github-pr:acme/app#51", "ctrl resources archive https://github.com/acme/app/pull/51"],
     mutates: true,
   },
   {
@@ -724,7 +724,7 @@ export const COMMANDS: CommandSpec[] = [
       { name: "id", type: "string", list: true, positional: true, placeholder: "[<id>...]", description: "Tool ids (`cli:aws`, or just `aws`); none = every CLI" },
     ],
     returns: "{items:[Tool]}",
-    examples: ["ctrl tools check", "ctrl tools check aws-vercel"],
+    examples: ["ctrl tools check", "ctrl tools check aws-work"],
   },
   {
     name: "tools scan",
@@ -751,7 +751,7 @@ export const COMMANDS: CommandSpec[] = [
       "Saved in ~/.config/ctrl/tools.json; the first check runs right away. Needs a tools list (`tools scan --apply`).",
     ],
     args: [
-      { name: "name", type: "string", required: true, description: "Shown in Settings and toasts, e.g. \"AWS (vercel)\"" },
+      { name: "name", type: "string", required: true, description: "Shown in Settings and toasts, e.g. \"AWS (work)\"" },
       { name: "check", type: "string", required: true, description: "Shell command that exits 0 while the CLI works and is logged in" },
       { name: "fix-command", type: "string", description: "Fix: run this shell command, then check again" },
       { name: "fix-url", type: "string", description: "Fix: open this http(s) page" },
@@ -763,7 +763,7 @@ export const COMMANDS: CommandSpec[] = [
     ],
     returns: "{id, item: Tool}",
     examples: [
-      'ctrl tools add --name "AWS (vercel)" --check "aws sts get-caller-identity --profile vercel" --fix-command "aws sso login --profile vercel" --label "Log in"',
+      'ctrl tools add --name "AWS (work)" --check "aws sts get-caller-identity --profile work" --fix-command "aws sso login --profile work" --label "Log in"',
       'ctrl tools add --name "GitHub CLI" --check "gh auth status" --fix-session',
     ],
     mutates: true,

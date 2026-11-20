@@ -405,7 +405,7 @@ export type ResourceMeta = {
   details?: string[]
   /**
    * The same details as plain values, for agents (`ctrl resources list`): e.g. a PR's
-   * {state:"open", draft:false, ci:"pending", review:"approved", author:"luc"}. Keys per type in docs/CLI.md.
+   * {state:"open", draft:false, ci:"pending", review:"approved", author:"alice"}. Keys per type in docs/CLI.md.
    */
   fields?: Record<string, string | number | boolean | null>
   /** Not found, or not visible to the CLI's account */
@@ -502,7 +502,7 @@ export type ToolFix =
 /** A CLI whose access ctrl watches (Settings → Tools), e.g. an AWS SSO profile that expires. */
 export type CliToolConfig = {
   id: string
-  /** Detection key, e.g. "aws:sso:vercel"; unset = added by hand, never touched by a scan */
+  /** Detection key, e.g. "aws:sso:work"; unset = added by hand, never touched by a scan */
   key?: string
   name: string
   /** Shell command that exits 0 while the CLI works and is logged in */
@@ -529,7 +529,7 @@ export type DetectedTool = {
   key: string
   kind: "mcp" | "cli"
   name: string
-  /** e.g. "opencode, fx" or "aws sts get-caller-identity --profile vercel" */
+  /** e.g. "opencode, fx" or "aws sts get-caller-identity --profile work" */
   description: string
   watched: boolean
 }

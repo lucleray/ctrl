@@ -71,7 +71,7 @@ export type RemoteBoardCard = {
   tone?: Tone
   chips: { text: string; tone: Tone }[]
   stage: Stage
-  /** Why it's in its column: "CI failed", "Waiting on @vvo"… */
+  /** Why it's in its column: "CI failed", "Waiting on @alice"… */
   reason: string
   last: number
   /** Spaces of the sessions mentioning it (id null: no space) */

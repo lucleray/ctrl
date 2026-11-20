@@ -159,7 +159,7 @@ where it lives.
   ⌥-click shows all except it. Hidden ones are struck through, new spaces show up unless you picked "only",
   the filter is saved across restarts (localStorage). Rows combine, each chip counts the open cards it would show; cards name
   their spaces when the filter mixes them, as four columns by whose turn it is: **Needs you**, **Waiting on others**, **In progress**, **Done** (faded, 10 at
-  a time). Each card says why it's there (CI failed, Changes requested, Waiting on @vvo, Approved, ready to
+  a time). Each card says why it's there (CI failed, Changes requested, Waiting on @alice, Approved, ready to
   merge…) and links back to up to two sessions that mention it. Click opens the link, a session chip opens the
   session, Esc closes (`src/renderer/Board.tsx`)
 - Each link type decides its column with `stage()` (`src/shared/adapters/`). PRs compare their author and
@@ -343,7 +343,7 @@ where it lives.
   on Settings → Tools
   - Scan (onboarding's second step, Settings → Tools → Scan, or Scan again at the top of the section, `ctrl tools scan`): finds MCP servers in
     opencode's and fx's configs (`~/.fx/mcp.json` in either its `mcpServers` shape or the opencode-style `mcp`
-    shape `kit setup` writes), AWS SSO sessions (one check per session, from `~/.aws/config`) and gh, vercel, pup,
+    shape some MCP installers write), AWS SSO sessions (one check per session, from `~/.aws/config`) and gh, vercel, pup,
     gcloud on PATH. Shows a summary with everything checked, Customize to uncheck. Stateless: it finds and checks
     the same things every time; unchecked ones stop being watched, CLIs added by hand are never touched
   - Users onboarded before tools existed get one toast offering the scan. Until then, opencode's MCP servers are
