@@ -51,6 +51,18 @@ When asked to publish, all the way to the user's installed app:
    swaps itself and relaunches, and the agent doing it may be running inside it: make it the very last
    command. This is the only time an agent restarts the installed app.
 
+## Public repo
+
+This repo is public: anyone can read the code, docs, tests, demo data, screenshots and git history.
+
+- No secrets, ever: tokens, keys, certificates, passwords, not even in tests or examples.
+- Nothing specific to one person's or one company's setup: home paths, usernames, machine names, cloud
+  profiles, internal hostnames, private repos, chat channels, doc or ticket links, colleagues' handles.
+- Examples and fixtures use made-up or public data: `acme`, `example.com`, `/Users/me`, public open source
+  repos. Screenshots come from the demo seed (`scripts/demo/seed.mjs`).
+- Something copied from a real session, log or config: swap its ids, URLs and names before committing.
+- Not sure whether something is fine to publish? Leave it out and ask.
+
 ## Rules
 
 - Catalog every feature you add, change or remove in `docs/FEATURES.md`, in the same commit.
