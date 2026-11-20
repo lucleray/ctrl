@@ -250,6 +250,29 @@ const PREVIEW_SESSIONS = [
     parent: "monorepo",
     turns: [["Open a PR that builds the route manifest in parallel", "Opened https://github.com/vercel/next.js/pull/99940, 9m to 6m on the monorepo."]],
   },
+  {
+    // A table wider than the chat column, to see it spill into the margins in chat view.
+    key: "webhooks",
+    title: "Compare webhook auto-disable rules",
+    folder: "notes",
+    ago: 1,
+    status: "idle",
+    turns: [
+      [
+        "How do other platforms alert and auto-disable failing webhooks? Put it in a table.",
+        [
+          "Here's how they compare:",
+          "",
+          "| Provider | How they alert | What triggers the alert | Auto-disable: when? |",
+          "| --- | --- | --- | --- |",
+          "| **Cloudflare Logpush** (closest to drains) | opt-in notification by email or webhook (at most 1 per job per 24h), plus a health dashboard | the job gets disabled | ✅ after **24h with no successful push**. Manual re-enable, logs from the gap are lost |",
+          "| **Svix** | events to the platform (`failing`, `exhausted`, `disabled`, `recovered`), plus an optional email to the end customer when disabled | a message fails its 4th attempt (~35 min), retries run out (~1 day), endpoint disabled | ✅ after **5 days of every attempt failing**. Can be turned off. Bulk replay of failed messages |",
+          "| **Stripe webhooks** | warning email that gives the disable date, then a second email when it's disabled | the endpoint keeps failing across retries (which cover up to 3 days) | ✅ after **several days of failing**. Re-enabling resumes new events only, no replay |",
+          "| **GitHub webhooks** | none (failed deliveries only show in the delivery log) | n/a | ❌ **never**. Also no automatic retries, manual redelivery for 3 days |",
+        ].join("\n"),
+      ],
+    ],
+  },
 ]
 if (preview) SESSIONS.push(...PREVIEW_SESSIONS)
 

@@ -37,9 +37,10 @@ type Props = {
 }
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
-// Wide tables scroll sideways in their own box instead of squeezing every column.
-md.renderer.rules.table_open = () => '<div class="chat-table"><table>\n'
-md.renderer.rules.table_close = () => "</table></div>\n"
+// Wide tables spill into the margins around the chat column, then scroll sideways in their own box instead
+// of squeezing every column.
+md.renderer.rules.table_open = () => '<div class="chat-table-wrap"><div class="chat-table"><table>\n'
+md.renderer.rules.table_close = () => "</table></div></div>\n"
 
 /** Longest cell (in characters) for a column to stay compact (no minimum width, no wrapping), or to count as prose. */
 const NARROW_COLUMN = 12
