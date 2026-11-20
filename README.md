@@ -8,6 +8,8 @@
   A cozy desktop home for your <a href="https://fx.sh">fx</a> and <a href="https://opencode.ai">opencode</a> sessions 🌊
 </p>
 
+<p align="center"><a href="https://ctrl.lucleray.me">ctrl.lucleray.me</a></p>
+
 <table>
   <tr><th>fx</th><th>opencode</th></tr>
   <tr>

@@ -168,3 +168,18 @@ node scripts/demo/capture.mjs --harness fx   # the fx versions (hero-fx.png, …
   composer. Its agent is a local fake model: "run X" makes it start a shell and wait for it ("run sleep 30" for
   one that ends on its own), "delegate Y" a subagent that never finishes, "think" makes it take 20 seconds to
   answer, anything else gets a short answer.
+
+## Website
+
+[ctrl.lucleray.me](https://ctrl.lucleray.me) is a static page in `site/`, the Vercel project `ctrl-site` on
+the `luc-and-co` team (root directory `site`).
+
+- `node site/build.mjs` builds it into `site/dist`: `index.html` with the dot-matrix wordmark rendered in, plus
+  the README media from `docs/media` and `build/icon.png`. So new screenshots show up on the site at its next
+  deploy. Preview it with `python3 -m http.server -d site/dist`.
+- The opencode / fx switch swaps every image tagged `data-src` to its `-fx` twin.
+- `/install.sh` redirects to the script on `main`, so `curl -fsSL https://ctrl.lucleray.me/install.sh | sh`
+  always installs the latest release. `/download` and `/github` redirect too (`site/vercel.json`).
+- Deploy from the repo root, so the build can read `docs/media`:
+  `vercel link --project ctrl-site --scope luc-and-co` once, then `vercel deploy --prod`. `vercel link` writes
+  an OIDC token to `.env.local`: `.gitignore` keeps it (and `.vercel`) out of this public repo.

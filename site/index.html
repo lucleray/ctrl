@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" data-harness="opencode">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ctrl, a cozy home for your agent sessions</title>
+    <meta name="description" content="A cozy desktop home for your fx and opencode sessions. Spaces, instant switching and status at a glance, around the real terminals." />
+    <meta property="og:title" content="ctrl" />
+    <meta property="og:description" content="A cozy desktop home for your fx and opencode sessions 🌊" />
+    <meta property="og:image" content="https://ctrl.lucleray.me/media/hero.png" />
+    <meta property="og:url" content="https://ctrl.lucleray.me" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="nav-logo" href="/"><img src="/icon.png" alt="" width="28" height="28" />ctrl</a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#agents">Agents</a>
+        <a href="https://github.com/lucleray/ctrl/tree/main/docs">Docs</a>
+        <a class="nav-gh" href="https://github.com/lucleray/ctrl">GitHub</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <!--WORDMARK-->
+      <p class="tagline">
+        A cozy desktop home for your <a href="https://fx.sh">fx</a> and
+        <a href="https://opencode.ai">opencode</a> sessions.
+      </p>
+      <p class="sub">
+        A sidebar around the real terminals. Group sessions into spaces, see which ones need you, and switch
+        between them instantly.
+      </p>
+
+      <div class="install" id="install">
+        <span class="prompt">$</span>
+        <code>curl -fsSL https://ctrl.lucleray.me/install.sh | sh</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://ctrl.lucleray.me/install.sh | sh" aria-label="Copy install command">
+          Copy
+        </button>
+      </div>
+      <p class="needs">
+        macOS · needs <a href="https://fx.sh">fx</a> 0.0.17+ or <a href="https://opencode.ai/v2/docs/">opencode V2</a>
+        2.0.25+ · updates itself
+      </p>
+
+      <div class="switch" role="tablist" aria-label="Harness">
+        <button type="button" role="tab" data-harness="opencode" aria-selected="true">opencode</button>
+        <button type="button" role="tab" data-harness="fx" aria-selected="false">fx</button>
+      </div>
+
+      <figure class="window">
+        <div class="window-bar"><i></i><i></i><i></i></div>
+        <img class="shot" data-src="hero" src="/media/hero.png" width="1600" height="1029"
+          alt="ctrl: spaces and sessions in the sidebar, a session on the right, and the links it shared in the resources panel" />
+      </figure>
+    </header>
+
+    <main>
+      <section class="features" id="features">
+        <article class="feature wide">
+          <div class="copytext">
+            <span class="kicker">01 · Spaces</span>
+            <h2>Know what needs you</h2>
+            <p>
+              Group sessions by project. Each space can start new sessions in its own folder, with its own model
+              and instructions. Dots tell you what's going on:
+            </p>
+            <ul class="dots">
+              <li><span class="dot blue"></span>run finished</li>
+              <li><span class="dot red"></span>run failed</li>
+              <li><span class="dot amber"></span>waiting for your answer</li>
+            </ul>
+          </div>
+          <div class="media">
+            <img class="shot" data-src="jump" src="/media/jump.png" width="500" height="937" loading="lazy"
+              alt="Sidebar of sessions grouped into spaces, with ⌘1 to ⌘9 badges" />
+          </div>
+        </article>
+
+        <article class="feature wide reverse">
+          <div class="copytext">
+            <span class="kicker">02 · References</span>
+            <h2>Hand one session to another</h2>
+            <p>
+              Drag a session onto the terminal. ctrl pastes a mention, and the agent reads that session before it
+              answers. No more copy-pasting context around.
+            </p>
+          </div>
+          <div class="media">
+            <img class="shot" data-src="reference" data-ext="gif" src="/media/reference.gif" width="1000" height="643" loading="lazy"
+              alt="Dragging a session from the sidebar onto the terminal pastes a session mention into the prompt" />
+          </div>
+        </article>
+
+        <article class="feature wide">
+          <div class="copytext">
+            <span class="kicker">03 · Resources</span>
+            <h2>Every link in one place</h2>
+            <p>
+              PRs, issues, deploys, Linear tickets and Slack threads shared in a session, or across its whole space.
+              GitHub links show live status: draft, CI, merged.
+            </p>
+          </div>
+          <div class="media">
+            <img class="shot" data-src="resources" src="/media/resources.png" width="780" height="870" loading="lazy"
+              alt="The resources panel listing pull requests, issues, a Linear ticket, a Slack thread and a Vercel deployment" />
+          </div>
+        </article>
+
+        <article class="feature wide reverse">
+          <div class="copytext">
+            <span class="kicker">04 · Search</span>
+            <h2>Find anything, fast</h2>
+            <p>
+              <kbd>⌘</kbd><kbd>P</kbd> searches session titles and the text of every message. Hold <kbd>⌘</kbd>
+              to see a number next to each session, then press it to jump.
+            </p>
+          </div>
+          <div class="media">
+            <img class="shot" data-src="search" src="/media/search.png" width="1100" height="655" loading="lazy"
+              alt="The search palette showing chats and messages matching 'test'" />
+          </div>
+        </article>
+      </section>
+
+      <section class="agents" id="agents">
+        <div class="copytext">
+          <span class="kicker">05 · For agents</span>
+          <h2>Let agents drive it</h2>
+          <p>
+            Agents run <code>ctrl</code> to look around, create spaces and sessions, start work in parallel and wait
+            for it, read other sessions and switch what's on screen.
+          </p>
+          <p>
+            They also get their own checkout of any repo with <code>ctrl worktree up</code>: a git worktree from a
+            pool ctrl keeps warm, released when you archive the session.
+          </p>
+          <a class="more" href="https://github.com/lucleray/ctrl/blob/main/docs/CLI.md">Read the CLI docs →</a>
+        </div>
+        <div class="term" aria-label="Example ctrl commands">
+          <div class="window-bar"><i></i><i></i><i></i><span>agent</span></div>
+<pre><span class="c"># where am I?</span>
+<span class="p">$</span> ctrl space get self
+<span class="p">$</span> ctrl session list --space self
+
+<span class="c"># fan out, then wait</span>
+<span class="p">$</span> ctrl session new --title "Fix flaky test" --prompt -
+<span class="p">$</span> ctrl session wait ses_7f3a…
+
+<span class="c"># a fresh checkout, ready to go</span>
+<span class="p">$</span> ctrl worktree up ~/code/next.js
+<span class="o">{ "path": "~/.ctrl/worktrees/next-js/a866" }</span></pre>
+        </div>
+      </section>
+
+      <section class="cta">
+        <h2>Get cozy.</h2>
+        <div class="install">
+          <span class="prompt">$</span>
+          <code>curl -fsSL https://ctrl.lucleray.me/install.sh | sh</code>
+          <button class="copy" type="button" data-copy="curl -fsSL https://ctrl.lucleray.me/install.sh | sh" aria-label="Copy install command">
+            Copy
+          </button>
+        </div>
+        <p class="needs">
+          Prefer clicking? <a href="/download">Download the latest release</a>, then run
+          <code>xattr -dr com.apple.quarantine /Applications/ctrl.app</code> once.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Made by <a href="https://github.com/lucleray">Luc</a> 🌊</span>
+      <span>
+        <a href="https://github.com/lucleray/ctrl">GitHub</a> ·
+        <a href="https://github.com/lucleray/ctrl/blob/main/docs/USAGE.md">Usage</a> ·
+        <a href="https://github.com/lucleray/ctrl/blob/main/docs/FEATURES.md">All features</a> ·
+        <a href="https://github.com/lucleray/ctrl/blob/main/LICENSE">License</a>
+      </span>
+    </footer>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
