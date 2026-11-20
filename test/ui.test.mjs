@@ -5,7 +5,7 @@ import { after, before, beforeEach, describe, test } from "node:test"
 import { key, loadUi, tmpDir, type } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-ui-test-")
-let ui, Palette, Toasts, ChatView
+let ui, Palette, Toasts, ChatView, useTypeToFocus
 
 const ctrl = {
   hits: [],
@@ -30,8 +30,8 @@ const ctrl = {
 }
 
 before(async () => {
-  ui = await loadUi(tmp, ["src/renderer/Palette.tsx", "src/renderer/Toast.tsx", "src/renderer/ChatView.tsx"], ctrl)
-  ;[{ Palette }, { Toasts }, { ChatView }] = ui.modules
+  ui = await loadUi(tmp, ["src/renderer/Palette.tsx", "src/renderer/Toast.tsx", "src/renderer/ChatView.tsx", "src/renderer/type-to-focus.ts"], ctrl)
+  ;[{ Palette }, { Toasts }, { ChatView }, { useTypeToFocus }] = ui.modules
 })
 
 after(() => ui.close())
@@ -165,5 +165,74 @@ describe("ChatView drafts", () => {
     const c = ui.render(view("ses_c", "from last time"))
     assert.equal(c.root.querySelector("textarea").value, "from last time")
     c.unmount()
+  })
+})
+
+describe("type to focus", () => {
+  // Compared by class: assert would print the whole happy-dom element graph on a mismatch.
+  const focusedClass = () => document.activeElement?.className
+
+  /** A composer, a field and a terminal, with the hook focusing the composer while `enabled`. */
+  function screen(enabled = true) {
+    const focused = []
+    function Screen({ enabled }) {
+      useTypeToFocus(enabled, () => (focused.push(true), document.querySelector(".composer").focus()))
+      return ui.h(
+        "div",
+        null,
+        ui.h("textarea", { className: "composer" }),
+        ui.h("input", { className: "field" }),
+        ui.h("div", { className: "xterm" }, ui.h("textarea", { className: "term" })),
+      )
+    }
+    const r = ui.render(ui.h(Screen, { enabled }))
+    const $ = (sel) => r.root.querySelector(sel)
+    return { r, $, focused, rerender: (enabled) => r.rerender(ui.h(Screen, { enabled })) }
+  }
+
+  test("a letter typed with focus nowhere moves focus to the composer", () => {
+    const s = screen()
+    document.activeElement?.blur()
+    key(ui.act, document.body, "h")
+    assert.equal(focusedClass(), "composer")
+    s.r.unmount()
+  })
+
+  test("⌘V pastes into the composer, other shortcuts and non-printing keys are left alone", () => {
+    const s = screen()
+    for (const [k, init] of [["k", { metaKey: true }], ["ArrowDown", {}], ["Escape", {}], ["Enter", {}], ["Meta", { metaKey: true }]]) {
+      document.activeElement?.blur()
+      key(ui.act, document.body, k, init)
+      assert.equal(s.focused.length, 0, k)
+    }
+    key(ui.act, document.body, "v", { metaKey: true })
+    assert.equal(focusedClass(), "composer")
+    s.r.unmount()
+  })
+
+  test("fields and the terminal keep their keys, and nothing happens while disabled", () => {
+    const s = screen()
+    for (const sel of [".field", ".term"]) {
+      s.$(sel).focus()
+      key(ui.act, s.$(sel), "a")
+      assert.equal(focusedClass(), sel.slice(1))
+    }
+    s.rerender(false)
+    document.activeElement?.blur()
+    key(ui.act, document.body, "a")
+    window.dispatchEvent(new window.Event("focus"))
+    assert.equal(s.focused.length, 0)
+    s.r.unmount()
+  })
+
+  test("coming back to the window puts the caret in the composer, unless a field has it", () => {
+    const s = screen()
+    document.activeElement?.blur()
+    ui.act(() => window.dispatchEvent(new window.Event("focus")))
+    assert.equal(focusedClass(), "composer")
+    s.$(".field").focus()
+    ui.act(() => window.dispatchEvent(new window.Event("focus")))
+    assert.equal(focusedClass(), "field")
+    s.r.unmount()
   })
 })

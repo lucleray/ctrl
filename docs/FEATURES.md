@@ -261,6 +261,10 @@ where it lives.
   into the hidden TUI
 - One-line composer with one button: send, or stop (■) while a turn runs and nothing's typed. Enter sends, ⇧↩ new
   line, Esc stops; paste or drop images to attach them
+- Type to focus: a key typed (or ⌘V) while focus is nowhere in particular (after clicking a message, the
+  sidebar, a button) goes to the composer, without clicking it first. Coming back to the window puts the caret
+  back in it. Fields, the terminal and open pickers keep their keys, and nothing happens under the palette,
+  Settings or the Board (`src/renderer/type-to-focus.ts`)
 - Messages sent while a turn runs steer it (opencode's `delivery: "steer"`, the phone's too): they wait greyed out
   above the composer ("Steers the agent at its next step") until opencode hands them to the agent
 - A shell or subagent the turn waits for would hold a message back until it's done. When a message you sent

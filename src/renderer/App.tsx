@@ -15,6 +15,7 @@ import { Sidebar } from "./Sidebar"
 import { SpaceSettings } from "./SpaceSettings"
 import { TerminalStack, type TerminalHandle } from "./TerminalStack"
 import { Toasts } from "./Toast"
+import { useTypeToFocus } from "./type-to-focus"
 
 const EMPTY: AppState = {
   version: "",
@@ -258,6 +259,9 @@ export function App() {
       }),
     [create, cancelHints],
   )
+
+  // Typing anywhere goes to the chat composer, as long as nothing is drawn over it.
+  useTypeToFocus((!!chatID || chatHome) && !palette && !settings && !editingSpace && !board && ready && !onboarding, focusMain)
 
   const showResources = state.ui.resourcesOpen && !settings && !editingSpace && !board && ready && !onboarding
   // Floating, it sits over the terminal inside main; docked, it's a column next to main.
