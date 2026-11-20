@@ -16,8 +16,8 @@
   </tr>
 </table>
 
-ctrl puts a sidebar around the real fx and opencode terminals. Group sessions into spaces (both kinds can
-share one), see which ones need you, and switch between them instantly.
+ctrl puts a sidebar around your fx and opencode sessions, as real terminals or as a chat. Group sessions into
+spaces (both kinds can share one), see which ones need you, and switch between them instantly.
 
 ## 📦 Install
 
@@ -41,9 +41,10 @@ It also links the `ctrl` command agents use to drive the app. ctrl updates itsel
 
 ### 🗂️ Spaces, and what needs you
 
-Group sessions by project. A space can start new sessions in its own folder, with its own model and
-instructions. Dots show what needs you: blue when a run finished, red when it failed, amber when the agent is
-waiting for your answer.
+Group sessions by project, and nest sessions under the one that started them. A space can start new sessions in
+its own folder, with its own model and instructions. Dots show what needs you: blue when a run finished, red
+when it failed, amber when the agent is waiting for your answer. Notifications and sounds tell you when you're
+looking elsewhere.
 
 ### 🧠 Reference one session from another
 
@@ -101,6 +102,21 @@ reference other sessions, change settings and switch what's on screen.
 
 They also get their own checkout of any repo with `ctrl worktree up <repo>`: a git worktree from a pool ctrl
 keeps warm, attached to their session and released when you archive it.
+
+### 🩺 Keep your tools working
+
+ctrl watches your MCP servers and CLI logins (gh, AWS SSO, …) and tells you when one breaks, with a button
+to fix it.
+
+### 🧪 Experimental
+
+Newer, still settling in:
+
+- 💬 **Chat view**: sessions as a chat instead of a terminal, with a model picker, spend and context usage
+- 📱 **Remote control**: scan a QR code and chat with your sessions from your phone, over Tailscale
+- 📋 **Board**: the PRs, deploys and threads of every session, sorted by whose turn it is
+- 🪟 **Companion**: a small floating window listing the sessions that mentioned the PR, Slack thread or doc
+  on your screen, and starting a new one from it
 
 ## 📚 Docs
 
