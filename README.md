@@ -59,8 +59,8 @@ Drag a session onto the terminal. ctrl pastes a mention, and the agent reads tha
 
 ### 🔗 Every link in one place
 
-PRs, issues, deploys, Linear tickets and Slack threads shared in a session, or in its whole space. GitHub links
-show live status: draft, CI, merged.
+PRs, issues, deploys, Linear tickets, Notion docs and Slack threads shared in a session, or in its whole space.
+GitHub and Vercel links show live status: draft, CI, merged, building.
 
 <table>
   <tr><th>fx</th><th>opencode</th></tr>
@@ -111,3 +111,7 @@ keeps warm, attached to their session and released when you archive it.
 - [Architecture](docs/ARCHITECTURE.md): how it works inside
 - [Development](docs/DEVELOPMENT.md): run, release, debug hooks, screenshots
 - [Testing](docs/TESTING.md): fast, never-flaky tests, and how to add them
+
+## 📄 License
+
+[MIT](LICENSE)
