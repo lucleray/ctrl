@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron"
 import { execFile } from "node:child_process"
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -44,6 +44,7 @@ import { FxChat } from "./fx-chat"
 import { checkFx, FX_ENV, FX_HOME, FxSessions, rawID, SESSIONS_DIR } from "./fx"
 import { FxTerminals, MAX_LIVE } from "./fx-terminals"
 import { sessionsOf, type HarnessSource } from "./harness"
+import { isPlaceholder, placeholderID, withUnstarted } from "./unstarted"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
@@ -146,10 +147,17 @@ const currentSessionID = (): string | null => {
 /** Every harness ctrl reads sessions from (src/main/harness.ts). */
 const harnesses = (): HarnessSource[] => [opencode, fx]
 
-/** Both harnesses' sessions, newest first. Rebuilt when either changes. */
+/** Both harnesses' sessions, and new ones they haven't written yet (src/main/unstarted.ts), newest first. Rebuilt when either changes. */
 let sessions: SessionItem[] = []
 const rebuildSessions = () => {
-  sessions = harnesses().flatMap(sessionsOf).sort((a, b) => b.updated - a.updated)
+  const listed = harnesses().flatMap(sessionsOf)
+  const merged = withUnstarted(listed, store.data.unstarted, {
+    title: (id) => store.data.titles[id],
+    // fx lists an empty session while its process holds it: started once it has a turn in its log.
+    started: (id) => harnessOf(id) !== "fx" || !!fx.get(id)?.used,
+  })
+  if (merged.started.length) store.dropUnstarted(merged.started)
+  sessions = merged.sessions.sort((a, b) => b.updated - a.updated)
 }
 const sessionByID = (id: string) => sessions.find((s) => s.id === id)
 /** What ctrl reads from the harness a session belongs to (src/main/harness.ts). */
@@ -179,6 +187,7 @@ const state = (): AppState => ({
   archivedResources: store.data.archivedResources,
   createdByAgent: store.data.createdByAgent,
   parents: store.data.parents,
+  drafts: store.data.drafts,
   ui: store.data.ui,
   settings: store.data.settings,
   themes,
@@ -294,11 +303,10 @@ const fx: FxSessions = new FxSessions({
   onOwner: (sessionID, pid) => {
     const claimed = fxTerms.claim(sessionID, pid)
     if (!claimed) return
-    // A session started from a space joins it once fx tells us its id.
-    if (claimed.parentID && !claimed.previous) store.setParent(sessionID, claimed.parentID)
-    if (claimed.spaceID && !claimed.previous) store.assign(sessionID, claimed.spaceID)
+    // A new session got its id: its space, parent and draft, kept under the placeholder, follow.
+    if (claimed.placeholder && claimed.previous) return rekeySession(claimed.previous, sessionID)
     // /new or /resume inside a space's session keeps you in that space.
-    else if (claimed.previous && store.data.assignments[claimed.previous] && !store.data.assignments[sessionID])
+    if (claimed.previous && store.data.assignments[claimed.previous] && !store.data.assignments[sessionID])
       store.assign(sessionID, store.data.assignments[claimed.previous])
     if (claimed.previous) fx.readSoon(rawID(claimed.previous))
   },
@@ -336,7 +344,7 @@ const fxChat = new FxChat(
     bin: () => (fxCheck.state === "ok" ? fxCheck.bin : undefined),
     env: () => ({ ...childEnv(), ...FX_ENV, FX_AUTO_UPGRADE: "0", FX_SOUND: "off" }),
     isChat: (id) => store.isFxChat(id),
-    directory: (id) => fx.get(id)?.directory,
+    directory: (id) => fx.get(id)?.directory ?? store.data.unstarted[id]?.directory,
     onOpen: (id, proc, cwd, background) => {
       fxTerms.openChat(id, proc, cwd, background)
       // fx holds the session's lock now: the owner shows as ours.
@@ -889,8 +897,9 @@ const openSession = (sessionID: string) => {
 
 const openFxSession = (sessionID: string) => {
   const session = fx.get(sessionID)
-  if (!session) return
-  if (!fxTerms.bySession(sessionID) && session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid)) {
+  const unstarted = store.data.unstarted[sessionID]
+  if (!session && !unstarted) return
+  if (session && !fxTerms.bySession(sessionID) && session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid)) {
     toast({
       icon: "alert",
       message: `“${sessionByID(sessionID)?.title ?? "This session"}” is open in another terminal (pid ${session.ownerPid}). Quit fx there to open it here.`,
@@ -902,7 +911,21 @@ const openFxSession = (sessionID: string) => {
     // Its process puts its pane on screen (fxTerms.openChat) once started; while it loads, the pane it has.
     const pane = fxTerms.bySession(sessionID)
     if (pane) fxTerms.activate(pane.id)
-    void fxChat.ensure(sessionID).then(() => markFxViewed(sessionID), report).finally(push)
+    void fxChat
+      .ensure(sessionID)
+      // A new chat whose process is gone (ctrl restarted) and that fx never wrote: fx can't load it, so it starts anew.
+      .catch((err) => (store.data.unstarted[sessionID] ? restartFxChat(sessionID) : Promise.reject(err)))
+      .then(() => markFxViewed(sessionID), report)
+      .finally(push)
+    push()
+    return
+  }
+  if (!session) {
+    // A new terminal session fx hasn't given an id yet: its fx, or a fresh one under the same placeholder.
+    const pane = fxTerms.bySession(sessionID)
+    if (pane?.exited !== undefined) fxTerms.restart(pane.id)
+    if (pane) fxTerms.activate(pane.id)
+    else fxTerms.create({ cwd: unstarted!.directory, args: fxNewArgs(unstarted!.model, store.data.assignments[sessionID] ?? null), env: {} }, true, sessionID)
     push()
     return
   }
@@ -966,26 +989,29 @@ const newSession = async (
   const model = modelOverride ?? modelFor(harness, space)
   if (harness === "fx") {
     if (!fxStarted) throw new CliError("HARNESS_MISSING", `fx isn't installed. Install it with: ${FX_INSTALL}`)
-    // Sessions as chat (fx ≥ 0.0.17): a chat session, over fx acp, for good. It has its id right away.
+    // Sessions as chat (fx ≥ 0.0.17): a chat session, over fx acp, for good. It has its id right away, but fx
+    // only writes it at its first prompt: listed as unstarted until then.
     if (store.data.settings.sessionView === "chat" && fxModern()) {
       const id = await fxChat.create({ cwd, model, instructions: fxInstructionsText(fxInstructionsFor(spaceID)) })
       store.setFxChat(id)
+      store.addUnstarted(id, { harness: "fx", directory: cwd, created: Date.now(), chat: true, ...(model ? { model } : {}) })
       if (spaceID) store.assign(id, spaceID)
       if (parentID) store.setParent(id, parentID)
+      sessionsChanged()
       if (focus) openSession(id)
-      else push()
       // `prompt` is the caller's to send, as for opencode (the CLI does, once the session is listed).
       return { id }
     }
-    const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
-    // Space instructions and the ctrl instruction go in through an agent profile, kept when fx resumes it.
-    const profile = fxModern() ? fxProfile(fxInstructionsFor(spaceID)) : undefined
-    if (profile) args.push("--profile", profile)
     const promptArg = fxPromptArg(prompt)
     if (focus) showFxTerm()
-    // The session joins the space once fx reports its id (onOwner). fx ≥ 0.0.17 creates it at the first prompt.
-    const terminal = fxTerms.create({ cwd, args: [...args, ...promptArg], env: {}, spaceID, parentID }, focus)
-    push()
+    // fx ≥ 0.0.17 creates the session at its first prompt: until it reports its id (onOwner), the session goes by
+    // a placeholder that holds its space and parent, and shows in the sidebar.
+    const placeholder = placeholderID("fx")
+    store.addUnstarted(placeholder, { harness: "fx", directory: cwd, created: Date.now(), ...(model ? { model } : {}) })
+    if (spaceID) store.assign(placeholder, spaceID)
+    if (parentID) store.setParent(placeholder, parentID)
+    const terminal = fxTerms.create({ cwd, args: [...fxNewArgs(model, spaceID), ...promptArg], env: {} }, focus, placeholder)
+    sessionsChanged()
     return { pending: true, terminal, prompted: promptArg.length > 0 }
   }
   if (!opencodeStarted)
@@ -996,6 +1022,46 @@ const newSession = async (
   if (focus) openSession(id)
   else push()
   return { id }
+}
+
+/** A new fx terminal session's arguments: its model, and its space's instructions through an agent profile (kept when fx resumes it). */
+const fxNewArgs = (model: ModelRef | undefined, spaceID: string | null) => {
+  const args = model ? ["--model", model.id, ...(model.variant ? ["--effort", model.variant] : [])] : []
+  const profile = fxModern() ? fxProfile(fxInstructionsFor(spaceID)) : undefined
+  if (profile) args.push("--profile", profile)
+  return args
+}
+
+/**
+ * A new session got its harness's id (src/main/unstarted.ts): what ctrl keeps about it follows, and a pane left
+ * under the old id (a chat process that exited) goes.
+ */
+const rekeySession = (from: string, to: string) => {
+  store.rekey(from, to)
+  const stale = fxTerms.bySession(from)
+  if (stale) fxTerms.close(stale.id)
+  sessionsChanged()
+}
+
+/**
+ * A new fx chat session fx never wrote, whose process is gone (ctrl quit, or it was closed past the cap on live
+ * processes): fx can't load it, so it's created again, in its space's folder and with its instructions, and
+ * takes the new id. Its draft and place in the sidebar stay.
+ */
+const restartFxChat = async (sessionID: string) => {
+  const unstarted = store.data.unstarted[sessionID]
+  if (!unstarted) throw new Error("This session doesn't exist anymore")
+  const spaceID = store.data.assignments[sessionID] ?? null
+  const space = spaceID ? store.space(spaceID) : undefined
+  fxTerms.closeSession(sessionID)
+  const id = await fxChat.create({
+    cwd: unstarted.directory,
+    model: unstarted.model ?? modelFor("fx", space),
+    instructions: fxInstructionsText(fxInstructionsFor(spaceID)),
+  })
+  store.setFxChat(id)
+  rekeySession(sessionID, id)
+  return fxChat.ensure(id)
 }
 
 /** New session in the current session's folder, space and harness; a plain new chat when none is open. */
@@ -1061,8 +1127,10 @@ const restoreOpen = () => {
     // opencode's list may still be loading: the TUI opens it (or says it's gone) either way.
     if (harnessOf(id) === "opencode") return opencodeStarted
     const s = fx.get(id)
+    // A new session fx never wrote: brought back only when it was on screen (opening it starts it again).
+    if (!s) return id === current && !!store.data.unstarted[id]
     // Opened in another terminal since: fx won't let two processes share it.
-    return !!s && (s.ownerPid === undefined || fxTerms.isOurPid(s.ownerPid))
+    return s.ownerPid === undefined || fxTerms.isOurPid(s.ownerPid)
   }
   const rest = open.filter((id) => id !== current && harnessOf(id) === "fx" && reopenable(id)).slice(0, MAX_LIVE - 1)
   if (current && reopenable(current)) openSession(current)
@@ -1205,6 +1273,8 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
   if (!ids.length) return
   const current = currentSessionID()
   const wasCurrent = current && ids.includes(current) ? current : null
+  // Archiving drops their drafts; undo brings them back.
+  const drafts = ids.flatMap((id) => (store.data.drafts[id] ? [[id, store.data.drafts[id]] as const] : []))
   store.setArchived(ids, true)
   if (wasCurrent) leave(wasCurrent)
   // Archiving counts as seeing it: no blue/red dot left behind if it comes back.
@@ -1236,6 +1306,7 @@ const archive = (sessionIDs: string[], { toast: withToast = true } = {}) => {
     {
       undo: () => {
         store.setArchived(ids, false)
+        for (const [id, text] of drafts) store.setDraft(id, text)
         if (wasCurrent && !currentSessionID()) openSession(wasCurrent)
       },
     },
@@ -1292,7 +1363,8 @@ const commitDelete = async (sessionID: string) => {
       }
       // The Trash, not rm: a mistaken delete can still be recovered from Finder. fx drops a v2 session
       // whose folder is gone from its list on its own.
-      for (const folder of fx.folders(sessionID)) await shell.trashItem(folder)
+      // A new session fx never wrote has no folder.
+      for (const folder of fx.folders(sessionID)) if (existsSync(folder)) await shell.trashItem(folder)
       fx.forget(sessionID)
     } else await opencode.removeSession(sessionID)
     store.forgetSession(sessionID)
@@ -1802,6 +1874,13 @@ function registerIpc() {
     await chat.send(created.id, String(text ?? ""), cleanImages(images))
   })
   ipcMain.handle("chat:stop", (_e, sessionID: string) => chat.stop(sessionID))
+  // Typing saves the draft as it goes: only a draft appearing or going away changes what the sidebar shows.
+  ipcMain.on("chat:draft", (_e, sessionID: unknown, text: unknown) => {
+    if (typeof sessionID !== "string" || typeof text !== "string" || store.data.archived[sessionID]) return
+    // A late save under an id that's gone (re-keyed to its harness's id, deleted) isn't kept.
+    if (text.trim() && !sessionByID(sessionID)) return
+    if (store.setDraft(sessionID, text)) push()
+  })
   // The shells and subagents under the chat's composer, for harnesses that can list them (src/main/harness.ts).
   ipcMain.handle("chat:work", async (_e, sessionID: string) => (await sourceOf(sessionID)?.work?.list(sessionID)) ?? null)
   ipcMain.handle("chat:work-stop", (_e, sessionID: string, id: string) => sourceOf(sessionID)?.work?.stop(sessionID, String(id)))
@@ -1846,6 +1925,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /** The fx terminal for a session, started in the background when it has none, and ready for input. */
 const fxTermFor = async (sessionID: string) => {
   const session = fx.get(sessionID)
+  const unstarted = store.data.unstarted[sessionID]
+  if (!session && unstarted && isPlaceholder(sessionID)) {
+    // A new terminal session fx hasn't given an id yet: its fx, or a fresh one under the placeholder.
+    const pane = fxTerms.bySession(sessionID)
+    if (pane?.exited !== undefined) fxTerms.restart(pane.id)
+    const termID =
+      pane?.id ??
+      fxTerms.create({ cwd: unstarted.directory, args: fxNewArgs(unstarted.model, store.data.assignments[sessionID] ?? null), env: {} }, false, sessionID)
+    await fxTerms.ready(termID)
+    return termID
+  }
   if (!session) throw new CliError("NOT_FOUND", `No fx session ${sessionID}`)
   if (session.ownerPid !== undefined && !fxTerms.isOurPid(session.ownerPid))
     throw new CliError("CONFLICT", `${sessionID} is open in fx in another terminal`, { hint: "Quit fx there first" })
@@ -2078,13 +2168,36 @@ function report(err: unknown) {
   push()
 }
 
+/**
+ * Previews (`npm run preview`, the only runs with a label) restart on every edit, often driven by an agent
+ * while you work in something else: their window opens in the top-right corner of the screen, smaller,
+ * without taking focus, and where you last left it across restarts (kept in the sandbox's user data).
+ */
+const previewBoundsFile = () => join(app.getPath("userData"), "preview-window.json")
+const previewBounds = () => {
+  try {
+    const b = JSON.parse(readFileSync(previewBoundsFile(), "utf8"))
+    const visible = screen.getAllDisplays().some((d) => {
+      const a = d.workArea
+      return b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y
+    })
+    if (visible) return b as { x: number; y: number; width: number; height: number }
+  } catch {}
+  const area = screen.getPrimaryDisplay().workArea
+  const width = Math.min(1100, area.width)
+  const height = Math.min(720, area.height)
+  return { x: area.x + area.width - width, y: area.y, width, height }
+}
+
 function createWindow() {
+  const preview = !!LABEL && !headless
   win = new BrowserWindow({
-    show: !headless,
+    show: !headless && !preview,
     paintWhenInitiallyHidden: true,
     icon: join(root, "build/icon.png"),
     width: 1400,
     height: 900,
+    ...(preview ? previewBounds() : {}),
     minWidth: 800,
     minHeight: 500,
     titleBarStyle: "hiddenInset",
@@ -2095,6 +2208,19 @@ function createWindow() {
       sandbox: false,
     },
   })
+  if (preview) {
+    const w = win
+    w.showInactive()
+    let saveTimer: ReturnType<typeof setTimeout> | undefined
+    const saveBounds = () => {
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => {
+        if (!w.isDestroyed()) writeFileSync(previewBoundsFile(), JSON.stringify(w.getBounds()))
+      }, 300)
+    }
+    w.on("move", saveBounds)
+    w.on("resize", saveBounds)
+  }
   // Live resource details only refresh while you're looking (test runs never get focus).
   adapters.setFocused(headless || win.isFocused())
   win.on("focus", () => {

@@ -5,7 +5,7 @@ import { after, before, beforeEach, describe, test } from "node:test"
 import { key, loadUi, tmpDir, type } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-ui-test-")
-let ui, Palette, Toasts
+let ui, Palette, Toasts, ChatView
 
 const ctrl = {
   hits: [],
@@ -16,11 +16,22 @@ const ctrl = {
   onToastDismiss: (cb) => ((ctrl.dismiss = cb), () => {}),
   undo: async (id) => void ctrl.calls.push(["undo", id]),
   toastAction: async (id) => void ctrl.calls.push(["toastAction", id]),
+  // The chat view (ChatView.tsx): an empty session, and its draft saves.
+  chatOpen: async () => ({ items: [], cursor: null, pending: [], inbox: [] }),
+  chatClose: async () => {},
+  chatStats: async () => ({ cost: 0, context: null }),
+  chatModel: async () => null,
+  listModels: async () => ({ models: [], default: null }),
+  onChatUpdate: () => () => {},
+  onChatPending: () => () => {},
+  onChatInbox: () => () => {},
+  onChatModelChanged: () => () => {},
+  setDraft: (id, text) => void ctrl.calls.push(["setDraft", id, text]),
 }
 
 before(async () => {
-  ui = await loadUi(tmp, ["src/renderer/Palette.tsx", "src/renderer/Toast.tsx"], ctrl)
-  ;[{ Palette }, { Toasts }] = ui.modules
+  ui = await loadUi(tmp, ["src/renderer/Palette.tsx", "src/renderer/Toast.tsx", "src/renderer/ChatView.tsx"], ctrl)
+  ;[{ Palette }, { Toasts }, { ChatView }] = ui.modules
 })
 
 after(() => ui.close())
@@ -127,5 +138,32 @@ describe("Toasts", () => {
     ui.act(() => ctrl.dismiss("t3"))
     assert.equal(r.root.querySelector(".toast"), null)
     r.unmount()
+  })
+})
+
+describe("ChatView drafts", () => {
+  // What the chat view uses that happy-dom doesn't put on globalThis.
+  before(() => {
+    globalThis.requestAnimationFrame ??= (cb) => setTimeout(cb, 0)
+    globalThis.ResizeObserver ??= window.ResizeObserver ?? class { observe() {} disconnect() {} }
+  })
+  test("each session keeps its own unsent message: nothing carries over when switching", async () => {
+    const view = (id, draft) => ui.h(ChatView, { sessionID: id, session: session(id, id), archived: false, draft })
+    const r = ui.render(view("ses_a"))
+    const input = () => r.root.querySelector("textarea")
+    type(ui.act, input(), "half a thought")
+    await ui.act(async () => {})
+    // Switching (the same chat view, another session): its composer is empty, and the first one's draft is saved right away.
+    r.rerender(view("ses_b"))
+    assert.equal(input().value, "")
+    assert.deepEqual(ctrl.calls.at(-1), ["setDraft", "ses_a", "half a thought"])
+    // Back: it's there.
+    r.rerender(view("ses_a"))
+    assert.equal(input().value, "half a thought")
+    r.unmount()
+    // A draft main kept (from before a restart) comes back too.
+    const c = ui.render(view("ses_c", "from last time"))
+    assert.equal(c.root.querySelector("textarea").value, "from last time")
+    c.unmount()
   })
 })

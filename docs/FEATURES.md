@@ -10,6 +10,11 @@ where it lives.
   space. What each supports: [HARNESSES.md](HARNESSES.md)
 - Harness for new sessions in Settings → Sessions, overridable per space; the space ⋯ menu also offers a
   new session with the other one (`src/main/main.ts`)
+- New sessions show in the sidebar right away ("New session"), whatever the harness, and stay there when you
+  switch away or ctrl restarts, even before their first message. fx only writes a session at its first prompt:
+  until then ctrl keeps it (`unstarted` in `state.json`) with its space, parent and draft, under fx's id (chat)
+  or a placeholder (`fx:new-…`, terminal) that takes fx's id once fx reports it. Opening one whose process is
+  gone starts a fresh fx for it (`src/main/unstarted.ts`)
 - Either harness is enough: ctrl shows the sessions of whichever it finds, and Settings → Sessions shows
   what's installed with the install command (`src/main/fx.ts`, `src/main/opencode-bin.ts`)
 - fx sessions have an `fx` tag in the sidebar (`src/renderer/Sidebar.tsx`)
@@ -240,6 +245,10 @@ where it lives.
   one with an image waits for the turn. Permissions are answered in the chat (Allow / Always / Deny); questions
   come as plain text (fx has no forms over ACP yet). A session fx holds elsewhere (a terminal) can't open as
   a chat. fx's startup notices are kept out of the reply (`src/main/fx-chat.ts`, `src/main/acp/`)
+- Drafts: what you type in a session's composer stays with that session, like Slack: switching sessions never
+  carries it over, and it's kept in `state.json` across restarts (attached images only while ctrl runs). The
+  sidebar shows a pencil before the age of sessions with a draft (not the one on screen). Sending clears it;
+  archiving or deleting the session drops it (undoing an archive brings it back) (`src/renderer/drafts.ts`)
 - `ctrl session send` to an fx chat session sends through the chat; `--no-submit` is refused (nothing to type
   into); `ctrl session stop` cancels its turn
 - Thinking and shell commands show in full in a box clamped to its first 3 lines: click it to unfold, click again

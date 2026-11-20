@@ -35,10 +35,12 @@ so ctrl keeps a process per open session and reads its files and terminal output
 |---|---|---|---|
 | Sessions in the sidebar, spaces, Recents | ✅ | ✅ | opencode: sessions idle for 30+ days show once the Archived section opens, the palette searches or a CLI command runs |
 | Mix both kinds in one space | ✅ | ✅ | |
+| New sessions listed before their first message, kept across restarts | ✅ | ✅ | opencode creates them right away · fx writes a session at its first prompt: ctrl lists it until then (src/main/unstarted.ts), and starts a fresh fx for it when its process is gone |
+| Drafts per session (chat view), pencil in the sidebar | ✅ | ✅ | ctrl-side; terminal sessions keep what's typed in their own TUI |
 | Archive / unarchive | ✅ | ✅ | ctrl-side; archiving also marks the session read |
 | Archived sessions open read-only | ✅ | ✅ | scrolling still works; Unarchive in the bar unlocks it |
 | Move between spaces, drag and drop | ✅ | ✅ | |
-| Child sessions (tree in the sidebar, `--parent`) | ✅ | ✅ | ctrl-side · fx: a new child gets its parent once fx reports its id (at its first prompt) |
+| Child sessions (tree in the sidebar, `--parent`) | ✅ | ✅ | ctrl-side · fx: kept under the new session's placeholder until fx reports its id (at its first prompt) |
 | ⌘1–9 jump, ⌘P title search | ✅ | ✅ | |
 | ⌘P message search | ✅ | ✅ | opencode: through the service · fx: tails each session's log |
 | Resources panel (links per session / space) | ✅ | ✅ | Same index as search |

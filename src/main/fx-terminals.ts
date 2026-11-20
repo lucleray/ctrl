@@ -33,10 +33,11 @@ type Term = {
   exited?: number
   /** ctrl id ("fx:…") */
   sessionID: string | null
-  /** Space a brand-new session joins once fx reports its id */
-  spaceID?: string | null
-  /** Parent session a brand-new session gets once fx reports its id */
-  parentID?: string | null
+  /**
+   * sessionID is a placeholder (src/main/unstarted.ts): a new session fx hasn't given an id yet. Its space,
+   * parent and draft are kept under the placeholder until fx reports the real id (claim).
+   */
+  placeholder?: boolean
   status?: LiveStatus
   backlog: string[]
   backlogSize: number
@@ -63,7 +64,7 @@ type Events = {
 /** `fx --resume <id>` (fx 0.0.17 removed `fx resume --id`; `--resume` works in older ones too). */
 const resumeArgs = (sessionID: string) => ["--resume", rawID(sessionID)]
 
-type SpawnOptions = { cwd: string; args: string[]; env: Record<string, string>; spaceID?: string | null; parentID?: string | null }
+type SpawnOptions = { cwd: string; args: string[]; env: Record<string, string> }
 
 /** Parses `state=working:app=fx:msg=…` (base64 msg) per the Program Status Protocol. */
 function parseStatus(body: string): LiveStatus | "clear" | undefined {
@@ -192,11 +193,13 @@ export class FxTerminals {
     const term = [...this.terms.values()].find((t) => t.exited === undefined && t.proc.pid === pid)
     if (!term || term.sessionID === sessionID) return undefined
     const previous = term.sessionID
+    const placeholder = !!term.placeholder
     term.sessionID = sessionID
+    term.placeholder = false
     // The status belonged to the previous session.
     term.status = undefined
     this.events.onChange()
-    return { termID: term.id, previous, spaceID: term.spaceID, parentID: term.parentID }
+    return { termID: term.id, previous, placeholder }
   }
 
   /**
@@ -220,10 +223,14 @@ export class FxTerminals {
       .map((t) => t.sessionID!)
   }
 
-  /** Starts a fresh fx; its session id arrives later through claim(). `show`: put it on screen. */
-  create(opts: SpawnOptions, show = true) {
+  /**
+   * Starts a fresh fx; its session id arrives later through claim(). `show`: put it on screen. `placeholder`:
+   * the id the session goes by until then (src/main/unstarted.ts).
+   */
+  create(opts: SpawnOptions, show = true, placeholder?: string) {
     const previous = this.activeID
-    const id = this.spawn(opts, null)
+    const id = this.spawn(opts, placeholder ?? null)
+    if (placeholder) this.terms.get(id)!.placeholder = true
     if (!show) {
       this.activeID = previous
       this.events.onChange()
@@ -231,10 +238,10 @@ export class FxTerminals {
     return id
   }
 
-  /** The session a terminal has now (undefined: no such terminal). */
+  /** The session fx reported for a terminal (null: none yet; undefined: no such terminal). */
   sessionOf(termID: string) {
     const term = this.terms.get(termID)
-    return term ? term.sessionID : undefined
+    return term ? (term.placeholder ? null : term.sessionID) : undefined
   }
 
   /**
@@ -259,8 +266,6 @@ export class FxTerminals {
       view: "terminal",
       opts,
       sessionID,
-      spaceID: opts.spaceID,
-      parentID: opts.parentID,
       backlog: [],
       backlogSize: 0,
       total: 0,
@@ -294,7 +299,7 @@ export class FxTerminals {
     } as Record<string, string>
     // First start: as asked (a prompt included). A restart resumes a known session without resending its prompt;
     // a new one that never got an id starts fresh again.
-    const args = !term.proc ? term.opts.args : term.sessionID ? resumeArgs(term.sessionID) : term.opts.args
+    const args = !term.proc ? term.opts.args : term.sessionID && !term.placeholder ? resumeArgs(term.sessionID) : term.opts.args
     // Fall back to a login shell so PATH is resolved when fx lives somewhere unusual.
     const quote = (a: string) => `'${a.replaceAll("'", "'\\''")}'`
     const [file, argv] = bin

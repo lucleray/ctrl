@@ -4,6 +4,7 @@ import { DEFAULT_SOUND_CHOICES, FONT_SIZE, harnessOf, type AppState } from "../s
 import { ArchivedBanner } from "./ArchivedBanner"
 import { ChatHome, ChatView, type ChatHandle } from "./ChatView"
 import { Board, loadFilter, onlySpace, saveFilter, type BoardFilter } from "./Board"
+import { forgetDraft, localDrafts } from "./drafts"
 import { jumpTargets, useJumpHints } from "./jump"
 import { Onboarding } from "./Onboarding"
 import { Palette } from "./Palette"
@@ -41,6 +42,7 @@ const EMPTY: AppState = {
   assignments: {},
   createdByAgent: {},
   parents: {},
+  drafts: {},
   archived: {},
   archivedResources: {},
   sessions: [],
@@ -203,6 +205,10 @@ export function App() {
       }),
     [],
   )
+  // Archiving drops a session's draft in main: this run's copy goes too (undo brings main's back).
+  useEffect(() => {
+    for (const id of localDrafts()) if (state.archived[id]) forgetDraft(id)
+  }, [state.archived])
   useEffect(() => window.ctrl.onChatDraft((text) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 }))), [])
   // A draft for a session's chat (an fx chat session just created with text): into its composer once it's up.
   useEffect(() => {
@@ -309,6 +315,7 @@ export function App() {
                 sessionID={chatID}
                 session={state.sessions.find((s) => s.id === chatID)}
                 archived={!!state.archived[chatID]}
+                draft={state.drafts[chatID]}
               />
             )}
             {chatHome && (
