@@ -327,7 +327,7 @@ function CliToolEditor({
     >
       <label>
         <span>Name</span>
-        <input className="setting-input" value={name} autoFocus placeholder="AWS (vercel)" onChange={(e) => setName(e.target.value)} />
+        <input className="setting-input" value={name} autoFocus placeholder="AWS (work)" onChange={(e) => setName(e.target.value)} />
       </label>
       <label>
         <span>Check</span>

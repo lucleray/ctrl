@@ -59,12 +59,12 @@ describe("model refs", () => {
   test("parse and format round-trip, with variants", () => {
     const { parseModel, formatModel } = settings
     for (const [value, harness] of [
-      ["vercel/anthropic/claude-x#high", "opencode"],
+      ["openrouter/anthropic/claude-x#high", "opencode"],
       ["openai/gpt-5", "opencode"],
       ["gpt-5#low", "fx"],
     ])
       assert.equal(formatModel(parseModel(value, harness)), value)
-    assert.deepEqual(parseModel("vercel/anthropic/claude-x#high", "opencode"), { providerID: "vercel", id: "anthropic/claude-x", variant: "high" })
+    assert.deepEqual(parseModel("openrouter/anthropic/claude-x#high", "opencode"), { providerID: "openrouter", id: "anthropic/claude-x", variant: "high" })
   })
 
   test("bad refs are undefined", () => {

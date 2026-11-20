@@ -502,7 +502,7 @@ ctrl space set <space> [--directory <directory>] [--harness opencode|fx|default]
 - **Harness:** Instructions apply to opencode sessions only.
 
 ```bash
-ctrl space set name:front --directory ~/w/vercel/front --harness fx --fx-model "anthropic/claude-x#high"
+ctrl space set name:front --directory ~/code/acme-app --harness fx --fx-model "anthropic/claude-x#high"
 ```
 
 ### space move
@@ -621,7 +621,7 @@ ctrl settings set <key> <value>
 
 ```bash
 ctrl settings set appearance dark
-ctrl settings set defaultModel "vercel/anthropic/claude-x#high"
+ctrl settings set defaultModel "openrouter/anthropic/claude-x#high"
 ```
 
 ### settings reset
@@ -860,8 +860,8 @@ ctrl resources archive <id|url>...
 **Returns:** `{archived:[id], changed, undo?}`
 
 ```bash
-ctrl resources archive github-pr:vvo/review-factory#51
-ctrl resources archive https://github.com/vvo/review-factory/pull/51
+ctrl resources archive github-pr:acme/app#51
+ctrl resources archive https://github.com/acme/app/pull/51
 ```
 
 ### resources unarchive
@@ -949,7 +949,7 @@ ctrl tools check [<id>...]
 
 ```bash
 ctrl tools check
-ctrl tools check aws-vercel
+ctrl tools check aws-work
 ```
 
 ### tools scan
@@ -990,7 +990,7 @@ ctrl tools add --name <name> --check <check> [--fix-command <fix-command>] [--fi
 
 | Argument | Meaning |
 |---|---|
-| `--name <name>` | Shown in Settings and toasts, e.g. "AWS (vercel)" · required |
+| `--name <name>` | Shown in Settings and toasts, e.g. "AWS (work)" · required |
 | `--check <check>` | Shell command that exits 0 while the CLI works and is logged in · required |
 | `--fix-command <fix-command>` | Fix: run this shell command, then check again |
 | `--fix-url <fix-url>` | Fix: open this http(s) page |
@@ -1003,7 +1003,7 @@ ctrl tools add --name <name> --check <check> [--fix-command <fix-command>] [--fi
 **Returns:** `{id, item: Tool}`
 
 ```bash
-ctrl tools add --name "AWS (vercel)" --check "aws sts get-caller-identity --profile vercel" --fix-command "aws sso login --profile vercel" --label "Log in"
+ctrl tools add --name "AWS (work)" --check "aws sts get-caller-identity --profile work" --fix-command "aws sso login --profile work" --label "Log in"
 ctrl tools add --name "GitHub CLI" --check "gh auth status" --fix-session
 ```
 

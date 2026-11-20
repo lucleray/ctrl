@@ -238,7 +238,7 @@ src/main/cli-server.ts: net.Server on <state folder>/ctrl.sock, created 0600
 
 ```bash
 # File the session I'm running in under a new space
-space=$(ctrl space create "PR reviews" --directory ~/w/vercel/front | jq -r .data.id)
+space=$(ctrl space create "PR reviews" --directory ~/code/acme-app | jq -r .data.id)
 ctrl session move self --space "$space"
 
 # Fan out work, then wait for all of it
@@ -263,7 +263,7 @@ ctrl worktree update
 
 # Settings
 ctrl settings set appearance dark
-ctrl settings set defaultModel "vercel/anthropic/claude-haiku-4.5"
+ctrl settings set defaultModel "openrouter/anthropic/claude-haiku-4.5"
 ```
 
 ## Open questions

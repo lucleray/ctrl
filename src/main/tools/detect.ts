@@ -21,7 +21,7 @@ export type DetectSources = {
 
 /**
  * fx keeps profile servers in ~/.fx/mcp.json, in the usual mcpServers shape (what `fx mcp add` writes) or in
- * opencode's `mcp` shape (what `kit setup` writes): fx reads both.
+ * opencode's `mcp` shape (what some MCP installers write): fx reads both.
  */
 export const fxMcpConfigs = (fxHome: string): McpServerConfig[] => {
   let raw: { mcpServers?: Record<string, Record<string, unknown>>; mcp?: Record<string, Record<string, unknown>> }
