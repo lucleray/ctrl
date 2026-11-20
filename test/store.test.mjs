@@ -185,3 +185,74 @@ describe("fx chat sessions", () => {
     assert.deepEqual(fresh().data.fxChat, {})
   })
 })
+
+describe("drafts", () => {
+  test("kept per session, cleared when blank, and saved", () => {
+    const path = file()
+    const s = new Store(path)
+    assert.equal(s.setDraft("ses_1", "half a thought"), true)
+    // Typing more doesn't change what the sidebar shows.
+    assert.equal(s.setDraft("ses_1", "half a thought, more"), false)
+    assert.equal(s.setDraft("ses_2", "   "), false)
+    s.save()
+    assert.deepEqual(new Store(path).data.drafts, { ses_1: "half a thought, more" })
+    assert.equal(s.setDraft("ses_1", ""), true)
+    assert.deepEqual(s.data.drafts, {})
+  })
+
+  test("archiving and deleting drop the draft", () => {
+    const s = fresh()
+    s.setDraft("ses_1", "a")
+    s.setDraft("ses_2", "b")
+    s.setArchived(["ses_1"], true)
+    s.forgetSession("ses_2")
+    assert.deepEqual(s.data.drafts, {})
+  })
+})
+
+describe("unstarted sessions", () => {
+  test("rekey moves everything ctrl keeps to the harness's id, children included", () => {
+    const s = fresh()
+    const space = s.createSpace("Work")
+    const old = "fx:new-abc"
+    s.addUnstarted(old, { harness: "fx", directory: "/w", created: 1 })
+    s.assign(old, space)
+    s.setParent(old, "ses_parent")
+    s.setParent("ses_kid", old)
+    s.setDraft(old, "draft")
+    s.setTitle(old, "Named")
+    s.setOpen([old, "fx:other"], old)
+    s.rekey(old, "fx:real")
+    assert.equal(s.data.assignments["fx:real"], space)
+    assert.equal(s.data.parents["fx:real"], "ses_parent")
+    assert.equal(s.data.parents.ses_kid, "fx:real")
+    assert.equal(s.data.drafts["fx:real"], "draft")
+    assert.equal(s.data.titles["fx:real"], "Named")
+    assert.deepEqual(s.data.unstarted["fx:real"], { harness: "fx", directory: "/w", created: 1 })
+    assert.deepEqual(s.data.open, { sessions: ["fx:real", "fx:other"], current: "fx:real" })
+    assert.equal(JSON.stringify(s.data).includes(old), false)
+  })
+
+  test("withUnstarted lists new sessions until their harness has them for good", async () => {
+    const [{ withUnstarted, isPlaceholder, placeholderID }] = await load(tmp, "src/main/unstarted.ts")
+    const listed = [{ id: "ses_a", harness: "opencode", title: "A", directory: "/", updated: 5, status: "idle" }]
+    const unstarted = {
+      "fx:new-1": { harness: "fx", directory: "/w", created: 10 },
+      "fx:chat": { harness: "fx", directory: "/w", created: 3, chat: true },
+      ses_a: { harness: "opencode", directory: "/", created: 1 },
+    }
+    const out = withUnstarted(listed, unstarted, { title: (id) => (id === "fx:chat" ? "Named" : undefined), started: (id) => id === "ses_a" })
+    assert.deepEqual(
+      out.sessions.map((s) => [s.id, s.title, s.view]),
+      [
+        ["ses_a", "A", undefined],
+        ["fx:new-1", "New session", undefined],
+        ["fx:chat", "Named", "chat"],
+      ],
+    )
+    assert.deepEqual(out.started, ["ses_a"])
+    const id = placeholderID("fx")
+    assert.ok(id.startsWith("fx:new-") && isPlaceholder(id))
+    assert.equal(isPlaceholder("fx:KvHk"), false)
+  })
+})

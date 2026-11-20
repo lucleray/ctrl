@@ -2,6 +2,10 @@ import { randomBytes } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { DEFAULT_SOUND_CHOICES, type AgentOrigin, FONT_SIZE, type Settings, type Space, type SpacePatch, type UiState } from "../shared/types"
+import type { Unstarted } from "./unstarted"
+
+/** A draft is a message, not a document: anything longer is cut, so state.json stays small. */
+export const DRAFT_MAX = 64 * 1024
 
 const DEFAULT_UI: UiState = {
   recentsCollapsed: false,
@@ -63,6 +67,10 @@ type Persisted = {
   open: { sessions: string[]; current: string | null }
   /** fx sessions created as a chat (src/main/fx-chat.ts): they open as one, never in a terminal */
   fxChat: Record<string, true>
+  /** sessionID → the message typed in its chat composer and not sent (dropped on send, archive, delete) */
+  drafts: Record<string, string>
+  /** New sessions their harness hasn't written yet (src/main/unstarted.ts), listed until it does */
+  unstarted: Record<string, Unstarted>
   /** Terminal area size, so restored and new fx processes start at the right size */
   termSize?: { cols: number; rows: number }
   /** Secret in the remote control URL (src/main/remote.ts), kept so the link saved on the phone keeps working */
@@ -89,6 +97,8 @@ export class Store {
       titles: {},
       open: { sessions: [], current: null },
       fxChat: {},
+      drafts: {},
+      unstarted: {},
       ...loaded,
       ui: { ...DEFAULT_UI, ...loaded.ui },
       settings: {
@@ -122,11 +132,65 @@ export class Store {
     this.save()
   }
 
+  /** Archiving drops the sessions' drafts. */
   setArchived(sessionIDs: string[], archived: boolean) {
     for (const id of sessionIDs) {
-      if (archived) this.data.archived[id] ??= Date.now()
-      else delete this.data.archived[id]
+      if (archived) {
+        this.data.archived[id] ??= Date.now()
+        delete this.data.drafts[id]
+      } else delete this.data.archived[id]
     }
+    this.save()
+  }
+
+  /** Returns whether the session went from no draft to one, or back (what the sidebar shows). Blank: no draft. */
+  setDraft(sessionID: string, text: string) {
+    const had = sessionID in this.data.drafts
+    const next = text.trim() ? text.slice(0, DRAFT_MAX) : null
+    if ((this.data.drafts[sessionID] ?? null) === next) return false
+    if (next === null) delete this.data.drafts[sessionID]
+    else this.data.drafts[sessionID] = next
+    // Typing changes it every few hundred ms; losing the last second to a crash is fine.
+    this.saveSoon()
+    return had !== (next !== null)
+  }
+
+  addUnstarted(sessionID: string, unstarted: Unstarted) {
+    this.data.unstarted[sessionID] = unstarted
+    this.save()
+  }
+
+  dropUnstarted(sessionIDs: string[]) {
+    let changed = false
+    for (const id of sessionIDs) changed = delete this.data.unstarted[id] || changed
+    if (changed) this.save()
+  }
+
+  /**
+   * A session got its harness's id (an unstarted session, src/main/unstarted.ts): everything ctrl keeps about
+   * it follows, children included.
+   */
+  rekey(from: string, to: string) {
+    if (from === to) return
+    const maps = [
+      this.data.assignments,
+      this.data.archived,
+      this.data.createdByAgent,
+      this.data.parents,
+      this.data.viewed,
+      this.data.titles,
+      this.data.fxChat,
+      this.data.drafts,
+      this.data.unstarted,
+    ] as Record<string, unknown>[]
+    for (const map of maps) {
+      if (!(from in map)) continue
+      map[to] = map[from]
+      delete map[from]
+    }
+    for (const [id, parent] of Object.entries(this.data.parents)) if (parent === from) this.data.parents[id] = to
+    const { sessions, current } = this.data.open
+    this.data.open = { sessions: sessions.map((id) => (id === from ? to : id)), current: current === from ? to : current }
     this.save()
   }
 
@@ -247,6 +311,8 @@ export class Store {
     delete this.data.viewed[sessionID]
     delete this.data.titles[sessionID]
     delete this.data.fxChat[sessionID]
+    delete this.data.drafts[sessionID]
+    delete this.data.unstarted[sessionID]
     this.save()
   }
 

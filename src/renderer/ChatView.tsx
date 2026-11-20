@@ -14,6 +14,7 @@ import {
 import type { ChatPending, FormAnswer, FormField } from "../main/remote"
 import type { ChatItem, ChatPart, ChatQueued } from "../main/remote-chat"
 import type { ChatAttachment, ChatStats, Harness, ModelChoices, ModelRef, RunningWork, SessionActivity, SessionItem } from "../shared/types"
+import { flushDraft, readDraft, writeDraft } from "./drafts"
 import { age } from "./format"
 import { Icon } from "./icons"
 import { keyOf, ModelPopover } from "./ModelPicker"
@@ -34,6 +35,8 @@ type Props = {
   sessionID: string
   session: SessionItem | undefined
   archived: boolean
+  /** The draft main kept for this session (AppState.drafts) */
+  draft?: string
 }
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
@@ -135,7 +138,7 @@ function withMentions(text: string): ReactNode[] {
   return out
 }
 
-export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessionID, session, archived }, ref) {
+export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessionID, session, archived, draft }, ref) {
   const [items, setItems] = useState<Map<string, ChatItem>>(new Map())
   const [cursor, setCursor] = useState<string | null>(null)
   const [pending, setPending] = useState<ChatPending[]>([])
@@ -323,7 +326,11 @@ export const ChatView = forwardRef<ChatHandle, Props>(function ChatView({ sessio
               ),
             )}
             <Composer
+              // One per session: each starts with its own draft, nothing carries over to the next.
+              key={sessionID}
               ref={composer}
+              draftID={sessionID}
+              savedDraft={draft}
               placeholder={running ? "Steer the agent…" : "Message"}
               sendTitle={running ? "Steer (Enter)" : "Send (Enter)"}
               onSubmit={submit}
@@ -387,6 +394,10 @@ type ComposerProps = {
   onSubmit(text: string, attachments: ChatAttachment[]): void
   /** Set while a turn runs: the button stops it when nothing's typed, and so does Esc */
   onStop?(): void
+  /** The session whose draft this is (src/renderer/drafts.ts): it starts with it and keeps it as you type */
+  draftID?: string
+  /** The draft main kept for it (AppState.drafts), when this run has none */
+  savedDraft?: string
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -400,20 +411,12 @@ const lineCount = (s: string) => s.split("\n").length
  * they stay in the text so the agent sees where each one goes, and deleting one drops its attachment.
  * Its own component, so typing never re-renders the messages.
  */
-const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ placeholder, sendTitle, disabled, onSubmit, onStop }, ref) {
-  const [text, setText] = useState("")
-  /** Everything attached to this draft. Only the ones whose placeholder is still in the text are sent. */
-  const attached = useRef<{ label: string; uri: string }[]>([])
-  const input = useRef<HTMLTextAreaElement>(null)
-  const backdrop = useRef<HTMLDivElement>(null)
+const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer(
+  { placeholder, sendTitle, disabled, onSubmit, onStop, draftID, savedDraft },
+  ref,
+) {
   /** Token label → the text it stands for */
   const tokens = useRef(new Map<string, string>())
-  /** The last long paste, so the same ⌘V right after expands it */
-  const lastPaste = useRef<{ label: string; text: string } | null>(null)
-
-  /** Typed in through the editor, so ⌘Z undoes it and React's onChange sees it. */
-  const insert = (s: string) => document.execCommand("insertText", false, s)
-
   const addToken = (base: string, value: string) => {
     let label = base
     for (let n = 2; tokens.current.has(label) && tokens.current.get(label) !== value; n++) label = base.replace(/(\]?)$/, ` #${n}$1`)
@@ -423,6 +426,41 @@ const Composer = forwardRef<ChatHandle, ComposerProps>(function Composer({ place
 
   /** Session mentions in `s` become `@Title` tokens. */
   const tokenize = (s: string) => s.replace(MENTION, (whole, title: string, id: string) => addToken(`@${title.trim() || id}`, whole))
+
+  // The session's draft, read once: this run's (with its tokens and images), else the text main kept.
+  const [initial] = useState(() => {
+    const draft = draftID ? readDraft(draftID, savedDraft) : undefined
+    if (!draft) return { text: "", attached: [] }
+    tokens.current = new Map(draft.tokens)
+    // Main keeps tokens expanded: mentions become chips again.
+    return { text: draft.tokens.length ? draft.text : tokenize(draft.text), attached: draft.attached }
+  })
+  const [text, setText] = useState(initial.text)
+  /** Everything attached to this draft. Only the ones whose placeholder is still in the text are sent. */
+  const attached = useRef<{ label: string; uri: string }[]>(initial.attached)
+  const input = useRef<HTMLTextAreaElement>(null)
+  const backdrop = useRef<HTMLDivElement>(null)
+  /** The last long paste, so the same ⌘V right after expands it */
+  const lastPaste = useRef<{ label: string; text: string } | null>(null)
+
+  /** Typed in through the editor, so ⌘Z undoes it and React's onChange sees it. */
+  const insert = (s: string) => document.execCommand("insertText", false, s)
+
+  /** The text with its tokens swapped for what they stand for: what's sent, and what main keeps as the draft. */
+  const expand = (s: string) => {
+    let out = s
+    for (const [label, value] of tokens.current) if (s.includes(label)) out = out.split(label).join(value)
+    return out
+  }
+
+  // Keeps the draft as you type (and clears it once sent); saved right away when the composer goes.
+  const saved = useRef(initial.text)
+  useEffect(() => {
+    if (!draftID || text === saved.current) return
+    saved.current = text
+    writeDraft(draftID, { text, attached: attached.current.filter((a) => text.includes(a.label)), tokens: [...tokens.current] }, expand(text))
+  }, [text, draftID])
+  useEffect(() => (draftID ? () => flushDraft(draftID) : undefined), [draftID])
 
   useImperativeHandle(
     ref,

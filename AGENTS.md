@@ -25,7 +25,8 @@ When asked to build something in ctrl, unless told otherwise:
 4. **Iterate.** Live reload picks up edits: say whether the user needs to do anything (refresh the phone, wait
    for the app to restart). Keep the preview running between turns.
 5. **Check before saying it's done.** `npm run typecheck`, and `npm test` when CLI code changed. Drive the
-   preview with the CLI line it printed, or take a screenshot with the debug hooks.
+   preview with the CLI line it printed, or take a screenshot with the debug hooks. Don't interrupt the user:
+   never bring the preview's window to the front or focus it (it opens in a corner, unfocused, on purpose).
 6. **Commit and push** the branch as you go. Open a pull request only when asked.
 7. **Clean up** when the work is dropped: stop the preview (that stops its opencode service too), remove the
    worktree, and delete its `ctrl-preview/<label>` folder. If the preview handed out git worktrees

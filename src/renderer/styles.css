@@ -167,6 +167,17 @@ button {
   height: 12px;
 }
 
+/* An unsent message in the session's chat composer (Slack's pencil), before its age. */
+.draft-tag {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+.draft-tag .icon {
+  width: 12px;
+  height: 12px;
+}
+
 .harness-tag {
   flex: none;
   font-family: "SF Mono", Menlo, monospace;

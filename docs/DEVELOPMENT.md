@@ -68,6 +68,11 @@ npm run preview -- --name <label>  # label other than the branch (also names its
 - Each label gets its own folder, CLI socket (`ctrl-preview/<label>/ctrl.sock`) and phone port (7340 and up,
   the same one every time), so previews never step on each other or on the installed app. The label shows
   next to "ctrl" in the sidebar and on the phone.
+- It stays out of the way: a preview restarts on every edit to main, often while you work in something else,
+  so its window opens smaller in the top-right corner, without taking focus, and comes back where you last
+  moved it (`preview-window.json` in its sandbox). Agents testing a change drive it with its CLI line or the
+  debug hooks (`CTRL_EVAL`, `CTRL_SCREENSHOT`), never by bringing it to the front (`ctrl window raise`,
+  `open -a`, AppleScript).
 - `~/.config/ctrl/tools.json` is copied in on the first run; gh's token is passed in (`GH_TOKEN`) so the
   resources panel shows live PR status.
 - Live reload like `npm run dev`: renderer changes hot-reload, main process changes restart the app. The phone

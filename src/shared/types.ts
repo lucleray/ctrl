@@ -325,6 +325,8 @@ export type AppState = {
   createdByAgent: Record<string, AgentOrigin>
   /** sessionID → parent sessionID (child sessions) */
   parents: Record<string, string>
+  /** sessionID → its chat composer's unsent message (the sidebar's pencil). The renderer's own copy is fresher while typing */
+  drafts: Record<string, string>
   sessions: SessionItem[]
   currentSessionID: string | null
   bridgeConnected: boolean
@@ -714,6 +716,8 @@ export type CtrlApi = {
   chatSend(sessionID: string, text: string, attachments: ChatAttachment[]): Promise<string | undefined>
   /** A new opencode session in the default space, opened, with this first message */
   chatNew(text: string, attachments: ChatAttachment[]): Promise<void>
+  /** Saves what's typed in a session's chat composer, unsent (blank: no draft). Kept until sent, archived or deleted */
+  setDraft(sessionID: string, text: string): void
   chatStop(sessionID: string): Promise<void>
   chatReply(sessionID: string, requestID: string, decision: "once" | "always" | "reject"): Promise<void>
   /** Answer a question form (null: dismiss it) */

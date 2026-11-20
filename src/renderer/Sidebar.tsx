@@ -358,6 +358,12 @@ export function Sidebar({ state, hints, onOpen, onNew, onSearch, onSettings, onT
           </span>
         )}
         <span className="label">{s.title}</span>
+        {/* An unsent message waits in its composer. Not on the session you're typing in. */}
+        {state.drafts[s.id] && s.id !== state.currentSessionID && (
+          <span className="draft-tag" title="Draft">
+            <Icon name="pencil" />
+          </span>
+        )}
         {hints?.has(s.id) ? (
           <kbd className="jump-hint">⌘{hints.get(s.id)}</kbd>
         ) : signalRank(signal) === 0 ? (

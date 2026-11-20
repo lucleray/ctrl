@@ -33,7 +33,7 @@ export async function load(dir, ...entries) {
 
 /**
  * Renderer code in a fake DOM (happy-dom), for UI tests: one bundle holding React and these modules, so
- * they share one React. Returns their exports plus `render(element)` → { root, unmount }, and `act`.
+ * they share one React. Returns their exports plus `render(element)` → { root, rerender, unmount }, and `act`.
  * `window.ctrl` is the preload API: pass the parts the component uses. Call `close()` in an `after`.
  */
 export async function loadUi(dir, entries, ctrl = {}) {
@@ -74,7 +74,7 @@ export async function loadUi(dir, entries, ctrl = {}) {
     document.body.appendChild(root)
     const r = ui.createRoot(root)
     ui.act(() => r.render(element))
-    return { root, unmount: () => (ui.act(() => r.unmount()), root.remove()) }
+    return { root, rerender: (next) => ui.act(() => r.render(next)), unmount: () => (ui.act(() => r.unmount()), root.remove()) }
   }
   return { modules: entries.map((_, i) => ui[`m${i}`]), h: ui.createElement, act: ui.act, render, ctrl, close: () => window.happyDOM.close() }
 }
