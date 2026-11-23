@@ -50,7 +50,7 @@ mkdirSync(dist, { recursive: true })
 
 const html = readFileSync(join(site, 'index.html'), 'utf8').replace('<!--WORDMARK-->', wordmark('ctrl.'))
 writeFileSync(join(dist, 'index.html'), html)
-for (const file of ['style.css', 'main.js']) cpSync(join(site, file), join(dist, file))
+for (const file of ['style.css', 'main.js', 'demo.js']) cpSync(join(site, file), join(dist, file))
 cpSync(join(root, 'docs/media'), join(dist, 'media'), { recursive: true })
 cpSync(join(root, 'build/icon.png'), join(dist, 'icon.png'))
 

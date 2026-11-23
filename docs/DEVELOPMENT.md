@@ -174,10 +174,13 @@ node scripts/demo/capture.mjs --harness fx   # the fx versions (hero-fx.png, …
 [ctrl.lucleray.me](https://ctrl.lucleray.me) is a static page in `site/`, the Vercel project `ctrl-site` on
 the `luc-and-co` team (root directory `site`).
 
-- `node site/build.mjs` builds it into `site/dist`: `index.html` with the dot-matrix wordmark rendered in, plus
-  the README media from `docs/media` and `build/icon.png`. So new screenshots show up on the site at its next
-  deploy. Preview it with `python3 -m http.server -d site/dist`.
-- The opencode / fx switch swaps every image tagged `data-src` to its `-fx` twin.
+- `node site/build.mjs` builds it into `site/dist`: `index.html` with the dot-matrix wordmark rendered in as an
+  SVG (`site/main.js` moves it to a canvas for the load and pointer-interference animations), plus
+  `build/icon.png` and `docs/media` (`hero.png` is the link preview image). Preview it with
+  `python3 -m http.server -d site/dist`.
+- `site/demo.js` is the interactive demo: a fake ctrl window in plain HTML, with canned sessions, replies and
+  CLI output (no model), driven by the feature list next to it. Each entry in `FEATURES` sets up the window and
+  says what to try; `beta: true` tags the Experimental ones. Add an entry when a feature worth showing ships.
 - `/install.sh` redirects to the script on `main`, so `curl -fsSL https://ctrl.lucleray.me/install.sh | sh`
   always installs the latest release. `/download` and `/github` redirect too (`site/vercel.json`).
 - Deploy from the repo root, so the build can read `docs/media`:
