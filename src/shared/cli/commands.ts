@@ -892,7 +892,7 @@ export const COMMANDS: CommandSpec[] = [
       "Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.",
       "With <repo>: that repo. A new one is added (base branch and setup command detected) and gets a warm worktree right away. Flags change it; --forget removes it.",
       "Everything in Settings → Worktrees has a command: the folder and the background jobs are settings (`ctrl settings set worktreeRoot <path>`, `worktreePoolAuto`, `worktreeCleanup`, `worktreeUpdateRepos` true|false), and `worktree cleanup --apply` and `worktree update` run the jobs now.",
-      "The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.",
+      "The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most 4 (each is a full checkout with its dependencies) and at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.",
     ],
     args: [
       { name: "repo", type: "string", positional: true, placeholder: "[<repo>]", description: "Path of a git checkout, or a managed repo's name" },

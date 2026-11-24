@@ -86,7 +86,7 @@ export const SETTING_KEYS: SettingKey[] = [
   {
     key: "worktreePoolAuto",
     type: { kind: "bool" },
-    description: "Size each repo's warm worktree pool from the last 7 days of use; off = one warm worktree per repo (repos with a fixed size keep it)",
+    description: "Size each repo's warm worktree pool from the last 7 days of use, at most 4; off = one warm worktree per repo (repos with a fixed size keep it)",
   },
   {
     key: "worktreeCleanup",

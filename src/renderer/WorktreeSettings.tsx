@@ -238,7 +238,7 @@ export function WorktreeSettings({ state }: { state: AppState }) {
             <div className="setting-title">Size pools from usage</div>
             <div className="setting-desc">
               Each repo keeps the smallest pool that would have served the last 7 days of requests instantly 98% of the
-              time, refilled as soon as a worktree is taken. One for a repo not used in a week, none after 30 days.
+              time, refilled as soon as a worktree is taken, at most 4. One for a repo not used in a week, none after 30 days.
               Off: one per repo. A size picked in a repo's settings wins.
             </div>
           </div>

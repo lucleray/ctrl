@@ -1179,7 +1179,7 @@ ctrl worktree config [<repo>] [--name <name>] [--base <base>] [--setup <setup>] 
 - Without <repo>: the worktree folder, the settings (also under `ctrl settings`), the background jobs with what they last did, and every repo with its pool and usage.
 - With <repo>: that repo. A new one is added (base branch and setup command detected) and gets a warm worktree right away. Flags change it; --forget removes it.
 - Everything in Settings → Worktrees has a command: the folder and the background jobs are settings (`ctrl settings set worktreeRoot <path>`, `worktreePoolAuto`, `worktreeCleanup`, `worktreeUpdateRepos` true|false), and `worktree cleanup --apply` and `worktree update` run the jobs now.
-- The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.
+- The pool size (`target`) is sized from the last 7 days of use unless --warm pins it: the smallest pool that would have served 98% of requests instantly, at most 4 (each is a full checkout with its dependencies) and at most the repo's cap (--max-total). One for a repo unused for a week, none after 30 days.
 
 | Argument | Meaning |
 |---|---|
@@ -1427,7 +1427,7 @@ ctrl events [--type <type>...] [--session <session>...]
 | `remoteControl` | boolean | Remote control: serve a web page on your Tailscale network to use ctrl from your phone |
 | `sessionView` | "terminal" \| "chat" | How opencode sessions show: the embedded TUI (terminal) or a chat view (chat). fx sessions always use their terminal |
 | `worktreeRoot` | string \| null | Folder git worktrees are created in (`ctrl worktree up`); null = ~/.ctrl/worktrees. Worktrees that exist stay where they are |
-| `worktreePoolAuto` | boolean | Size each repo's warm worktree pool from the last 7 days of use; off = one warm worktree per repo (repos with a fixed size keep it) |
+| `worktreePoolAuto` | boolean | Size each repo's warm worktree pool from the last 7 days of use, at most 4; off = one warm worktree per repo (repos with a fixed size keep it) |
 | `worktreeCleanup` | boolean | Every hour and after a session is archived: release the worktrees of archived and deleted sessions, remove worktree folders nothing tracks |
 | `worktreeUpdateRepos` | boolean | Every hour: fetch the repos worktrees come from and fast-forward your own checkout when it's on its base branch with nothing uncommitted |
 | `soundChoices.<event>` | system sound name \| absolute path \| null | Sound per event (needs-input, failed, finished): macOS sound name, absolute file path, or null |
