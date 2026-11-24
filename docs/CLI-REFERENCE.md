@@ -961,7 +961,7 @@ ctrl tools scan [--apply] [--skip <skip>...]
 ```
 
 - Without --apply nothing changes: `watched` says what's in the list already.
-- --apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.
+- --apply watches everything found except --skip keys. It only adds: what you already watch stays as it is (stop watching one with `ctrl tools remove`).
 - The list lives in ~/.config/ctrl/tools.json; the first apply creates it.
 
 | Argument | Meaning |

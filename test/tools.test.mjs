@@ -197,15 +197,16 @@ describe("ToolsService", () => {
     assert.deepEqual(events, [["toast", "MCP “linear” needs sign-in: 401", "Fix"]])
   })
 
-  test("scan → apply writes tools.json; unchecked stops watching, rescans keep edits and hand-added CLIs", async () => {
+  test("scan → apply writes tools.json and only adds; rescans keep what's watched, edits and hand-added CLIs", async () => {
     const { svc, file } = service({ opencodeServers: [{ name: "linear", status: "connected" }, { name: "notion", status: "connected" }] })
     const found = await svc.scan()
     assert.deepEqual(found.filter((f) => f.kind === "mcp").map((f) => [f.key, f.watched]), [["mcp:linear", false], ["mcp:notion", false]])
     svc.applyScan(["mcp:linear"])
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).mcp.map((s) => s.name), ["linear"])
     svc.saveCli({ id: "mine", name: "Mine", check: "true", fix: { kind: "session" } })
-    await svc.scan()
-    svc.applyScan(["mcp:linear", "mcp:notion"])
+    const again = await svc.scan()
+    assert.deepEqual(again.filter((f) => f.kind === "mcp").map((f) => [f.key, f.watched]), [["mcp:linear", true], ["mcp:notion", false]])
+    svc.applyScan(["mcp:notion"])
     const config = JSON.parse(readFileSync(file, "utf8"))
     assert.deepEqual(config.mcp.map((s) => s.name), ["linear", "notion"])
     assert.deepEqual(config.cli.map((c) => c.id).filter((id) => id === "mine"), ["mine"])

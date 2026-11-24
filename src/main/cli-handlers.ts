@@ -1367,7 +1367,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       if (!args.apply) return { items: found, applied: false }
       const skip = new Set<string>(args.skip ?? [])
       host.applyToolScan(found.map((f) => f.key).filter((k) => !skip.has(k)))
-      return { items: found.map((f) => ({ ...f, watched: !skip.has(f.key) })), applied: true }
+      return { items: found.map((f) => ({ ...f, watched: f.watched || !skip.has(f.key) })), applied: true }
     },
     "skill status": () => ({
       items: (["read-session", "ctrl"] as const).map((name) => ({ name, ...host.skill(name) })),

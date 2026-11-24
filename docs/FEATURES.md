@@ -344,8 +344,8 @@ where it lives.
   - Scan (onboarding's second step, Settings → Tools → Scan, or Scan again at the top of the section, `ctrl tools scan`): finds MCP servers in
     opencode's and fx's configs (`~/.fx/mcp.json` in either its `mcpServers` shape or the opencode-style `mcp`
     shape some MCP installers write), AWS SSO sessions (one check per session, from `~/.aws/config`) and gh, vercel, pup,
-    gcloud on PATH. Shows a summary with everything checked, Customize to uncheck. Stateless: it finds and checks
-    the same things every time; unchecked ones stop being watched, CLIs added by hand are never touched
+    gcloud on PATH. Only adds: lists what you don't watch yet, all checked (Select all / none per group), and
+    shows the ones you already watch as "Already watching", with no checkbox. Stop watching one with Remove on its row
   - Users onboarded before tools existed get one toast offering the scan. Until then, opencode's MCP servers are
     watched as before
   - MCP servers, per harness: opencode (status pushed by its service) and fx (`fx mcp list` / `fx mcp show`,
