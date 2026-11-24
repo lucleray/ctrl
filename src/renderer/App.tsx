@@ -32,9 +32,6 @@ const EMPTY: AppState = {
     sidebarWidth: 280,
     resourcesOpen: true,
     resourcesWidth: 300,
-    resourcesScope: "session",
-    resourcesCollapsed: false,
-    resourcesDocked: false,
   },
   settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal", worktreeRoot: null, worktreePoolAuto: true, worktreeCleanup: true, worktreeUpdateRepos: false },
   themes: { builtin: [], custom: [] },
@@ -66,7 +63,7 @@ export function App() {
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
   const [board, setBoard] = useState(false)
   // A prompt for ChatHome's composer (a fix-it prompt); `n` gives each one a fresh composer.
-  const [draft, setDraft] = useState<{ text: string; n: number } | null>(null)
+  const [draft, setDraft] = useState<{ text: string; n: number; home?: boolean } | null>(null)
   // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
   const [boardFilter, setBoardFilterState] = useState<BoardFilter>(loadFilter)
   const setBoardFilter = useCallback((f: BoardFilter) => {
@@ -210,10 +207,14 @@ export function App() {
   useEffect(() => {
     for (const id of localDrafts()) if (state.archived[id]) forgetDraft(id)
   }, [state.archived])
-  useEffect(() => window.ctrl.onChatDraft((text) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 }))), [])
+  useEffect(
+    () => window.ctrl.onChatDraft((text, target) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1, home: target === "home" }))),
+    [],
+  )
   // A draft for a session's chat (an fx chat session just created with text): into its composer once it's up.
+  // A home draft waits for ChatHome instead: the session it replaces is still on screen for a moment.
   useEffect(() => {
-    if (!draft?.text || !chatID || !chat.current) return
+    if (!draft?.text || draft.home || !chatID || !chat.current) return
     chat.current.paste(draft.text)
     setDraft((d) => (d ? { ...d, text: "" } : d))
   }, [draft, chatID])
@@ -254,6 +255,7 @@ export function App() {
           setPalette(false)
           setSettings(false)
           setSpaceSettingsID(null)
+          setBoard(false)
           focusMain()
         }
       }),
@@ -264,16 +266,6 @@ export function App() {
   useTypeToFocus((!!chatID || chatHome) && !palette && !settings && !editingSpace && !board && ready && !onboarding, focusMain)
 
   const showResources = state.ui.resourcesOpen && !settings && !editingSpace && !board && ready && !onboarding
-  // Floating, it sits over the terminal inside main; docked, it's a column next to main.
-  const resources = (
-    <ResourcesPanel
-      state={state}
-      onClose={() => {
-        void window.ctrl.setUi({ resourcesOpen: false })
-        focusMain()
-      }}
-    />
-  )
 
   return (
     <div className="app">
@@ -326,7 +318,7 @@ export function App() {
               <ChatHome
                 key={draft?.n ?? 0}
                 ref={chat}
-                draft={draft?.text}
+                draft={draft?.home ? draft.text : undefined}
                 onDraftUsed={() => setDraft((d) => (d ? { ...d, text: "" } : d))}
               />
             )}
@@ -377,9 +369,17 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {showResources && !state.ui.resourcesDocked && resources}
       </main>
-      {showResources && state.ui.resourcesDocked && resources}
+      {/* A column next to main, like the sidebar on the other side: the terminal narrows. */}
+      {showResources && (
+        <ResourcesPanel
+          state={state}
+          onClose={() => {
+            void window.ctrl.setUi({ resourcesOpen: false })
+            focusMain()
+          }}
+        />
+      )}
       {palette && (
         <Palette
           key={paletteQuery}

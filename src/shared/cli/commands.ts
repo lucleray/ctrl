@@ -553,10 +553,10 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "ui resources",
-    summary: "Opens, closes, folds, unfolds, docks or floats the resources panel",
+    summary: "Shows, hides or toggles the resources sidebar",
     args: [
-      { name: "action", type: "enum", values: ["open", "close", "toggle", "fold", "unfold", "dock", "float"], positional: true, required: true, placeholder: "open|close|toggle|fold|unfold|dock|float", description: "What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed)" },
-      { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space" },
+      { name: "action", type: "enum", values: ["open", "close", "toggle"], positional: true, required: true, placeholder: "open|close|toggle", description: "Show it, hide it, or switch" },
+      { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space (remembered per session)" },
     ],
     returns: "{open, collapsed, docked, scope}",
     mutates: true,
@@ -731,7 +731,7 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Detects MCP servers (opencode and fx configs) and CLIs worth watching (AWS SSO sessions, gh, vercel, pup, gcloud)",
     details: [
       "Without --apply nothing changes: `watched` says what's in the list already.",
-      "--apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.",
+      "--apply watches everything found except --skip keys. It only adds: what you already watch stays as it is (stop watching one with `ctrl tools remove`).",
       "The list lives in ~/.config/ctrl/tools.json; the first apply creates it.",
     ],
     args: [

@@ -680,16 +680,16 @@ ctrl ui window show|hide|raise
 
 ### ui resources
 
-Opens, closes, folds, unfolds, docks or floats the resources panel *(changes state)*
+Shows, hides or toggles the resources sidebar *(changes state)*
 
 ```text
-ctrl ui resources open|close|toggle|fold|unfold|dock|float [--scope session|space]
+ctrl ui resources open|close|toggle [--scope session|space]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `open\|close\|toggle\|fold\|unfold\|dock\|float` | What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed) · required |
-| `--scope session\|space` | Links of the current session or of its whole space |
+| `open\|close\|toggle` | Show it, hide it, or switch · required |
+| `--scope session\|space` | Links of the current session or of its whole space (remembered per session) |
 
 **Returns:** `{open, collapsed, docked, scope}`
 
@@ -961,7 +961,7 @@ ctrl tools scan [--apply] [--skip <skip>...]
 ```
 
 - Without --apply nothing changes: `watched` says what's in the list already.
-- --apply watches everything found except --skip keys, and stops watching skipped ones. What the scan didn't find, and CLIs added by hand, stay as they are.
+- --apply watches everything found except --skip keys. It only adds: what you already watch stays as it is (stop watching one with `ctrl tools remove`).
 - The list lives in ~/.config/ctrl/tools.json; the first apply creates it.
 
 | Argument | Meaning |

@@ -422,22 +422,20 @@ export class ToolsService {
   }
 
   /**
-   * Checked keys of the last scan get watched (your edits to ones already watched are kept), unchecked
-   * ones stop being watched. What the scan didn't see stays as it is, so a harness that's down doesn't
-   * empty your list, and CLIs you added by hand are never touched.
+   * Adds the checked keys of the last scan that aren't watched yet. Only adds: what you already watch
+   * (and your edits to it) stays as it is, and stopping watching one is Remove on its row.
    */
   applyScan(checked: string[]) {
     const d = this.lastScan
     if (!d) throw new Error("Scan first")
-    const keep = new Set(checked)
+    const add = new Set(checked)
     const data = this.file.data ?? { version: 1 as const, mcp: [], cli: [] }
-    const seenMcp = new Map(d.mcp.map((m) => [m.config.name, m.config]))
-    const mcp = data.mcp.filter((s) => !seenMcp.has(s.name) || keep.has(`mcp:${s.name}`))
-    for (const [name, config] of seenMcp) if (keep.has(`mcp:${name}`) && !mcp.some((s) => s.name === name)) mcp.push(config)
-    const seenCli = new Map(d.cli.map((c) => [c.key, c]))
-    const cli = data.cli.filter((c) => !c.key || !seenCli.has(c.key) || keep.has(c.key))
-    for (const [key, c] of seenCli) {
-      if (!keep.has(key) || cli.some((x) => x.key === key)) continue
+    const mcp = [...data.mcp]
+    for (const m of d.mcp)
+      if (add.has(`mcp:${m.config.name}`) && !mcp.some((s) => s.name === m.config.name)) mcp.push(m.config)
+    const cli = [...data.cli]
+    for (const c of d.cli) {
+      if (!add.has(c.key) || cli.some((x) => x.key === c.key)) continue
       cli.push({ ...c, id: cliToolID(c.id, cli.map((x) => x.id)) })
     }
     this.save({ version: 1, mcp, cli })

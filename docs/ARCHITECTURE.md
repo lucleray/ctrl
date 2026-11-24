@@ -398,8 +398,8 @@ alerts ─► ToolAlerts (alerts.ts) ─► one sticky toast per problem + fix b
 
 - **The list is the only state.** Detection reads files (opencode's `config.get`, `~/.fx/mcp.json`,
   `~/.aws/config`, PATH) and runs no CLI, and doesn't know what you watched before: the same Mac gives the
-  same answer. Applying a scan watches its checked keys (keeping your edits to ones already watched) and drops
-  its unchecked ones; what it didn't see, and CLIs added by hand (no `key`), stay. MCP servers are keyed by
+  same answer. Applying a scan only adds: it watches its checked keys that aren't in the list yet, and leaves
+  everything already there (with your edits) as it is. Stopping watching one is Remove. MCP servers are keyed by
   name, so one in both opencode and fx is one entry.
 - **Before tools.json exists** (no scan yet), opencode's MCP servers are watched as they are, like before.
 - **Lazy per harness:** opencode counts once its TUI runs; fx once an fx terminal is open (`harnessesChanged()`

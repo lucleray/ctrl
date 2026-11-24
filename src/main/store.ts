@@ -13,9 +13,6 @@ const DEFAULT_UI: UiState = {
   sidebarWidth: 280,
   resourcesOpen: true,
   resourcesWidth: 300,
-  resourcesScope: "session",
-  resourcesCollapsed: false,
-  resourcesDocked: false,
 }
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",
@@ -119,6 +116,8 @@ export class Store {
     delete (this.data.settings as { disabledAdapters?: unknown }).disabledAdapters
     // CLI checks live in tools.json now (src/main/tools/config.ts).
     delete (this.data.settings as { cliTools?: unknown }).cliTools
+    // The resources scope was one for every session before it became per session (spaceScopedSessions).
+    delete (this.data.ui as { resourcesScope?: unknown }).resourcesScope
     if (!loaded.viewedSince) this.save()
   }
 
