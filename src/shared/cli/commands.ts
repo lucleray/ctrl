@@ -553,9 +553,9 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: "ui resources",
-    summary: "Opens, closes, folds, unfolds, docks or floats the resources panel",
+    summary: "Shows, hides or toggles the resources sidebar",
     args: [
-      { name: "action", type: "enum", values: ["open", "close", "toggle", "fold", "unfold", "dock", "float"], positional: true, required: true, placeholder: "open|close|toggle|fold|unfold|dock|float", description: "What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed)" },
+      { name: "action", type: "enum", values: ["open", "close", "toggle"], positional: true, required: true, placeholder: "open|close|toggle", description: "Show it, hide it, or switch" },
       { name: "scope", type: "enum", values: ["session", "space"], description: "Links of the current session or of its whole space (remembered per session)" },
     ],
     returns: "{open, collapsed, docked, scope}",

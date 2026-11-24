@@ -112,9 +112,11 @@ where it lives.
 
 ## Resources panel
 
-- Floating card over the terminal's top-right corner (⇧⌘R) listing links shared in the current session or its whole space: PRs, issues,
-  commits, repos, Linear, Notion, Slack, Vercel deployments/projects. Shown by default, resizable,
-  hidden while Settings or space settings are open (`src/renderer/ResourcesPanel.tsx`)
+- Sidebar on the right, toggled on or off (⇧⌘R, the sidebar's resources button, the panel's close button), listing
+  links shared in the current session or its whole space: PRs, issues, commits, repos, Linear, Notion, Slack,
+  Vercel deployments/projects. The terminal narrows next to it. Shown by default, resizable (`ui.resourcesWidth`),
+  hidden while Settings or space settings are open. Remembered across restarts (`ui.resourcesOpen`), agents
+  switch it with `ctrl ui resources open|close|toggle` (`src/renderer/ResourcesPanel.tsx`)
 - Grouped by type, pull requests at the top, then worktrees, sessions, the rest of GitHub, Linear, Notion,
   Slack and Vercel (`PANEL_TYPES`, `src/shared/adapters`)
 - Most recently mentioned first, except pull requests: open and draft ones come first, then merged, then closed
@@ -123,12 +125,6 @@ where it lives.
   bottom (unarchive button there), and leaves the board, until a session mentions it again, then it comes
   back on its own. Everywhere, not per space (`archivedResources` in `state.json`). Agents use
   `ctrl resources archive|unarchive <id|url>...`, and `resources list --archived` includes them
-- Click the panel's title to fold it to a small header pill with the link count, so a long list stops covering
-  the terminal. Click again to unfold. Remembered across restarts (`ui.resourcesCollapsed`), agents fold it with
-  `ctrl ui resources fold|unfold`
-- Dock button in the panel's header: turns the card into a column on the right, the terminal narrows instead of
-  being covered. Resizable (`ui.resourcesWidth`), folds to a thin side tab with the link count. Click again to
-  float it back. Remembered across restarts (`ui.resourcesDocked`), agents switch with `ctrl ui resources dock|float`
 - Resource adapters, one file per service in `src/shared/adapters/`, registered in `adapters/index.ts`: each
   declares the link types it recognizes (URL → canonical key, icon, offline title) and, optionally, a `live`
   part that fetches details through the service's own CLI (ctrl never handles tokens). Live results are

@@ -8,15 +8,15 @@ import { RESOURCE_DRAG, type ResourceDrag, sessionMention } from "./ReferenceDro
 import { usePanelWidth } from "./ResizeHandle"
 
 const PAGE_SIZE = 8
-const DOCKED_MIN = 240
-const DOCKED_MAX = 560
-const DOCKED_DEFAULT = 300
+const WIDTH_MIN = 240
+const WIDTH_MAX = 560
+const WIDTH_DEFAULT = 300
 
 /**
  * Resources of the current session's scope, refetched when the indexer reports
- * changes in it. While shown unfolded, main keeps their live details fresh and pushes them.
+ * changes in it. While shown, main keeps their live details fresh and pushes them.
  */
-function useResources(sessionIDs: string[], watching: boolean) {
+function useResources(sessionIDs: string[]) {
   const [items, setItems] = useState<ResourceItem[]>([])
   const key = sessionIDs.join(",")
   useEffect(() => {
@@ -37,12 +37,10 @@ function useResources(sessionIDs: string[], watching: boolean) {
       offMeta()
     }
   }, [key])
-  // Folded, the pill only needs the count: no live fetches for links nobody sees.
   useEffect(() => {
-    if (!watching) return
     window.ctrl.watchResources(key ? key.split(",") : [])
     return () => window.ctrl.watchResources([])
-  }, [key, watching])
+  }, [key])
   return items
 }
 
@@ -57,16 +55,14 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
     return Object.keys(state.assignments).filter((id) => state.assignments[id] === space.id)
   }, [current, scope, space, state.assignments])
 
-  const collapsed = state.ui.resourcesCollapsed
-  const docked = state.ui.resourcesDocked
   const { width, handle } = usePanelWidth(state.ui.resourcesWidth, {
     key: "resourcesWidth",
-    min: DOCKED_MIN,
-    max: DOCKED_MAX,
-    initial: DOCKED_DEFAULT,
+    min: WIDTH_MIN,
+    max: WIDTH_MAX,
+    initial: WIDTH_DEFAULT,
     edge: "left",
   })
-  const fetched = useResources(sessionIDs, !collapsed)
+  const fetched = useResources(sessionIDs)
   // Referenced sessions get their title and state from the sidebar's list, so renames, archiving
   // and deletes show up without reindexing. Archiving only hides a session: the reference stays.
   const items = useMemo(() => {
@@ -93,35 +89,14 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
   const sourceOf = (type: string) => state.adapters.find((a) => a.mode === "live" && a.types.includes(type))
 
   return (
-    <aside
-      className={`resources${collapsed ? " collapsed" : ""}${docked ? " docked" : ""}`}
-      style={docked && !collapsed ? { width } : undefined}
-    >
-      {docked && <div className="resources-drag" />}
-      {docked && !collapsed && handle}
+    <aside className="resources" style={{ width }}>
+      <div className="resources-drag" />
+      {handle}
       <div className="resources-header">
-        <button
-          className="resources-toggle"
-          title={collapsed ? "Expand" : "Collapse"}
-          aria-expanded={!collapsed}
-          onClick={() => void window.ctrl.setUi({ resourcesCollapsed: !collapsed })}
-        >
-          <Icon name={docked ? (collapsed ? "chevron-left" : "chevron-right") : collapsed ? "chevron-right" : "chevron-down"} />
-          <span>Resources</span>
-          {collapsed && active.length > 0 && <span className="count">{active.length}</span>}
+        <span className="resources-title">Resources</span>
+        <button className="icon-btn" title="Close" onClick={onClose}>
+          <Icon name="close" />
         </button>
-        <span className="resources-actions">
-          <button
-            className="icon-btn"
-            title={docked ? "Float over the terminal" : "Dock to the right"}
-            onClick={() => void window.ctrl.setUi({ resourcesDocked: !docked })}
-          >
-            <Icon name={docked ? "panel-float" : "panel-right"} />
-          </button>
-          <button className="icon-btn" title="Close" onClick={onClose}>
-            <Icon name="close" />
-          </button>
-        </span>
       </div>
       {space && (
         <div className="segmented">

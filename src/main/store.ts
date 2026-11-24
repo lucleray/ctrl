@@ -13,8 +13,6 @@ const DEFAULT_UI: UiState = {
   sidebarWidth: 280,
   resourcesOpen: true,
   resourcesWidth: 300,
-  resourcesCollapsed: false,
-  resourcesDocked: false,
 }
 const DEFAULT_SETTINGS: Settings = {
   appearance: "system",

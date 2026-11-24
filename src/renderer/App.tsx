@@ -32,8 +32,6 @@ const EMPTY: AppState = {
     sidebarWidth: 280,
     resourcesOpen: true,
     resourcesWidth: 300,
-    resourcesCollapsed: false,
-    resourcesDocked: false,
   },
   settings: { appearance: "system", tuiTheme: null, dockBadge: true, notifications: true, sounds: true, soundsWhenFocused: false, soundChoices: DEFAULT_SOUND_CHOICES, fontSize: FONT_SIZE.default, defaultHarness: "opencode", defaultDirectory: null, defaultSpace: null, defaultModel: null, defaultFxModel: null, defaultModelEnabled: false, ctrlInstructions: true, shortcuts: {}, adapterModes: {}, companion: false, remoteControl: false, sessionView: "terminal", worktreeRoot: null, worktreePoolAuto: true, worktreeCleanup: true, worktreeUpdateRepos: false },
   themes: { builtin: [], custom: [] },
@@ -268,16 +266,6 @@ export function App() {
   useTypeToFocus((!!chatID || chatHome) && !palette && !settings && !editingSpace && !board && ready && !onboarding, focusMain)
 
   const showResources = state.ui.resourcesOpen && !settings && !editingSpace && !board && ready && !onboarding
-  // Floating, it sits over the terminal inside main; docked, it's a column next to main.
-  const resources = (
-    <ResourcesPanel
-      state={state}
-      onClose={() => {
-        void window.ctrl.setUi({ resourcesOpen: false })
-        focusMain()
-      }}
-    />
-  )
 
   return (
     <div className="app">
@@ -381,9 +369,17 @@ export function App() {
             onClose={closeSpaceSettings}
           />
         )}
-        {showResources && !state.ui.resourcesDocked && resources}
       </main>
-      {showResources && state.ui.resourcesDocked && resources}
+      {/* A column next to main, like the sidebar on the other side: the terminal narrows. */}
+      {showResources && (
+        <ResourcesPanel
+          state={state}
+          onClose={() => {
+            void window.ctrl.setUi({ resourcesOpen: false })
+            focusMain()
+          }}
+        />
+      )}
       {palette && (
         <Palette
           key={paletteQuery}
