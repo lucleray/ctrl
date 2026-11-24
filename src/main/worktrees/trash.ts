@@ -35,7 +35,7 @@ export function deleterAlive(trash: string, now = Date.now()): boolean {
 export class TrashEmptier {
   private running = new Map<string, Set<string>>()
 
-  constructor(private readonly spawnRm: (paths: string[]) => ReturnType<typeof spawn> = spawnRm) {}
+  constructor(private readonly spawnRm: (paths: string[]) => ReturnType<typeof spawn> = defaultSpawnRm) {}
 
   empty(trash: string, skip: Set<string> = new Set()) {
     if (this.running.has(trash) || deleterAlive(trash)) return
@@ -78,7 +78,7 @@ export class TrashEmptier {
   }
 }
 
-function spawnRm(paths: string[]) {
+function defaultSpawnRm(paths: string[]) {
   const [command, args] = existsSync(TASKPOLICY) ? [TASKPOLICY, ["-b", "rm", "-rf", ...paths]] : ["rm", ["-rf", ...paths]]
   return spawn(command, args, { stdio: "ignore", detached: true })
 }

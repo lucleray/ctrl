@@ -288,6 +288,10 @@ describe("trash", () => {
     return { calls, spawnRm }
   }
 
+  test("constructs with the default rm", () => {
+    assert.doesNotThrow(() => new TrashEmptier())
+  })
+
   test("one rm per folder at a time, the next one for what was trashed meanwhile", () => {
     const dir = trashDir("a", "b")
     const { calls, spawnRm } = fakeRm()
