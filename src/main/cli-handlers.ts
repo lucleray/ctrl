@@ -34,6 +34,8 @@ import {
   type UiState,
   type UpdateStatus,
   isResourceArchived,
+  resourcesScopeOf,
+  resourcesScopePatch,
 } from "../shared/types"
 import { byRank, parseResourceUrl, resourceType } from "../shared/adapters"
 import type { RequestResult } from "./adapters/service"
@@ -1166,7 +1168,7 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
         currentSessionID: host.currentSessionID(),
         activeTerminal: host.activeTermID(),
         sidebarWidth: ui.sidebarWidth,
-        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, docked: ui.resourcesDocked, scope: ui.resourcesScope, width: ui.resourcesWidth },
+        resources: { open: ui.resourcesOpen, collapsed: ui.resourcesCollapsed, docked: ui.resourcesDocked, scope: resourcesScopeOf(ui, host.currentSessionID()), width: ui.resourcesWidth },
         recentsCollapsed: ui.recentsCollapsed,
         archivedCollapsed: ui.archivedCollapsed,
         window: host.window(),
@@ -1186,13 +1188,15 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const open = fold || dock ? ui.resourcesOpen : args.action === "toggle" ? !ui.resourcesOpen : args.action === "open"
       const collapsed = fold ? args.action === "fold" : ui.resourcesCollapsed
       const docked = dock ? args.action === "dock" : ui.resourcesDocked
+      const current = host.currentSessionID()
+      if (args.scope && !current) throw new CliError("NOT_FOUND", "No session open: --scope applies to the session on screen")
       host.setUi({
         resourcesOpen: open,
         resourcesCollapsed: collapsed,
         resourcesDocked: docked,
-        ...(args.scope ? { resourcesScope: args.scope } : {}),
+        ...(args.scope && current ? resourcesScopePatch(ui, current, args.scope) : {}),
       })
-      return { open, collapsed, docked, scope: store.data.ui.resourcesScope }
+      return { open, collapsed, docked, scope: resourcesScopeOf(store.data.ui, current) }
     },
     "ui sidebar": (args) => {
       const width = Math.max(200, Math.min(520, Number(args.width)))

@@ -689,7 +689,7 @@ ctrl ui resources open|close|toggle|fold|unfold|dock|float [--scope session|spac
 | Argument | Meaning |
 |---|---|
 | `open\|close\|toggle\|fold\|unfold\|dock\|float` | What to do with the panel: fold shrinks it to its title, unfold shows the links again, dock makes it a column on the right, float puts it back over the terminal (these four leave it open or closed) · required |
-| `--scope session\|space` | Links of the current session or of its whole space |
+| `--scope session\|space` | Links of the current session or of its whole space (remembered per session) |
 
 **Returns:** `{open, collapsed, docked, scope}`
 

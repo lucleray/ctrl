@@ -25,6 +25,18 @@ export const FX_PREFIX = "fx:"
 
 export const harnessOf = (sessionID: string): Harness => (sessionID.startsWith(FX_PREFIX) ? "fx" : "opencode")
 
+export type ResourcesScope = "session" | "space"
+
+/** The resources panel scope picked in this session: each session keeps its own, "session" until changed. */
+export const resourcesScopeOf = (ui: UiState, sessionID: string | null): ResourcesScope =>
+  sessionID && ui.spaceScopedSessions?.includes(sessionID) ? "space" : "session"
+
+/** The UiState patch that sets one session's resources scope. */
+export const resourcesScopePatch = (ui: UiState, sessionID: string, scope: ResourcesScope): Partial<UiState> => {
+  const rest = (ui.spaceScopedSessions ?? []).filter((id) => id !== sessionID)
+  return { spaceScopedSessions: scope === "space" ? [...rest, sessionID] : rest }
+}
+
 export type Space = {
   id: string
   name: string
@@ -131,8 +143,6 @@ export type UiState = {
   /** Right-hand resources panel */
   resourcesOpen: boolean
   resourcesWidth: number
-  /** Resources of the current session, or of every session in its space */
-  resourcesScope: "session" | "space"
   /** Resources panel folded to its header, so it stops covering the terminal */
   resourcesCollapsed: boolean
   /** Resources panel docked as a column on the right (resizable, the terminal narrows) instead of floating over it */
@@ -143,6 +153,8 @@ export type UiState = {
   agentsPrompted?: boolean
   /** Sessions whose children are folded in the sidebar */
   collapsedSessions?: string[]
+  /** Sessions whose resources panel shows every session in their space (the rest show their own links) */
+  spaceScopedSessions?: string[]
   /** The welcome screen (pick a harness) was completed; Settings → About can show it again */
   onboarded?: boolean
   /** The "watch your tools" toast was shown once already (users onboarded before tools existed) */
@@ -739,8 +751,11 @@ export type CtrlApi = {
   onChatPending(cb: (sessionID: string, pending: ChatPending[]) => void): () => void
   /** Messages sent but not handed to the agent yet (they steer at its next step) */
   onChatInbox(cb: (sessionID: string, inbox: ChatQueued[]) => void): () => void
-  /** A prompt for the new-session composer (a fix-it prompt, the companion's text), typed in, not sent */
-  onChatDraft(cb: (text: string) => void): () => void
+  /**
+   * A prompt typed in, not sent. `home`: for the new-session composer (a fix-it prompt, the companion's
+   * text), which is on its way to the screen. Else for the chat session on screen (an fx chat just created).
+   */
+  onChatDraft(cb: (text: string, target?: "home") => void): () => void
 }
 
 export type ChatOpened = ChatPage & { pending: ChatPending[]; inbox: ChatQueued[] }
