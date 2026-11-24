@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -34,6 +33,7 @@ import {
   writeRescueRef,
   type Unsaved,
 } from "./git"
+import { TrashEmptier } from "./trash"
 
 /** archived / gone (deleted): its worktrees get released · unknown: ctrl can't tell right now, so they stay */
 export type SessionState = "active" | "archived" | "gone" | "unknown"
@@ -171,6 +171,8 @@ export class WorktreeService {
   /** `prewarm` asked for at least this many warm worktrees, until the pool gets there */
   private floors = new Map<string, number>()
   private stopped = false
+  /** One rm per trash folder at a time: overlapping ones on the same files saturate the disk */
+  private trasher = new TrashEmptier()
 
   constructor(
     private file: string,
@@ -695,16 +697,7 @@ export class WorktreeService {
   }
 
   private emptyTrash(trash: string) {
-    let entries: string[]
-    try {
-      entries = readdirSync(trash)
-    } catch {
-      return
-    }
-    if (!entries.length) return
-    const child = spawn("rm", ["-rf", ...entries.map((e) => join(trash, e))], { stdio: "ignore", detached: true })
-    child.on("error", () => {})
-    child.unref()
+    this.trasher.empty(trash)
   }
 
   // ---------- the pool ----------
