@@ -32,7 +32,6 @@ const EMPTY: AppState = {
     sidebarWidth: 280,
     resourcesOpen: true,
     resourcesWidth: 300,
-    resourcesScope: "session",
     resourcesCollapsed: false,
     resourcesDocked: false,
   },

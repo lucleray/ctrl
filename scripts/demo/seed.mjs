@@ -281,7 +281,7 @@ const SPACES = [
   { id: "spc_demo_reviews", name: "Reviews", directory: folders.next },
   { id: "spc_demo_ai", name: "AI SDK", directory: folders.ai },
 ]
-const ui = { skillPrompted: true, resourcesOpen: true, recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280, resourcesWidth: 320, resourcesScope: "session" }
+const ui = { skillPrompted: true, resourcesOpen: true, recentsCollapsed: false, archivedCollapsed: true, sidebarWidth: 280, resourcesWidth: 320 }
 // The demo links point at made-up Slack and Vercel teams: show them as links only.
 // Previews print a phone link, so their phone view is on.
 const settings = { adapterModes: { slack: "links", vercel: "links" }, ...(preview ? { remoteControl: true } : {}) }
