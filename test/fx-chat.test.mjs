@@ -192,6 +192,54 @@ describe("FxChat processes", () => {
     assert.equal(plain, "fx:new2")
   })
 
+  test("warm: a spare process, started and initialized ahead, takes the next new session with its folder and model", async () => {
+    const fx = fakeFx({ sessionId: "new1" })
+    const { chat, events } = chatWith(fx)
+    chat.warm()
+    chat.warm()
+    assert.equal(fx.procs.length, 1)
+    const spare = fx.procs[0]
+    assert.deepEqual(spare.args, ["acp"])
+    await until(() => spare.received.length === 1, "initialize")
+    assert.equal(spare.received[0].method, "initialize")
+    assert.deepEqual([chat.sessions(), chat.pids(), events.opened], [[], [], []])
+
+    const id = await chat.create({ cwd: tmp, model: { providerID: "fx", id: "openai/gpt-6", variant: "low" }, instructions: "Be brief." })
+    assert.equal(id, "fx:new1")
+    assert.deepEqual(
+      spare.received.map((m) => [m.method, m.params.configId ?? null, m.params.value ?? null]),
+      [
+        ["initialize", null, null],
+        ["session/new", null, null],
+        ["session/set_config_option", "model", "openai/gpt-6"],
+        ["session/set_config_option", "effort", "low"],
+      ],
+    )
+    assert.deepEqual(spare.received[1].params, { cwd: tmp, mcpServers: [], systemPrompt: [{ type: "text", text: "Be brief." }] })
+    assert.deepEqual(events.opened, [["fx:new1", 4000, tmp, false]])
+    assert.deepEqual(await chat.model.get("fx:new1"), { providerID: "fx", id: "openai/gpt-6", variant: "low" })
+    // The next spare is on its way.
+    assert.equal(fx.procs.length, 2)
+    assert.deepEqual(fx.procs[1].args, ["acp"])
+
+    chat.cool()
+    assert.equal(fx.procs[1].killed, true)
+    assert.equal(spare.killed, false)
+  })
+
+  test("a spare that died is replaced by a new process for the session", async () => {
+    const fx = fakeFx({ sessionId: "new1" })
+    const { chat } = chatWith(fx)
+    chat.warm()
+    fx.procs[0].emit("close", 1)
+    await tick()
+    const id = await chat.create({ cwd: tmp, model: { providerID: "fx", id: "anthropic/claude-opus-5.5" } })
+    assert.equal(id, "fx:new1")
+    const used = fx.procs.find((p) => p.received.some((m) => m.method === "session/new"))
+    assert.deepEqual(used.args, ["acp", "--model", "anthropic/claude-opus-5.5"])
+    chat.dispose()
+  })
+
   test("close stops the process; the process going away clears the session", async () => {
     const fx = fakeFx()
     const { chat, events } = chatWith(fx)

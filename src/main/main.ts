@@ -372,7 +372,14 @@ const recheckFx = async () => {
     // Renames that were waiting for an fx that has quit since.
     for (const id of Object.keys(store.data.titles)) void flushTitle(id)
   }
+  warmFxChat()
   push()
+}
+
+/** In chat mode, a new fx session gets an `fx acp` process started ahead of time (FxChat.warm), else none. */
+const warmFxChat = () => {
+  if (store.data.settings.sessionView === "chat" && fxModern()) fxChat.warm()
+  else fxChat.cool()
 }
 
 const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
@@ -836,6 +843,7 @@ const applySettings = (patch: Partial<Settings>) => {
   if (patch.companion !== undefined && !headless) companion.setEnabled(patch.companion)
   if (patch.shortcuts && !headless) companion.updateShortcuts()
   if (Object.keys(patch).some((key) => key.startsWith("worktree"))) worktrees.settingsChanged()
+  if (patch.sessionView !== undefined) warmFxChat()
   loadThemes()
   applyTheme()
 }
