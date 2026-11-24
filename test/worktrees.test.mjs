@@ -1,14 +1,23 @@
 // Worktrees, the fast part: pool sizing (src/shared/worktrees.ts) and the `ctrl worktree` handlers over a
 // fake pool. The pool itself runs real git, so its tests are in test/slow (npm run test:slow).
 import assert from "node:assert/strict"
+import { EventEmitter } from "node:events"
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { before, describe, test } from "node:test"
 import { load, tmpDir } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-worktrees-test-")
-let createHandlers, poolTarget, simulateMisses, MINUTE, DAY
+let createHandlers, poolTarget, simulateMisses, MINUTE, DAY, TrashEmptier, DELETER, deleterAlive, runSetup
 
 before(async () => {
-  ;[{ createHandlers }, { poolTarget, simulateMisses, MINUTE, DAY }] = await load(tmp, "src/main/cli-handlers.ts", "src/shared/worktrees.ts")
+  ;[{ createHandlers }, { poolTarget, simulateMisses, MINUTE, DAY }, { TrashEmptier, DELETER, deleterAlive }, { runSetup }] = await load(
+    tmp,
+    "src/main/cli-handlers.ts",
+    "src/shared/worktrees.ts",
+    "src/main/worktrees/trash.ts",
+    "src/main/worktrees/git.ts",
+  )
 })
 
 describe("pool sizing", () => {
@@ -260,3 +269,88 @@ describe("worktree handlers", () => {
     assert.deepEqual(await run("worktree update"), { summary: "1 already up to date", repos: [] })
   })
 })
+
+describe("trash", () => {
+  let n = 0
+  const trashDir = (...entries) => {
+    const dir = join(tmp, `trash-${n++}`)
+    for (const e of entries) mkdirSync(join(dir, e), { recursive: true })
+    return dir
+  }
+  /** rm calls recorded instead of run: each a child that exits when the test says so. */
+  const fakeRm = () => {
+    const calls = []
+    const spawnRm = (paths) => {
+      const child = Object.assign(new EventEmitter(), { pid: 90_000 + calls.length, unref() {} })
+      calls.push({ names: paths.map((p) => p.split("/").pop()), child })
+      return child
+    }
+    return { calls, spawnRm }
+  }
+
+  test("one rm per folder at a time, the next one for what was trashed meanwhile", () => {
+    const dir = trashDir("a", "b")
+    const { calls, spawnRm } = fakeRm()
+    const trasher = new TrashEmptier(spawnRm)
+    trasher.empty(dir)
+    trasher.empty(dir)
+    assert.equal(calls.length, 1)
+    assert.deepEqual(calls[0].names.sort(), ["a", "b"])
+    assert.equal(readFileSync(join(dir, DELETER), "utf8"), String(calls[0].child.pid))
+    mkdirSync(join(dir, "c"))
+    trasher.empty(dir)
+    assert.equal(calls.length, 1)
+    // "b" failed to delete: the next rm takes only the new folder, not the one that just failed.
+    rmDir(join(dir, "a"))
+    calls[0].child.emit("exit", 1)
+    assert.equal(calls.length, 2)
+    assert.deepEqual(calls[1].names, ["c"])
+    rmDir(join(dir, "c"))
+    calls[1].child.emit("exit", 0)
+    // Then "b" gets one more try, and nothing spins after that.
+    assert.equal(calls.length, 3)
+    assert.deepEqual(calls[2].names, ["b"])
+    calls[2].child.emit("exit", 1)
+    assert.equal(calls.length, 3)
+    assert.equal(trasher.busy(dir), false)
+    assert.equal(existsSync(join(dir, DELETER)), false)
+  })
+
+  test("a marker holds back only a live rm, never a dead or reused pid, nor an old one", () => {
+    const dir = trashDir("a")
+    const marker = join(dir, DELETER)
+    writeFileSync(marker, "2147483646")
+    assert.equal(deleterAlive(dir), false)
+    // This test's own pid is alive but isn't an rm.
+    writeFileSync(marker, String(process.pid))
+    assert.equal(deleterAlive(dir), false)
+    writeFileSync(marker, "garbage")
+    assert.equal(deleterAlive(dir), false)
+    const { calls, spawnRm } = fakeRm()
+    new TrashEmptier(spawnRm).empty(dir)
+    assert.equal(calls.length, 1)
+    const old = Date.now() / 1000 - 7 * 3600
+    utimesSync(marker, old, old)
+    assert.equal(deleterAlive(dir), false)
+  })
+
+  test("an empty folder clears its marker and starts nothing", () => {
+    const dir = trashDir()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, DELETER), "2147483646")
+    const { calls, spawnRm } = fakeRm()
+    new TrashEmptier(spawnRm).empty(dir)
+    assert.equal(calls.length, 0)
+    assert.equal(existsSync(join(dir, DELETER)), false)
+  })
+})
+
+describe("setup command", () => {
+  test("a timeout says so instead of showing the output's tail as the error", async () => {
+    const res = await runSetup("echo installing; sleep 5", tmp, 100)
+    assert.equal(res.ok, false)
+    assert.match(res.detail, /^Timed out after 0s, killed\. Last output:\ninstalling$/)
+  })
+})
+
+const rmDir = (path) => rmSync(path, { recursive: true, force: true })

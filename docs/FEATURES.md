@@ -387,7 +387,8 @@ where it lives.
   (that one then gets the next worktree). One the session never asks for again, and that's untouched, goes back
   to the pool 10 minutes after it's ready; `ctrl worktree list` in the session makes it the session's for good
 - A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
-  the error shows on the repo, and warm builds of that repo wait 30 minutes
+  the error shows on the repo, and warm builds of that repo wait 30 minutes. A setup command gets 30 minutes:
+  past that its whole process group is killed and the error says it timed out, with the last output under it
 - `up --skip-setup`: when it has to be built, a checkout in seconds without running the setup command
   (`setupSkipped`, a "no deps" chip in the resources panel, a line in the hint). A retry with it doesn't wait on a
   full build, these builds don't count toward the pool's build time, and recycling installs them like any other
@@ -398,7 +399,9 @@ where it lives.
   a detached HEAD (`--force` discards; detached commits get a ref under `refs/ctrl/rescue/`)
 - Released worktrees are recycled (reset to the base branch, untracked files removed, setup run again, moved to
   a new folder so the old path can't reach it) while the pool has room, removed otherwise. Removing renames the
-  folder into `.trash` and deletes it in a child process, so it never blocks
+  folder into `.trash` and deletes it in a child process, so it never blocks. One `rm` per trash folder at a
+  time, at background I/O priority (`taskpolicy -b`), its pid in `.trash/.deleting` so a restarted ctrl doesn't
+  start a second one on the same files; folders trashed meanwhile get the next `rm` when it exits
 - Archiving a session releases its worktrees 30 seconds later (if it's still archived), deleting one right away,
   both without the unsaved-work check
 - Worktrees show in the resources panel of the session that holds them (and its space's): repo and branch, path,

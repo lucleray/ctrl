@@ -34,26 +34,39 @@ export const gitOrThrow = async (cwd: string, args: string[], timeout?: number) 
 
 const lastLines = (text: string, lines = 6) => text.trim().split("\n").slice(-lines).join("\n")
 
+const formatMinutes = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)}s`)
+
 /**
  * Runs a repo's setup command (e.g. `pnpm install --frozen-lockfile`) in a shell, with stdin closed and
  * only the end of its output kept. Never throws.
  */
 export const runSetup = (command: string, cwd: string, timeout = 30 * 60_000): Promise<{ ok: boolean; detail: string }> =>
   new Promise((resolve) => {
-    const child = spawn(command, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...ENV } })
+    // Its own process group, so a timeout kills what it started too (pnpm's workers), not just the shell.
+    const child = spawn(command, { cwd, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...ENV } })
     let tail = ""
     const keep = (chunk: Buffer) => {
       tail = (tail + chunk.toString()).slice(-4000)
     }
     child.stdout.on("data", keep)
     child.stderr.on("data", keep)
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeout)
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGKILL")
+      } catch {
+        child.kill("SIGKILL")
+      }
+    }, timeout)
     child.on("error", (err) => {
       clearTimeout(timer)
       resolve({ ok: false, detail: err.message })
     })
     child.on("close", (code) => {
       clearTimeout(timer)
+      // The output's tail says nothing about a kill: it ends wherever the command was.
+      if (timedOut) return resolve({ ok: false, detail: `Timed out after ${formatMinutes(timeout)}, killed. Last output:\n${lastLines(tail)}` })
       resolve({ ok: code === 0, detail: code === 0 ? "" : lastLines(tail) || `exited with ${code}` })
     })
   })

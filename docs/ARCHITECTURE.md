@@ -296,7 +296,7 @@ ctrl worktree up ──► WorktreeService.up(repo, session)
                        ├─ a warm build under way ─► reserved for the session, waits on it ─► attached (cold)
                        └─ none ─► build: git worktree add --detach origin/<base> + setup ─► attached (cold)
 down / session archived ─► released ─► room in the pool? ─► reset: reset --hard, clean, move, setup ─► ready
-                                                       └─ no ─► removed (rename into .trash, rm in a child)
+                                                       └─ no ─► removed (rename into .trash, one rm at a time)
 every 10 min + after up/down ─► rebalance(repo): build / recycle toward target, drop day-old surplus
 ```
 
