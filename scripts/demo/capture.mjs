@@ -82,7 +82,9 @@ const js = (fn, args) => `(${fn.toString()})(${JSON.stringify(args)})`
 /** Renderer-side: open a session, set the resources scope, optionally open the palette with a query. */
 async function setup({ session, scope, query }) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  await window.ctrl.setUi({ resourcesOpen: !query, resourcesScope: scope ?? "session" })
+  const { ui } = await window.ctrl.getState()
+  const rest = (ui.spaceScopedSessions ?? []).filter((id) => id !== session)
+  await window.ctrl.setUi({ resourcesOpen: !query, spaceScopedSessions: scope === "space" ? [...rest, session] : rest })
   await window.ctrl.openSession(session)
   if (!query) return "ready"
   await sleep(4000)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { byRank, PANEL_TYPES, resourceType } from "../shared/adapters"
 import type { AdapterInfo, AppState, Harness, ResourceItem, ResourceMeta } from "../shared/types"
-import { harnessOf, isResourceArchived } from "../shared/types"
+import { harnessOf, isResourceArchived, resourcesScopeOf, resourcesScopePatch } from "../shared/types"
 import { age, shortPath } from "./format"
 import { Icon } from "./icons"
 import { RESOURCE_DRAG, type ResourceDrag, sessionMention } from "./ReferenceDrop"
@@ -49,7 +49,7 @@ function useResources(sessionIDs: string[], watching: boolean) {
 export function ResourcesPanel({ state, onClose }: { state: AppState; onClose(): void }) {
   const current = state.currentSessionID
   const space = current ? state.spaces.find((s) => s.id === state.assignments[current]) : undefined
-  const scope = space ? state.ui.resourcesScope : "session"
+  const scope = space ? resourcesScopeOf(state.ui, current) : "session"
 
   const sessionIDs = useMemo(() => {
     if (!current) return []
@@ -130,7 +130,7 @@ export function ResourcesPanel({ state, onClose }: { state: AppState; onClose():
               key={s}
               className={scope === s ? "on" : ""}
               title={s === "space" ? `Every session in ${space.name}` : undefined}
-              onClick={() => void window.ctrl.setUi({ resourcesScope: s })}
+              onClick={() => current && void window.ctrl.setUi(resourcesScopePatch(state.ui, current, s))}
             >
               {s === "session" ? "This session" : "This space"}
             </button>
