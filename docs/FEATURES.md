@@ -383,8 +383,10 @@ where it lives.
   (that one then gets the next worktree). One the session never asks for again, and that's untouched, goes back
   to the pool 10 minutes after it's ready; `ctrl worktree list` in the session makes it the session's for good
 - A cold build whose setup command fails is still handed out (`setupFailed`); a warm build that fails is dropped,
-  the error shows on the repo, and warm builds of that repo wait 30 minutes. A setup command gets 30 minutes:
-  past that its whole process group is killed and the error says it timed out, with the last output under it
+  the error shows on the repo, and warm builds of that repo wait 30 minutes. A setup command gets three times
+  the repo's usual build time (at least 30 minutes, at most 90): past that its whole process group is killed and
+  the error says it timed out, with the last output under it. Quitting ctrl kills the setups still running (a
+  held worktree's is marked `setup failed`), and a launch after a crash kills the ones the last run left behind
 - `up --skip-setup`: when it has to be built, a checkout in seconds without running the setup command
   (`setupSkipped`, a "no deps" chip in the resources panel, a line in the hint). A retry with it doesn't wait on a
   full build, these builds don't count toward the pool's build time, and recycling installs them like any other
@@ -404,12 +406,12 @@ where it lives.
   `building` / `detached` / `setup failed` chips; click opens the folder, copy copies the path. Also in
   `ctrl resources list` (type `worktree`) and `worktrees` on `ctrl session get`
 - The pool refills on its own: after each take or release and every 10 minutes, ctrl builds up to each repo's
-  pool size (2 at a time per repo, 3 overall), recycles released worktrees, removes warm ones past the size once
+  pool size (2 at a time per repo, 1 for a repo whose builds take over 10 minutes, 3 overall), recycles released worktrees, removes warm ones past the size once
   a day old, and refreshes one warm worktree per repo when it's over a day old and the base branch moved
 - Background jobs, each a row in Settings → Worktrees with a toggle:
   - Size pools from usage: the smallest pool that would have served the last 7 days
     of requests with at most 2% misses, replayed against the repo's measured build time. One for a repo not used
-    in a week, none after 30 days, never more than the repo's cap. A repo can be pinned to a size instead
+    in a week, none after 30 days, never more than 4 (each is a full checkout with its dependencies) nor the repo's cap. A repo can be pinned to a size instead
   - Clean up (every hour and after an archive; shows what it last did, Run now): releases worktrees of archived
     and deleted sessions, drops entries whose folder is gone, removes folders in the worktree folder nothing
     tracks (older than an hour)

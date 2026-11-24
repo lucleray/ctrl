@@ -8,10 +8,10 @@ import { before, describe, test } from "node:test"
 import { load, tmpDir } from "./helpers.mjs"
 
 const tmp = tmpDir("ctrl-worktrees-test-")
-let createHandlers, poolTarget, simulateMisses, MINUTE, DAY, TrashEmptier, DELETER, deleterAlive, runSetup
+let createHandlers, poolTarget, simulateMisses, MINUTE, DAY, TrashEmptier, DELETER, deleterAlive, runSetup, killSetups, killSetupGroup
 
 before(async () => {
-  ;[{ createHandlers }, { poolTarget, simulateMisses, MINUTE, DAY }, { TrashEmptier, DELETER, deleterAlive }, { runSetup }] = await load(
+  ;[{ createHandlers }, { poolTarget, simulateMisses, MINUTE, DAY }, { TrashEmptier, DELETER, deleterAlive }, { runSetup, killSetups, killSetupGroup }] = await load(
     tmp,
     "src/main/cli-handlers.ts",
     "src/shared/worktrees.ts",
@@ -41,6 +41,12 @@ describe("pool sizing", () => {
     assert.equal(poolTarget([now - 3 * DAY, now - 2 * DAY, now - DAY], now, 5 * MINUTE, 8), 1)
     assert.equal(poolTarget([now - DAY, now - DAY + 1, now - DAY + 2, now - DAY + 3], now, 5 * MINUTE, 2), 2)
     assert.equal(poolTarget([now - DAY], now, MINUTE, 0), 0)
+  })
+
+  test("refilling one at a time needs a bigger pool than two at a time", () => {
+    const now = 100 * DAY
+    const burst = [0, 1, 2, 3, 6 * MINUTE, 6 * MINUTE + 1].map((t) => now - DAY + t)
+    assert.ok(poolTarget(burst, now, 5 * MINUTE, 8, 1) >= poolTarget(burst, now, 5 * MINUTE, 8, 2))
   })
 })
 
@@ -354,6 +360,42 @@ describe("setup command", () => {
     const res = await runSetup("echo installing; sleep 5", tmp, 100)
     assert.equal(res.ok, false)
     assert.match(res.detail, /^Timed out after 0s, killed\. Last output:\ninstalling$/)
+  })
+
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const waitFor = async (check, ms = 3000) => {
+    const end = Date.now() + ms
+    while (!check() && Date.now() < end) await new Promise((r) => setTimeout(r, 25))
+    return check()
+  }
+
+  test("killSetups kills a running setup and what it started (ctrl quitting)", async () => {
+    const pidFile = join(tmp, "child.pid")
+    rmSync(pidFile, { force: true })
+    let pgid = 0
+    const res = runSetup(`sleep 30 & echo $! > ${pidFile}; wait`, tmp, 60_000, (p) => (pgid = p))
+    assert.ok(pgid > 0)
+    assert.ok(await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== ""))
+    const child = Number(readFileSync(pidFile, "utf8").trim())
+    killSetups()
+    assert.equal((await res).ok, false)
+    assert.ok(await waitFor(() => !alive(child)), "the setup's child is gone too")
+  })
+
+  test("killSetupGroup only kills a group still running that command", async () => {
+    let pgid = 0
+    const res = runSetup("sleep 30", tmp, 60_000, (p) => (pgid = p))
+    assert.equal(killSetupGroup(pgid, "pnpm install --frozen-lockfile"), false)
+    assert.equal(killSetupGroup(1, "sleep 30"), false)
+    assert.equal(killSetupGroup(pgid, "sleep 30"), true)
+    assert.equal((await res).ok, false)
   })
 })
 

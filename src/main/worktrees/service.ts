@@ -26,8 +26,12 @@ import {
   git,
   gitOrThrow,
   hasUnsaved,
+  killSetup,
+  killSetupGroup,
+  killSetups,
   run,
   runSetup,
+  SETUP_TIMEOUT,
   suggestSetup,
   unsavedWork,
   writeRescueRef,
@@ -209,12 +213,27 @@ export class WorktreeService {
     clearTimeout(this.first)
     clearTimeout(this.soon)
     this.timer = undefined
+    // Setups run in process groups of their own: left alone they'd outlive ctrl, and write into worktrees
+    // the next launch deletes (a build) or leave a half-done install it doesn't know about (a setup).
+    killSetups()
+    for (const wt of this.data.worktrees) {
+      if (wt.setupPid === undefined) continue
+      delete wt.setupPid
+      if (wt.status === "attached") wt.setupFailed = true
+    }
     this.flush()
   }
 
   /** Work a previous run left half-done: everything runs in this process, so nothing is still working on it. */
   private async recover() {
     for (const wt of [...this.data.worktrees]) {
+      // A setup a crash left running (a quit kills them): it would keep writing into a folder being deleted.
+      if (wt.setupPid !== undefined) {
+        const command = this.data.repos[wt.repo]?.setup
+        if (command) killSetupGroup(wt.setupPid, command)
+        delete wt.setupPid
+        if (wt.status === "attached") wt.setupFailed = true
+      }
       if (wt.status === "building") await this.remove(wt)
       else if (wt.status === "resetting") wt.status = "released"
       else if (wt.status === "removing") await this.remove(wt)
@@ -482,6 +501,31 @@ export class WorktreeService {
 
   // ---------- pool sizing ----------
 
+  /** The repo's setup command in a worktree, its process group kept on the worktree while it runs. */
+  private runSetup(repo: RepoState, wt: Worktree, command: string) {
+    return runSetup(command, wt.path, this.setupTimeout(repo), (pgid) => {
+      wt.setupPid = pgid
+      this.save()
+    }).finally(() => {
+      delete wt.setupPid
+      this.save()
+    })
+  }
+
+  /**
+   * A setup is killed past three times the repo's usual build, at least 30 min and at most 90: a repo whose
+   * install takes about as long as a fixed limit would see half its builds killed right before they finish.
+   */
+  private setupTimeout(repo: RepoState) {
+    const usual = this.buildMs(repo.source)
+    return usual ? Math.min(3 * SETUP_TIMEOUT, Math.max(SETUP_TIMEOUT, 3 * usual)) : SETUP_TIMEOUT
+  }
+
+  /** Warm worktrees built at once for a repo: one when its builds are slow, so installs don't fight over the disk. */
+  private parallel(repo: RepoState) {
+    return (this.buildMs(repo.source) ?? 0) > POOL.heavyMs ? 1 : POOL.parallel
+  }
+
   private buildMs(source: string): number | null {
     // Builds without setup (--skip-setup) take seconds: they'd make the pool look quicker to refill than it is.
     const builds = this.data.events.filter((e) => e.repo === source && e.type === "build" && e.ok && !e.skipped).slice(-10)
@@ -495,7 +539,7 @@ export class WorktreeService {
     const now = Date.now()
     // Added by hand: one stays warm for its first 30 days, used or not.
     const floor = repo.addedAt && now - repo.addedAt <= POOL.dormant ? 1 : 0
-    return Math.max(poolTarget(ups, now, this.buildMs(repo.source) ?? POOL.buildMs, repo.maxTotal), floor)
+    return Math.max(poolTarget(ups, now, this.buildMs(repo.source) ?? POOL.buildMs, Math.min(repo.maxTotal, POOL.autoMax), this.parallel(repo)), floor)
   }
 
   // ---------- git, serialized per repo ----------
@@ -568,7 +612,7 @@ export class WorktreeService {
       await this.withGit(repo.source, () => gitOrThrow(repo.source, ["worktree", "add", "--detach", wt.path, ref]))
       wt.baseCommit = (await gitOrThrow(wt.path, ["rev-parse", "HEAD"])).slice(0, 12)
       if (repo.setup && !skipSetup) {
-        const setup = await runSetup(repo.setup, wt.path)
+        const setup = await this.runSetup(repo, wt, repo.setup)
         if (!setup.ok) {
           const message = `Setup failed: ${repo.setup}\n${setup.detail}`
           // A session waiting for it still gets the checkout, and can fix the install itself.
@@ -645,7 +689,7 @@ export class WorktreeService {
         }
       }
       if (repo.setup) {
-        const setup = await runSetup(repo.setup, wt.path)
+        const setup = await this.runSetup(repo, wt, repo.setup)
         if (!setup.ok) throw new Error(`Setup failed: ${repo.setup}\n${setup.detail}`)
       }
       wt.baseCommit = (await gitOrThrow(wt.path, ["rev-parse", "HEAD"])).slice(0, 12)
@@ -670,6 +714,7 @@ export class WorktreeService {
   /** Takes a worktree off disk and out of git's registry. Returns once it's gone from both (deleting the files continues behind). */
   private async remove(wt: Worktree) {
     const holder = wt.sessionID
+    if (wt.setupPid !== undefined) killSetup(wt.setupPid)
     wt.status = "removing"
     wt.since = Date.now()
     this.cached = undefined
@@ -728,7 +773,7 @@ export class WorktreeService {
       if (warm < target) {
         // A session is waiting on a build or a setup of this repo: no other install competes with it.
         if (this.sessionWaits(all)) return
-        if (inflight >= POOL.parallel || this.tasks >= MAX_TASKS) return
+        if (inflight >= this.parallel(repo) || this.tasks >= MAX_TASKS) return
         if (repo.failedAt && now - repo.failedAt < BACKOFF_MS) return
         if (released.length) {
           this.startReset(repo, released[0], true)
@@ -754,7 +799,7 @@ export class WorktreeService {
     const warm = all.filter((w) => w.status === "ready").length + inflight
     if (warm >= Math.max(this.target(repo), this.floors.get(repo.source) ?? 0)) return
     if (this.sessionWaits(all)) return "Paused while a session waits for a worktree being built or set up"
-    if (inflight >= POOL.parallel) return
+    if (inflight >= this.parallel(repo)) return
     if (this.tasks >= MAX_TASKS)
       return `Queued: ${MAX_TASKS} builds are already running (at most ${MAX_TASKS} at a time), it starts when one ends`
     if (repo.failedAt && Date.now() - repo.failedAt < BACKOFF_MS)
@@ -935,7 +980,7 @@ export class WorktreeService {
     if (!running) {
       const id = wt.id
       this.tasks++
-      running = runSetup(command, wt.path).finally(() => {
+      running = this.runSetup(repo, wt, command).finally(() => {
         this.setups.delete(id)
         this.tasks--
         this.cached = undefined

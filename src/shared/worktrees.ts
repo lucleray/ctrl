@@ -30,6 +30,8 @@ export type Worktree = {
   setupFailed?: boolean
   /** Built with --skip-setup: the repo's setup command hasn't run in it yet (`ctrl worktree setup` runs it) */
   setupSkipped?: boolean
+  /** Process group of its setup command while it runs, so a later launch can kill one a quit left behind */
+  setupPid?: number
 }
 
 export type WorktreeRepoConfig = {
@@ -121,6 +123,10 @@ export const POOL = {
   misses: 0.02,
   /** Warm worktrees built at once per repo */
   parallel: 2,
+  /** A repo whose builds take longer than this builds one warm worktree at a time: installs side by side slow each other down */
+  heavyMs: 10 * MINUTE,
+  /** Most warm worktrees a pool sized from usage keeps (each one is a full checkout with its dependencies) */
+  autoMax: 4,
   /** Assumed build time before the first build is measured */
   buildMs: 2 * MINUTE,
 }
@@ -161,12 +167,12 @@ export function simulateMisses(ups: number[], warm: number, refillMs: number, pa
  * served the last 7 days with at most 2% misses, capped at `max` (the repo's cap on worktrees). One for a
  * repo used in the last 30 days but not the last 7, none after that.
  */
-export function poolTarget(ups: number[], now: number, refillMs: number, max: number): number {
+export function poolTarget(ups: number[], now: number, refillMs: number, max: number, parallel = POOL.parallel): number {
   if (max <= 0) return 0
   const recent = ups.filter((t) => now - t <= POOL.window).sort((a, b) => a - b)
   if (!recent.length) return ups.some((t) => now - t <= POOL.dormant) ? 1 : 0
   const allowed = Math.floor(recent.length * POOL.misses)
-  for (let warm = 1; warm < max; warm++) if (simulateMisses(recent, warm, refillMs) <= allowed) return warm
+  for (let warm = 1; warm < max; warm++) if (simulateMisses(recent, warm, refillMs, parallel) <= allowed) return warm
   return max
 }
 

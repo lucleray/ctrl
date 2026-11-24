@@ -97,7 +97,8 @@ export class Updater {
     const tmp = mkdtempSync(join(tmpdir(), "ctrl-update-"))
     try {
       const bundle = this.bundle()
-      const run = async (cmd: string, args: string[], timeout = 60_000) => {
+      // Unpacking and copying the app writes thousands of files: on a busy disk that takes minutes.
+      const run = async (cmd: string, args: string[], timeout = 10 * 60_000) => {
         const res = await runCli(cmd, args, { timeout })
         if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || `${cmd} failed`)
       }

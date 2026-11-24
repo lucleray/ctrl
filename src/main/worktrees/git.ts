@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile, execFileSync, spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 
@@ -36,14 +36,73 @@ const lastLines = (text: string, lines = 6) => text.trim().split("\n").slice(-li
 
 const formatMinutes = (ms: number) => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)}s`)
 
+export const SETUP_TIMEOUT = 30 * 60_000
+
+/** Process groups of the setup commands running in this process. */
+const setupGroups = new Set<number>()
+
+const killGroup = (pgid: number) => {
+  try {
+    process.kill(-pgid, "SIGKILL")
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Kills every setup command this process started, with what they started. Setups run in process groups of
+ * their own, so they'd outlive ctrl and keep writing into worktrees the next launch deletes.
+ */
+export function killSetups() {
+  for (const pgid of setupGroups) killGroup(pgid)
+  setupGroups.clear()
+}
+
+/** Kills one setup this process started (its worktree is going away). */
+export function killSetup(pgid: number) {
+  if (setupGroups.delete(pgid)) killGroup(pgid)
+}
+
+/**
+ * Kills a setup's process group a previous ctrl left running, only when that group still runs the command
+ * (a pid gets reused: an unrelated group must never be killed).
+ */
+export function killSetupGroup(pgid: number, command: string): boolean {
+  if (!Number.isInteger(pgid) || pgid <= 1) return false
+  const program = command.trim().split(/\s+/)[0]
+  if (!program) return false
+  let ps = ""
+  try {
+    ps = execFileSync("ps", ["-A", "-o", "pgid=,command="], { encoding: "utf8", timeout: 10_000 })
+  } catch {
+    return false
+  }
+  const ours = ps.split("\n").some((line) => {
+    const m = line.trim().match(/^(\d+)\s+(.*)$/)
+    return !!m && Number(m[1]) === pgid && m[2].includes(program)
+  })
+  return ours && killGroup(pgid)
+}
+
 /**
  * Runs a repo's setup command (e.g. `pnpm install --frozen-lockfile`) in a shell, with stdin closed and
- * only the end of its output kept. Never throws.
+ * only the end of its output kept. `onSpawn` gets its process group id, to kill it if ctrl quits. Never throws.
  */
-export const runSetup = (command: string, cwd: string, timeout = 30 * 60_000): Promise<{ ok: boolean; detail: string }> =>
+export const runSetup = (
+  command: string,
+  cwd: string,
+  timeout = SETUP_TIMEOUT,
+  onSpawn?: (pgid: number) => void,
+): Promise<{ ok: boolean; detail: string }> =>
   new Promise((resolve) => {
     // Its own process group, so a timeout kills what it started too (pnpm's workers), not just the shell.
     const child = spawn(command, { cwd, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...ENV } })
+    const pgid = child.pid
+    if (pgid) {
+      setupGroups.add(pgid)
+      onSpawn?.(pgid)
+    }
     let tail = ""
     const keep = (chunk: Buffer) => {
       tail = (tail + chunk.toString()).slice(-4000)
@@ -61,10 +120,12 @@ export const runSetup = (command: string, cwd: string, timeout = 30 * 60_000): P
     }, timeout)
     child.on("error", (err) => {
       clearTimeout(timer)
+      if (pgid) setupGroups.delete(pgid)
       resolve({ ok: false, detail: err.message })
     })
     child.on("close", (code) => {
       clearTimeout(timer)
+      if (pgid) setupGroups.delete(pgid)
       // The output's tail says nothing about a kill: it ends wherever the command was.
       if (timedOut) return resolve({ ok: false, detail: `Timed out after ${formatMinutes(timeout)}, killed. Last output:\n${lastLines(tail)}` })
       resolve({ ok: code === 0, detail: code === 0 ? "" : lastLines(tail) || `exited with ${code}` })

@@ -329,9 +329,15 @@ every 10 min + after up/down ─► rebalance(repo): build / recycle toward targ
   repo whose `origin` matches, else to ctrl's clone in `<worktree folder>/.repos/<owner>/<repo>`, cloned on
   the first `up` (`gh repo clone`, else `git clone`) into a temporary folder renamed when done.
 - **Pool size** (`poolTarget()`): the repo's `up` timestamps of the last 7 days are replayed against a pool of
-  1, 2, 3… worktrees refilled two at a time in the repo's median build time, and the smallest one with at most
-  2% misses wins, capped by the repo's cap on worktrees (`maxTotal`). No use in 7 days: 1. None in 30: 0. A pinned size
+  1, 2, 3… worktrees refilled two at a time (one when builds take over `POOL.heavyMs`) in the repo's median build
+  time, and the smallest one with at most 2% misses wins, capped at `POOL.autoMax` and the repo's cap on worktrees
+  (`maxTotal`). No use in 7 days: 1. None in 30: 0. A pinned size
   (`warm`) skips all that.
+- **Setups never outlive ctrl.** A setup runs in its own process group (so a timeout kills pnpm's workers too),
+  which also means it would survive ctrl quitting and keep writing into a folder the next launch trashes.
+  `stop()` kills every group (`killSetups()`), and the group id is saved on the worktree (`setupPid`) so
+  `recover()` kills one a crash left running, once `ps` shows that group still runs the repo's setup command.
+  The timeout is three times the repo's median build, between 30 and 90 minutes.
 - **Releasing never reuses a path.** A recycled worktree is `git worktree move`d to a new id and folder before
   it's warm again, so a session that still remembers the old path (an unarchived one) hits a missing folder
   instead of another session's checkout.
