@@ -866,7 +866,10 @@ const showOpencodeHome = (prompt?: string) => {
   if (prompt && !chat) terminal.prefill(prompt)
   else terminal.home()
   push()
-  if (chat) send("chat:draft", prompt)
+  // "home": the session still on screen must not take it (its composer would keep it as its draft).
+  if (chat) send("chat:draft", prompt, "home")
+  // Out of Settings, the palette or the board, onto the prompt.
+  if (prompt) send("shortcut", "companion-new-session")
 }
 
 /** Shows an fx terminal: the opencode TUI goes to the back, and its session stops counting as on screen. */
