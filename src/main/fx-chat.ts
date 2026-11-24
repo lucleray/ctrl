@@ -90,6 +90,9 @@ export class FxChat implements HarnessChat {
   private open = new Map<string, Open>()
   private seq = 0
   private version: string
+  /** The process started ahead of time for the next new session (warm) */
+  private spare?: { session: Open; bin: string | undefined; ready: Promise<void> }
+  private keepWarm = false
 
   onChange?: (sessionID: string, modelChanged: boolean) => void
 
@@ -155,8 +158,72 @@ export class FxChat implements HarnessChat {
     return session
   }
 
-  /** A new chat session in `cwd`: its process, `session/new`, and its ctrl id. */
+  /**
+   * Keeps one `fx acp` process started and initialized ahead of time, for the next new chat session: fx takes
+   * about a second (more when cold) to answer `initialize`, and `session/new` is instant after that. It holds
+   * no session, so it serves any folder and model (create sets both per session). Called again after each use.
+   */
+  warm() {
+    this.keepWarm = true
+    if (this.spare || !this.deps.bin()) return
+    let session: Open
+    try {
+      session = this.start(`spare_${++this.seq}`, homedir(), [], false, false)
+    } catch (err) {
+      console.error("[ctrl] fx acp spare failed to start", err)
+      return
+    }
+    this.open.delete(session.sessionID)
+    const spare = { session, bin: this.deps.bin(), ready: this.initialize(session) }
+    this.spare = spare
+    spare.ready.catch((err) => {
+      console.error("[ctrl] fx acp spare failed to initialize", err)
+      if (this.spare === spare) this.spare = undefined
+      session.proc.kill()
+    })
+  }
+
+  /** No spare process anymore (chat mode turned off). */
+  cool() {
+    this.keepWarm = false
+    this.spare?.session.proc.kill()
+    this.spare = undefined
+  }
+
+  /** The spare process, ready, when there's one (and fx hasn't moved since it started). */
+  private async takeSpare(): Promise<Open | undefined> {
+    const spare = this.spare
+    if (!spare) return undefined
+    this.spare = undefined
+    if (spare.bin !== this.deps.bin() || spare.session.gone) {
+      spare.session.proc.kill()
+      return undefined
+    }
+    try {
+      await spare.ready
+    } catch {
+      return undefined
+    }
+    return spare.session.gone ? undefined : spare.session
+  }
+
+  /** A new chat session in `cwd`: its process (the spare one when ready), `session/new`, and its ctrl id. */
   async create(opts: NewChatOptions): Promise<string> {
+    try {
+      return await this.createIn(await this.takeSpare(), opts)
+    } finally {
+      if (this.keepWarm) this.warm()
+    }
+  }
+
+  private async createIn(spare: Open | undefined, opts: NewChatOptions): Promise<string> {
+    if (spare) {
+      try {
+        return await this.newSession(spare, opts, true)
+      } catch (err) {
+        console.error("[ctrl] fx acp spare couldn't take the session, starting a new process", err)
+      }
+    }
     const args: string[] = []
     if (opts.model) {
       args.push("--model", opts.model.id)
@@ -164,8 +231,20 @@ export class FxChat implements HarnessChat {
     }
     const temp = `new_${++this.seq}`
     const session = this.start(temp, opts.cwd, args, false, false)
+    await this.initialize(session).catch((err) => {
+      this.kill(session)
+      throw err
+    })
+    return this.newSession(session, opts, false)
+  }
+
+  /**
+   * `session/new` in an initialized process, which then becomes the session's. `setModel`: the process was
+   * started without the model flags (the spare one), so the model goes through set_config_option.
+   */
+  private async newSession(session: Open, opts: NewChatOptions, setModel: boolean): Promise<string> {
+    const temp = session.sessionID
     try {
-      await this.initialize(session)
       const text = opts.instructions?.trim()
       const result = await session.client.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", {
         cwd: opts.cwd,
@@ -173,10 +252,24 @@ export class FxChat implements HarnessChat {
         ...(text ? { systemPrompt: [{ type: "text", text }] } : {}),
       })
       if (!result?.sessionId) throw new Error("fx returned no session id")
+      session.config = result.configOptions ?? []
+      if (setModel && opts.model) {
+        const set = async (configId: string, value: string) => {
+          const r = await session.client.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", {
+            sessionId: result.sessionId,
+            configId,
+            value,
+          })
+          if (r?.configOptions) session.config = r.configOptions
+        }
+        await set("model", opts.model.id)
+        if (opts.model.variant) await set("effort", opts.model.variant)
+      }
       const id = fxID(result.sessionId)
       session.sessionID = id
-      session.config = result.configOptions ?? []
-      this.open.delete(temp)
+      // The process now runs in the session's folder, as far as ctrl's pane is concerned.
+      session.cwd = existsSync(opts.cwd) ? opts.cwd : session.cwd
+      if (this.open.get(temp) === session) this.open.delete(temp)
       this.open.set(id, session)
       this.register(session, false)
       return id
@@ -193,6 +286,7 @@ export class FxChat implements HarnessChat {
   }
 
   dispose() {
+    this.cool()
     for (const s of this.open.values()) s.proc.kill()
     this.open.clear()
   }
@@ -227,6 +321,7 @@ export class FxChat implements HarnessChat {
     client.onClose = (code) => {
       if (session.gone) return
       session.gone = true
+      if (this.spare?.session === session) this.spare = undefined
       if (this.open.get(session.sessionID) === session) this.open.delete(session.sessionID)
       for (const p of session.pending) p.resolve({ outcome: { outcome: "cancelled" } })
       session.pending = []
