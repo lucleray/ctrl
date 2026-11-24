@@ -65,7 +65,7 @@ export function App() {
   const [spaceSettingsID, setSpaceSettingsID] = useState<string | null>(null)
   const [board, setBoard] = useState(false)
   // A prompt for ChatHome's composer (a fix-it prompt); `n` gives each one a fresh composer.
-  const [draft, setDraft] = useState<{ text: string; n: number } | null>(null)
+  const [draft, setDraft] = useState<{ text: string; n: number; home?: boolean } | null>(null)
   // Spaces the board shows, empty = everything. Kept while ctrl runs, so reopening keeps the filter.
   const [boardFilter, setBoardFilterState] = useState<BoardFilter>(loadFilter)
   const setBoardFilter = useCallback((f: BoardFilter) => {
@@ -209,10 +209,14 @@ export function App() {
   useEffect(() => {
     for (const id of localDrafts()) if (state.archived[id]) forgetDraft(id)
   }, [state.archived])
-  useEffect(() => window.ctrl.onChatDraft((text) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 }))), [])
+  useEffect(
+    () => window.ctrl.onChatDraft((text, target) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1, home: target === "home" }))),
+    [],
+  )
   // A draft for a session's chat (an fx chat session just created with text): into its composer once it's up.
+  // A home draft waits for ChatHome instead: the session it replaces is still on screen for a moment.
   useEffect(() => {
-    if (!draft?.text || !chatID || !chat.current) return
+    if (!draft?.text || draft.home || !chatID || !chat.current) return
     chat.current.paste(draft.text)
     setDraft((d) => (d ? { ...d, text: "" } : d))
   }, [draft, chatID])
@@ -253,6 +257,7 @@ export function App() {
           setPalette(false)
           setSettings(false)
           setSpaceSettingsID(null)
+          setBoard(false)
           focusMain()
         }
       }),
@@ -325,7 +330,7 @@ export function App() {
               <ChatHome
                 key={draft?.n ?? 0}
                 ref={chat}
-                draft={draft?.text}
+                draft={draft?.home ? draft.text : undefined}
                 onDraftUsed={() => setDraft((d) => (d ? { ...d, text: "" } : d))}
               />
             )}

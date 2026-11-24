@@ -372,7 +372,14 @@ const recheckFx = async () => {
     // Renames that were waiting for an fx that has quit since.
     for (const id of Object.keys(store.data.titles)) void flushTitle(id)
   }
+  warmFxChat()
   push()
+}
+
+/** In chat mode, a new fx session gets an `fx acp` process started ahead of time (FxChat.warm), else none. */
+const warmFxChat = () => {
+  if (store.data.settings.sessionView === "chat" && fxModern()) fxChat.warm()
+  else fxChat.cool()
 }
 
 const search = new Search(join(root, "dist/indexer.cjs"), join(app.getPath("userData"), "search.db"), (ids) => {
@@ -836,6 +843,7 @@ const applySettings = (patch: Partial<Settings>) => {
   if (patch.companion !== undefined && !headless) companion.setEnabled(patch.companion)
   if (patch.shortcuts && !headless) companion.updateShortcuts()
   if (Object.keys(patch).some((key) => key.startsWith("worktree"))) worktrees.settingsChanged()
+  if (patch.sessionView !== undefined) warmFxChat()
   loadThemes()
   applyTheme()
 }
@@ -866,7 +874,10 @@ const showOpencodeHome = (prompt?: string) => {
   if (prompt && !chat) terminal.prefill(prompt)
   else terminal.home()
   push()
-  if (chat) send("chat:draft", prompt)
+  // "home": the session still on screen must not take it (its composer would keep it as its draft).
+  if (chat) send("chat:draft", prompt, "home")
+  // Out of Settings, the palette or the board, onto the prompt.
+  if (prompt) send("shortcut", "companion-new-session")
 }
 
 /** Shows an fx terminal: the opencode TUI goes to the back, and its session stops counting as on screen. */
