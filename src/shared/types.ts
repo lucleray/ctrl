@@ -140,13 +140,9 @@ export type UiState = {
   recentsCollapsed: boolean
   archivedCollapsed: boolean
   sidebarWidth: number
-  /** Right-hand resources panel */
+  /** Right-hand resources sidebar: shown or not */
   resourcesOpen: boolean
   resourcesWidth: number
-  /** Resources panel folded to its header, so it stops covering the terminal */
-  resourcesCollapsed: boolean
-  /** Resources panel docked as a column on the right (resizable, the terminal narrows) instead of floating over it */
-  resourcesDocked: boolean
   /** The "install the read-session skill" toast was shown at launch once already */
   skillPrompted?: boolean
   /** The "set up agents" toast (skills + ctrl command) was shown once already */
