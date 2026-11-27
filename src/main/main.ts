@@ -24,6 +24,7 @@ import {
   type ThemeInfo,
   type Toast,
   type CliToolConfig,
+  type SkillAudit,
   type UiState,
   type ResourceItem,
   type ResourceMeta,
@@ -48,6 +49,7 @@ import { isPlaceholder, placeholderID, withUnstarted } from "./unstarted"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
+import { agentSkillFolders, auditSkills } from "./skills"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
@@ -198,6 +200,7 @@ const state = (): AppState => ({
   terms: terms(),
   activeTermID: activeTermID(),
   tools: tools.items(),
+  skills: skillAudit,
   toolsSetUp: tools.setUp,
   worktrees: worktrees.view(),
   adapters: adapters.adapters,
@@ -803,6 +806,20 @@ const refreshSkill = () => {
       console.error("[ctrl] couldn't refresh a skill", err)
     }
   }
+}
+
+/** Settings → Skills: the last scan of what each harness loads (src/main/skills.ts). Read only, never toasts. */
+let skillAudit: SkillAudit | null = null
+const SKILL_SCAN_EVERY = 6 * 60 * 60_000
+const scanSkills = () => {
+  try {
+    const readers = harnesses().flatMap((h) => (h.skillFolders ? [{ harness: h.harness, folders: h.skillFolders() }] : []))
+    skillAudit = auditSkills(readers, agentSkillFolders({ codexHome: process.env.CODEX_HOME || undefined }))
+    push()
+  } catch (err) {
+    console.error("[ctrl] couldn't scan skills", err)
+  }
+  return skillAudit!
 }
 
 const updater = new Updater(app.getVersion(), {
@@ -1695,6 +1712,7 @@ function registerIpc() {
   ipcMain.handle("tools:apply-scan", (_e, checked: string[]) => tools.applyScan(checked))
   ipcMain.handle("tools:save-cli", (_e, config: CliToolConfig) => tools.saveCli(config))
   ipcMain.handle("tools:remove", (_e, id: string) => void tools.remove(id))
+  ipcMain.handle("skills:scan", () => void scanSkills())
   ipcMain.handle("worktrees:configure", (_e, source: string, patch: Parameters<WorktreeService["configure"]>[1]) =>
     worktrees.configure(source, patch).then(() => undefined, report),
   )
@@ -1848,6 +1866,7 @@ function registerIpc() {
   ipcMain.handle("adapters:check", () => {
     // Settings just opened: also pick up a skill or CLI link installed or removed by hand.
     skill.refresh()
+    scanSkills()
     cliSkill.refresh()
     cliInstall.refresh()
     push()
@@ -2119,6 +2138,7 @@ const cliHost: CliHost = {
     if (action) push()
     return target.refresh()
   },
+  skills: (rescan?: boolean) => (rescan || !skillAudit ? scanSkills() : skillAudit),
   update: async (action) => {
     if (action === "check") await updater.check()
     else await updater.install()
@@ -2390,6 +2410,9 @@ app.whenReady().then(async () => {
   )
   if (!headless) companion.setEnabled(store.data.settings.companion)
   refreshSkill()
+  // Skills: a first scan once launch settles (so onboarding's Settings has it), then a few times a day.
+  setTimeout(scanSkills, 5000)
+  setInterval(scanSkills, SKILL_SCAN_EVERY)
   if (!store.data.ui.agentsPrompted) {
     win!.webContents.once("did-finish-load", () =>
       setTimeout(() => {

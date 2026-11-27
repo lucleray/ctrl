@@ -7,6 +7,7 @@ import type { HarnessChat, HarnessSource } from "./harness"
 import { FX_PREFIX, type FxCheck, type SessionActivity, type SessionItem, type SessionStatus } from "../shared/types"
 import {
   FX_ENV,
+  FX_HOME,
   INDEX_FILE,
   isV1Name,
   isV2Name,
@@ -125,6 +126,17 @@ const alive = (pid: number) => {
  */
 export class FxSessions implements HarnessSource {
   readonly harness = "fx" as const
+
+  /** fx's own folder, then the ones it shares with other agents (`fx --help`: "global ~/.fx/skills…"). */
+  skillFolders() {
+    const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+    return [
+      join(FX_HOME, "skills"),
+      join(homedir(), ".agents", "skills"),
+      join(homedir(), ".claude", "skills"),
+      process.env.CTRL_SKILLS_DIR || join(config, "opencode", "skills"),
+    ]
+  }
   sessions: SessionItem[] = []
   problem: string | null = null
   /** Chat sessions over fx acp (src/main/fx-chat.ts), set by main. */

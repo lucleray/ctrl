@@ -312,7 +312,7 @@ where it lives.
 ## Settings (⌘,)
 
 - One section at a time, picked from a list on the left (General: Appearance, Sessions, Notifications, Shortcuts;
-  Integrations: Agents, Tools, Resource adapters, Companion; About). A red dot marks a section that needs you
+  Integrations: Agents, Tools, Skills, Resource adapters, Companion; About). A red dot marks a section that needs you
   (broken opencode service, failing MCP server, CLI check or adapter, update available). Reopening comes back to the last section
 - Search box above the list (focused on open, ⌘F): shows the matching rows of every section, matches highlighted,
   sections without matches dimmed in the list. Enter or a section title opens that section, Esc clears
@@ -353,6 +353,15 @@ where it lives.
     opens the browser, then checks again), opens a page, or types a fix-it prompt into a new session. Add by hand
     (presets or custom), edit, remove, check now
   - tools.json can be edited by hand: ctrl watches it
+- Skills: a read-only list of every skill on this Mac (`src/main/skills.ts`, `src/renderer/SkillSettings.tsx`). Each
+  row: its name (description in the tooltip), the folders it's in (a link shows where it points), and a dot per
+  harness: green when it loads the skill, orange with "<harness> does not load it" when it doesn't. Show in Finder
+  - Each harness reports the global folders it reads (`HarnessSource.skillFolders`): opencode
+    `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`; fx `~/.fx/skills` and the same three.
+    Skills in other agents' folders (`~/.codex/skills`, `~/.cursor/skills`, installed Claude Code plugins) are
+    listed too, loaded by no harness
+  - Scans on its own, never notifies: a few seconds after launch, when Settings opens and every 6 hours; Scan
+    does it now
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
 - Notifications: dock badge with sessions waiting on you, macOS notifications when a background session
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
@@ -450,6 +459,8 @@ where it lives.
 - Settings: list (typed, with allowed values and defaults), get, set, reset, as dotted keys
 - UI: what's on screen, opencode home screen with a prefilled prompt, window show / hide / raise, resources
   panel, sidebar width, Recents / Archived folding, settings page, ⌘P palette with a query, toast
+- Skills: `skill list [--partial]` (every skill, the folders it's in and which harness loads it, from the last scan),
+  `skill scan` (the same, scanned now)
 - Search, resources, models, MCP servers, skills, app status / launch / updates, and an NDJSON `events` stream
   (`tool.changed` when a watched tool breaks or recovers)
 - Tools: `tools list` (MCP servers per harness and CLI checks with their state, so an agent can tell a logged-out

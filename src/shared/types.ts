@@ -274,6 +274,36 @@ export type OpencodeCheck =
  */
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
+/** One folder holding a skill (a folder with a SKILL.md). */
+export type SkillCopy = {
+  path: string
+  /** The harnesses that load this copy; none for a copy in another agent's folder (Codex, Cursor, a Claude Code plugin) */
+  harnesses: Harness[]
+  /** It's a symlink to here */
+  link?: string
+}
+
+/** A skill, by folder name, with every copy of it on this Mac (Settings → Skills, `ctrl skill list`). */
+export type AuditedSkill = {
+  /** Its folder name, the name agents load it by */
+  name: string
+  /** From its SKILL.md */
+  description?: string
+  /** The harnesses that load it, from any copy */
+  harnesses: Harness[]
+  copies: SkillCopy[]
+}
+
+/** What a skills scan found: every global skill, and where each harness looks. */
+export type SkillAudit = {
+  scannedAt: number
+  /** The home folder paths are under, to show them as ~/… */
+  home: string
+  /** The harnesses that report skill folders (HarnessSource.skillFolders), with those folders */
+  harnesses: { harness: Harness; folders: string[] }[]
+  items: AuditedSkill[]
+}
+
 /**
  * The `ctrl` CLI on PATH: a symlink at `link` (~/.local/bin/ctrl) to the launcher in the app.
  * stale: links to another copy of ctrl (installing relinks it) · other: something else is at `link`, left alone ·
@@ -344,6 +374,8 @@ export type AppState = {
   activeTermID: string | null
   /** Watched tools: the MCP servers and CLIs in tools.json (before it exists: opencode's MCP servers) */
   tools: ToolItem[]
+  /** The last skills scan (Settings → Skills); null until the first one, a few seconds after launch */
+  skills: SkillAudit | null
   /** tools.json exists: you went through the tools scan (onboarding or Settings) */
   toolsSetUp: boolean
   /** Git worktrees agents take with `ctrl worktree up`: repos, pool sizes, usage and background jobs (Settings → Worktrees) */
@@ -617,6 +649,8 @@ export type CtrlApi = {
   saveCliTool(config: CliToolConfig): Promise<void>
   /** Stops watching an MCP server or CLI (a scan can find it again) */
   removeTool(id: string): Promise<void>
+  /** Scans skill folders again (Settings → Skills → Scan); the result comes with the next state push */
+  scanSkills(): Promise<void>
   /** Changes a repo's worktree settings (Settings → Worktrees); null clears name / setup, or sizes the pool from usage */
   configureWorktreeRepo(source: string, patch: Partial<Pick<WorktreeRepoConfig, "baseBranch" | "maxTotal">> & { name?: string | null; setup?: string | null; warm?: number | null }): Promise<void>
   /** Picks a git checkout and adds it as a repo (Settings → Worktrees); resolves to its path, or null if canceled or not a repo */

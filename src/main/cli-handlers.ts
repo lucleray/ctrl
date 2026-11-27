@@ -27,6 +27,7 @@ import {
   type SessionItem,
   type SessionStatus,
   type Settings,
+  type SkillAudit,
   type SkillStatus,
   type Space,
   type SpacePatch,
@@ -129,6 +130,8 @@ export type CliHost = {
   /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
   rootSession(sessionID: string): Promise<string | null>
   skill(name: "read-session" | "ctrl", action?: "install" | "uninstall"): SkillStatus
+  /** The last skills scan (src/main/skills.ts); `rescan` (or no scan yet) scans now */
+  skills(rescan?: boolean): SkillAudit
   update(action: "check" | "install"): Promise<UpdateStatus>
   digestScript(): string
   nodeRunner(): { command: string; env: Record<string, string> }
@@ -708,6 +711,13 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       ),
       errors: result.errors,
     }
+  }
+
+  // ---------- skills ----------
+  /** `--partial`: only skills some harness doesn't load. */
+  const skillView = (audit: SkillAudit, args: Record<string, any>) => {
+    const all = audit.harnesses.length
+    return { ...audit, items: args.partial ? audit.items.filter((s) => s.harnesses.length < all) : audit.items }
   }
 
   // ---------- tools ----------
@@ -1380,6 +1390,8 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       const name = args.name as "read-session" | "ctrl"
       return { name, ...host.skill(name, "uninstall") }
     },
+    "skill list": (args) => skillView(host.skills(), args),
+    "skill scan": (args) => skillView(host.skills(true), args),
 
     // ----- worktrees -----
     "worktree up": async (args, req, stream) => {

@@ -17,7 +17,7 @@
 - **models**: [`models list`](#models-list)
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
-- **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill uninstall`](#skill-uninstall)
+- **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill list`](#skill-list) · [`skill scan`](#skill-scan) · [`skill uninstall`](#skill-uninstall)
 - **worktree**: [`worktree up`](#worktree-up) · [`worktree setup`](#worktree-setup) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup) · [`worktree update`](#worktree-update)
 - **events**: [`events`](#events)
 
@@ -1044,6 +1044,42 @@ ctrl skill install read-session|ctrl
 | `read-session\|ctrl` | Skill · required |
 
 **Returns:** `{name, state, path?}`
+
+### skill list
+
+Every skill on this Mac by name: the folders it's in, and which harness loads it (from the last scan)
+
+```text
+ctrl skill list [--partial]
+```
+
+- Read only. Each harness reports the global folders it loads skills from: opencode ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills; fx ~/.fx/skills and the same three.
+- A skill's `harnesses` are the ones that load it. Copies in other agents' folders (Codex, Cursor, installed Claude Code plugins) have no `harnesses`: sessions don't see them.
+- ctrl scans a few seconds after launch, when Settings opens and every 6 hours; `ctrl skill scan` scans now.
+
+| Argument | Meaning |
+|---|---|
+| `--partial / --no-partial` | Only skills some harness doesn't load |
+
+**Returns:** `{scannedAt, home, harnesses:[{harness, folders}], items:[{name, description?, harnesses, copies:[{path, harnesses, link?}]}]}`
+
+```bash
+ctrl skill list --partial
+```
+
+### skill scan
+
+Scans skill folders now, then answers like `skill list`
+
+```text
+ctrl skill scan [--partial]
+```
+
+| Argument | Meaning |
+|---|---|
+| `--partial / --no-partial` | Only skills some harness doesn't load |
+
+**Returns:** `{scannedAt, home, harnesses, items}`
 
 ### skill uninstall
 

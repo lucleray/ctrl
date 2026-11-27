@@ -26,6 +26,7 @@ const api: CtrlApi = {
   applyToolScan: (checked) => ipcRenderer.invoke("tools:apply-scan", checked),
   saveCliTool: (config) => ipcRenderer.invoke("tools:save-cli", config),
   removeTool: (id) => ipcRenderer.invoke("tools:remove", id),
+  scanSkills: () => ipcRenderer.invoke("skills:scan"),
   configureWorktreeRepo: (source, patch) => ipcRenderer.invoke("worktrees:configure", source, patch),
   addWorktreeRepo: () => ipcRenderer.invoke("worktrees:add"),
   forgetWorktreeRepo: (source) => ipcRenderer.invoke("worktrees:forget", source),

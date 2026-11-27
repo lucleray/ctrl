@@ -51,6 +51,12 @@ export interface HarnessSource {
   background?(sessionID: string): Promise<void>
 
   /**
+   * The global folders it loads skills from (each skill: a folder with a SKILL.md), for Settings → Skills,
+   * which shows what every harness sees (src/main/skills.ts). Without it, the harness has no column there.
+   */
+  skillFolders?(): string[]
+
+  /**
    * Its sessions as a chat: the desktop's chat view (Settings → Appearance) and remote control's phone view
    * (src/main/chat.ts routes both here). A harness without it keeps its sessions in their terminal.
    */

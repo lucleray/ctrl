@@ -791,6 +791,24 @@ export const COMMANDS: CommandSpec[] = [
     mutates: true,
   },
   {
+    name: "skill list",
+    summary: "Every skill on this Mac by name: the folders it's in, and which harness loads it (from the last scan)",
+    details: [
+      "Read only. Each harness reports the global folders it loads skills from: opencode ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills; fx ~/.fx/skills and the same three.",
+      "A skill's `harnesses` are the ones that load it. Copies in other agents' folders (Codex, Cursor, installed Claude Code plugins) have no `harnesses`: sessions don't see them.",
+      "ctrl scans a few seconds after launch, when Settings opens and every 6 hours; `ctrl skill scan` scans now.",
+    ],
+    args: [{ name: "partial", type: "bool", description: "Only skills some harness doesn't load" }],
+    returns: "{scannedAt, home, harnesses:[{harness, folders}], items:[{name, description?, harnesses, copies:[{path, harnesses, link?}]}]}",
+    examples: ["ctrl skill list --partial"],
+  },
+  {
+    name: "skill scan",
+    summary: "Scans skill folders now, then answers like `skill list`",
+    args: [{ name: "partial", type: "bool", description: "Only skills some harness doesn't load" }],
+    returns: "{scannedAt, home, harnesses, items}",
+  },
+  {
     name: "skill uninstall",
     summary: "Removes ctrl's copy of one of its agent skills",
     args: [

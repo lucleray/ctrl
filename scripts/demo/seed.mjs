@@ -5,7 +5,7 @@
 //   --preview  adds the sessions previews test with (PREVIEW_SESSIONS) to the screenshot ones
 // Then scripts/demo/capture.mjs takes the screenshots (docs/DEVELOPMENT.md → Screenshots).
 import { execFileSync } from "node:child_process"
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs"
+import { mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { demoEnv, opencodeBin } from "./env.mjs"
 
@@ -275,6 +275,30 @@ const PREVIEW_SESSIONS = [
   },
 ]
 if (preview) SESSIONS.push(...PREVIEW_SESSIONS)
+
+/** Previews only: skills in each folder Settings → Skills reads (both harnesses, fx only, other agents, a link). */
+const PREVIEW_SKILLS = [
+  [".agents/skills/release-notes", "Write release notes from the merged PRs since the last tag."],
+  [".claude/skills/pdf", "Read, fill and merge PDF files."],
+  [".fx/skills/changelog", "Keep CHANGELOG.md in the Keep a Changelog format."],
+  [".codex/skills/code-review", "Review a diff for bugs, missing tests and unclear names."],
+  [".codex/skills/pdf", "Read, fill and merge PDF files."],
+  [".cursor/skills/storybook", "Add a Storybook story for a React component."],
+  [".claude/plugins/cache/acme/frontend/1.0.0/skills/accessibility", "Audit a page for accessibility issues (WCAG 2.2)."],
+  [".claude/plugins/cache/acme/frontend/1.0.0/skills/web-vitals", "Find what slows down LCP, INP and CLS on a page."],
+]
+if (preview) {
+  for (const [path, description] of PREVIEW_SKILLS) {
+    mkdirSync(join(home, path), { recursive: true })
+    const name = path.split("/").pop()
+    writeFileSync(join(home, path, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`)
+  }
+  symlinkSync(join(home, ".agents/skills/release-notes"), join(home, ".claude/skills/release-notes"))
+  writeFileSync(
+    join(home, ".claude/plugins/installed_plugins.json"),
+    JSON.stringify({ version: 2, plugins: { "frontend@acme": [{ scope: "user", installPath: join(home, ".claude/plugins/cache/acme/frontend/1.0.0") }] } }),
+  )
+}
 
 const SPACES = [
   { id: "spc_demo_next", name: "next.js", directory: folders.next },
