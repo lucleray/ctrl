@@ -18,6 +18,7 @@ const paths: Record<string, string> = {
   check: "M20 6 9 17l-5-5",
   download: "M12 3v12M7 10l5 5 5-5M5 21h14",
   plus: "M12 5v14M5 12h14",
+  book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
   dots: "M5 12h.01M12 12h.01M19 12h.01",
   board: "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v13h-4z",
   "panel-right": "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15 3v18",

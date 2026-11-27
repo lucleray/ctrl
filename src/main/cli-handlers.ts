@@ -27,6 +27,8 @@ import {
   type SessionItem,
   type SessionStatus,
   type Settings,
+  type DetectedSkill,
+  type SkillItem,
   type SkillStatus,
   type Space,
   type SpacePatch,
@@ -129,6 +131,16 @@ export type CliHost = {
   /** opencode: the session a subagent session belongs to (itself for a root session); null when there's no such session */
   rootSession(sessionID: string): Promise<string | null>
   skill(name: "read-session" | "ctrl", action?: "install" | "uninstall"): SkillStatus
+  /** Global skills and importing them (src/main/skills.ts); no toasts */
+  skills: {
+    list(): SkillItem[]
+    scan(): DetectedSkill[]
+    /** Returns the names imported */
+    import(keys: string[]): string[]
+    update(name: string): SkillItem
+    /** Imported copies only: other skills are left to the user (Settings → Skills) */
+    removeImported(name: string): Promise<boolean>
+  }
   update(action: "check" | "install"): Promise<UpdateStatus>
   digestScript(): string
   nodeRunner(): { command: string; env: Record<string, string> }
@@ -708,6 +720,14 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
       ),
       errors: result.errors,
     }
+  }
+
+  // ---------- skills ----------
+  const skillNamed = (name: string) => {
+    const skills = host.skills.list()
+    const skill = skills.find((s) => s.name === name)
+    if (!skill) throw new CliError("NOT_FOUND", `No skill ${name}`, { hint: "ctrl skill list", candidates: skills.map((s) => s.name) })
+    return skill
   }
 
   // ---------- tools ----------
@@ -1379,6 +1399,28 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
     "skill uninstall": (args) => {
       const name = args.name as "read-session" | "ctrl"
       return { name, ...host.skill(name, "uninstall") }
+    },
+    "skill list": () => ({ items: host.skills.list() }),
+    "skill scan": (args) => {
+      const found = host.skills.scan()
+      if (!args.apply) return { items: found, imported: [] }
+      const skip = new Set<string>(args.skip ?? [])
+      return { items: found, imported: host.skills.import(found.filter((f) => !skip.has(f.key) && !skip.has(f.name)).map((f) => f.key)) }
+    },
+    "skill update": (args) => {
+      const name = String(args.name)
+      const skill = skillNamed(name)
+      if (!skill.imported) throw new CliError("CONFLICT", `${name} wasn't imported by ctrl: nothing to update it from`)
+      if (skill.imported.state === "gone") throw new CliError("CONFLICT", `${skill.imported.from} is gone: nothing to update ${name} from`)
+      return { item: host.skills.update(name) }
+    },
+    "skill remove": async (args) => {
+      const name = String(args.name)
+      const skills = host.skills.list()
+      if (!skills.some((s) => s.name === name)) return { name, changed: false }
+      if (!skillNamed(name).imported)
+        throw new CliError("CONFLICT", `${name} wasn't imported by ctrl: remove it in Settings → Skills`, { hint: "ctrl ui settings" })
+      return { name, changed: await host.skills.removeImported(name) }
     },
 
     // ----- worktrees -----

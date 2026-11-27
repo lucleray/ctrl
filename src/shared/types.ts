@@ -275,6 +275,44 @@ export type OpencodeCheck =
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
 /**
+ * Where a skill folder lives (src/main/skills.ts). opencode, agents and claude: global folders both harnesses
+ * read · fx: fx's own · codex, cursor, claude-plugin: other agents', which only a scan reads.
+ */
+export type SkillSource = "opencode" | "agents" | "claude" | "fx" | "codex" | "cursor" | "claude-plugin"
+
+/** A global skill your harnesses load (Settings → Skills, `ctrl skill list`). */
+export type SkillItem = {
+  /** Its folder name, the name agents load it by */
+  name: string
+  /** From its SKILL.md */
+  description?: string
+  /** Its folder */
+  path: string
+  source: SkillSource
+  /** The harnesses that load it */
+  harnesses: Harness[]
+  /** Other folders with a skill of that name, shadowed by this one */
+  also?: string[]
+  /** The folder is a symlink to here */
+  link?: string
+  /** One of ctrl's own skills (read-session, ctrl), managed from Settings → Agents */
+  ctrl?: boolean
+  /** Copied in by a skills scan: from where, and whether that copy still matches it */
+  imported?: { from: string; state: "current" | "changed" | "gone" }
+}
+
+/** A skill a scan found where your harnesses don't load it yet. */
+export type DetectedSkill = {
+  /** Its folder, what importSkills takes */
+  key: string
+  name: string
+  description?: string
+  source: SkillSource
+  /** Both harnesses load a skill by that name already */
+  available: boolean
+}
+
+/**
  * The `ctrl` CLI on PATH: a symlink at `link` (~/.local/bin/ctrl) to the launcher in the app.
  * stale: links to another copy of ctrl (installing relinks it) · other: something else is at `link`, left alone ·
  * shadowedBy: another `ctrl` comes first in PATH · notOnPath: `link`'s folder isn't in PATH
@@ -617,6 +655,16 @@ export type CtrlApi = {
   saveCliTool(config: CliToolConfig): Promise<void>
   /** Stops watching an MCP server or CLI (a scan can find it again) */
   removeTool(id: string): Promise<void>
+  /** Global skills opencode and fx load (Settings → Skills) */
+  listSkills(): Promise<SkillItem[]>
+  /** Skills in other agents' folders and fx's own that your harnesses don't share yet. Nothing changes until importSkills */
+  scanSkills(): Promise<DetectedSkill[]>
+  /** Copies the picked skills of a scan into opencode's global skills folder, which fx reads too */
+  importSkills(keys: string[]): Promise<void>
+  /** Copies an imported skill again from where it came from */
+  updateSkill(name: string): Promise<void>
+  /** Moves a skill folder to the Trash (a symlink is just removed) */
+  removeSkill(name: string): Promise<void>
   /** Changes a repo's worktree settings (Settings → Worktrees); null clears name / setup, or sizes the pool from usage */
   configureWorktreeRepo(source: string, patch: Partial<Pick<WorktreeRepoConfig, "baseBranch" | "maxTotal">> & { name?: string | null; setup?: string | null; warm?: number | null }): Promise<void>
   /** Picks a git checkout and adds it as a repo (Settings → Worktrees); resolves to its path, or null if canceled or not a repo */

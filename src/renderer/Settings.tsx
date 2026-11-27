@@ -33,6 +33,7 @@ import {
 } from "../shared/types"
 import { CLI_TOOL_PRESETS, cliToolID } from "../shared/tools"
 import { age, shortPath } from "./format"
+import { SkillsSection } from "./SkillSettings"
 import { ToolScan } from "./ToolScan"
 import { Icon } from "./icons"
 import { ModelPicker } from "./ModelPicker"
@@ -906,6 +907,7 @@ type SectionID =
   | "shortcuts"
   | "agents"
   | "tools"
+  | "skills"
   | "worktrees"
   | "adapters"
   | "companion"
@@ -920,6 +922,7 @@ const SECTIONS: { id: SectionID; label: string; icon: string; group?: string; ke
   { id: "shortcuts", label: "Shortcuts", icon: "keyboard", group: "General", keywords: "keyboard keys hotkeys" },
   { id: "agents", label: "Agents", icon: "bot", group: "Integrations", keywords: "skills" },
   { id: "tools", label: "Tools", icon: "plug", group: "Integrations", keywords: "mcp servers cli credentials login aws" },
+  { id: "skills", label: "Skills", icon: "book", group: "Integrations", keywords: "import claude codex cursor plugins SKILL.md" },
   { id: "worktrees", label: "Worktrees", icon: "git-branch", group: "Integrations", keywords: "git checkout repo repositories pool warm branch cleanup" },
   { id: "adapters", label: "Resource adapters", icon: "link", group: "Integrations", keywords: "links" },
   { id: "companion", label: "Companion", icon: "panel-float", group: "Integrations" },
@@ -1364,6 +1367,8 @@ export function Settings({
     ),
 
     tools: <ToolsSection tools={state.tools} setUp={state.toolsSetUp} onFix={onFixTool} />,
+
+    skills: <SkillsSection />,
 
     worktrees: <WorktreeSettings state={state} />,
 

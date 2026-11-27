@@ -48,6 +48,7 @@ import { isPlaceholder, placeholderID, withUnstarted } from "./unstarted"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
+import { importSkills, listSkills, removeSkill, scanSkills, skillDirs, updateSkill, type SkillDirs } from "./skills"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
@@ -803,6 +804,21 @@ const refreshSkill = () => {
       console.error("[ctrl] couldn't refresh a skill", err)
     }
   }
+}
+
+/** Settings → Skills (src/main/skills.ts). CTRL_SKILLS_DIR (a test hook) stands in for opencode's skills folder. */
+const skillsDirs = (): SkillDirs => {
+  const dirs = skillDirs({ configHome: process.env.XDG_CONFIG_HOME || undefined, fxHome: FX_HOME, codexHome: process.env.CODEX_HOME || undefined })
+  const override = process.env.CTRL_SKILLS_DIR
+  if (!override) return dirs
+  return { ...dirs, target: override, shared: dirs.shared.map((d) => (d.source === "opencode" ? { ...d, dir: override } : d)) }
+}
+const skillsLib = {
+  list: () => listSkills(skillsDirs()),
+  scan: () => scanSkills(skillsDirs()),
+  import: (keys: string[]) => importSkills(skillsDirs(), keys),
+  update: (name: string) => updateSkill(skillsDirs(), name),
+  remove: (name: string) => removeSkill(skillsDirs(), name, (path) => shell.trashItem(path)),
 }
 
 const updater = new Updater(app.getVersion(), {
@@ -1695,6 +1711,31 @@ function registerIpc() {
   ipcMain.handle("tools:apply-scan", (_e, checked: string[]) => tools.applyScan(checked))
   ipcMain.handle("tools:save-cli", (_e, config: CliToolConfig) => tools.saveCli(config))
   ipcMain.handle("tools:remove", (_e, id: string) => void tools.remove(id))
+  ipcMain.handle("skills:list", () => skillsLib.list())
+  ipcMain.handle("skills:scan", () => skillsLib.scan())
+  ipcMain.handle("skills:import", (_e, keys: string[]) => {
+    try {
+      const names = skillsLib.import(keys)
+      if (names.length)
+        toast({ icon: "check", message: names.length === 1 ? `Imported ${names[0]}` : `Imported ${names.length} skills` })
+    } catch (err) {
+      report(err)
+    }
+  })
+  ipcMain.handle("skills:update", (_e, name: string) => {
+    try {
+      skillsLib.update(name)
+      toast({ icon: "check", message: `Updated ${name} from its source` })
+    } catch (err) {
+      report(err)
+    }
+  })
+  ipcMain.handle("skills:remove", (_e, name: string) =>
+    skillsLib.remove(name).then(
+      (s) => void toast({ icon: "trash", message: s.link && !s.also?.length ? `Removed the link to ${name}` : `Moved ${name} to the Trash` }),
+      report,
+    ),
+  )
   ipcMain.handle("worktrees:configure", (_e, source: string, patch: Parameters<WorktreeService["configure"]>[1]) =>
     worktrees.configure(source, patch).then(() => undefined, report),
   )
@@ -2118,6 +2159,18 @@ const cliHost: CliHost = {
     if (action === "uninstall") target.uninstall()
     if (action) push()
     return target.refresh()
+  },
+  skills: {
+    list: () => skillsLib.list(),
+    scan: () => skillsLib.scan(),
+    import: (keys) => skillsLib.import(keys),
+    update: (name) => skillsLib.update(name),
+    removeImported: async (name) => {
+      const skill = skillsLib.list().find((s) => s.name === name)
+      if (!skill?.imported) return false
+      await skillsLib.remove(name)
+      return true
+    },
   },
   update: async (action) => {
     if (action === "check") await updater.check()

@@ -791,6 +791,46 @@ export const COMMANDS: CommandSpec[] = [
     mutates: true,
   },
   {
+    name: "skill list",
+    summary: "Every global skill opencode and fx load: where it lives, which harness loads it, and whether ctrl imported it",
+    details: [
+      "Global folders: ~/.config/opencode/skills, ~/.agents/skills and ~/.claude/skills (both harnesses), ~/.fx/skills (fx only). One item per name: the first folder in that order wins, `also` lists the ones it shadows.",
+      "`imported.state` is `changed` when the skill it was copied from changed since (`ctrl skill update` copies it again), `gone` when that source was removed.",
+    ],
+    args: [],
+    returns: "{items:[{name, description?, path, source, harnesses, also?, link?, ctrl?, imported?:{from, state}}]}",
+  },
+  {
+    name: "skill scan",
+    summary: "Finds skills your harnesses don't share yet: in fx's own folder, Claude Code plugins, Codex and Cursor",
+    details: [
+      "Without --apply nothing changes: `available` says both harnesses load a skill by that name already (it can't be imported).",
+      "--apply imports everything found except --skip keys (or names): a copy in opencode's global skills folder, which fx reads too.",
+    ],
+    args: [
+      { name: "apply", type: "bool", description: "Import what was found" },
+      { name: "skip", type: "string", list: true, description: "With --apply: keys (skill folders) or names not to import (repeatable)" },
+    ],
+    returns: "{items:[{key, name, description?, source, available}], imported:[name]}",
+    examples: ["ctrl skill scan", "ctrl skill scan --apply --skip pdf"],
+    mutates: true,
+  },
+  {
+    name: "skill update",
+    summary: "Copies an imported skill again from where it came from",
+    args: [{ name: "name", type: "string", positional: true, required: true, placeholder: "<name>", description: "Skill name (`ctrl skill list`)" }],
+    returns: "{item: Skill}",
+    mutates: true,
+  },
+  {
+    name: "skill remove",
+    summary: "Removes a skill ctrl imported (a scan can import it again)",
+    details: ["Only imported copies: removing other skills stays a human action, in Settings → Skills."],
+    args: [{ name: "name", type: "string", positional: true, required: true, placeholder: "<name>", description: "Skill name (`ctrl skill list`)" }],
+    returns: "{name, changed}",
+    mutates: true,
+  },
+  {
     name: "skill uninstall",
     summary: "Removes ctrl's copy of one of its agent skills",
     args: [
