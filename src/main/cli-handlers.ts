@@ -714,11 +714,10 @@ export function createHandlers(host: CliHost, { sessionNewBudget = SESSION_NEW_B
   }
 
   // ---------- skills ----------
-  /** `--partial`: only skills some harness doesn't load, or loads in differing copies. */
+  /** `--partial`: only skills some harness doesn't load. */
   const skillView = (audit: SkillAudit, args: Record<string, any>) => {
     const all = audit.harnesses.length
-    const items = args.partial ? audit.items.filter((s) => s.harnesses.length < all || s.differs) : audit.items
-    return { scannedAt: audit.scannedAt, harnesses: audit.harnesses, items }
+    return { ...audit, items: args.partial ? audit.items.filter((s) => s.harnesses.length < all) : audit.items }
   }
 
   // ---------- tools ----------

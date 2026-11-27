@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto"
-import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs"
+import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import type { AuditedSkill, Harness, SkillAgent, SkillAudit, SkillCopy } from "../shared/types"
+import type { AuditedSkill, Harness, SkillAudit, SkillCopy } from "../shared/types"
 
 /** A harness and the global folders it loads skills from, in its order (HarnessSource.skillFolders). */
 export type SkillReader = { harness: Harness; folders: string[] }
@@ -12,36 +11,24 @@ const DESCRIPTION_MAX = 400
 
 /**
  * Other agents' skill folders, which no harness of ctrl's reads: Codex, Cursor and the Claude Code plugins you
- * installed (not every plugin of a marketplace). A scan shows their skills so you can tell why a session
- * doesn't see one.
+ * installed (not every plugin of a marketplace). A scan lists their skills too, loaded by no harness.
  */
-export const agentSkillFolders = (
-  opts: { home?: string; codexHome?: string } = {},
-): { dir: string; agent: SkillAgent; plugin?: string }[] => {
+export const agentSkillFolders = (opts: { home?: string; codexHome?: string } = {}): string[] => {
   const home = opts.home ?? homedir()
-  return [
-    { dir: join(opts.codexHome ?? join(home, ".codex"), "skills"), agent: "codex" },
-    { dir: join(home, ".cursor", "skills"), agent: "cursor" },
-    ...claudePlugins(home),
-  ]
+  return [join(opts.codexHome ?? join(home, ".codex"), "skills"), join(home, ".cursor", "skills"), ...claudePlugins(home)]
 }
 
-const claudePlugins = (home: string): { dir: string; agent: SkillAgent; plugin: string }[] => {
+const claudePlugins = (home: string): string[] => {
   let raw: { plugins?: Record<string, { installPath?: unknown }[]> }
   try {
     raw = JSON.parse(readFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), "utf8"))
   } catch {
     return []
   }
-  const out = new Map<string, { dir: string; agent: SkillAgent; plugin: string }>()
-  for (const [id, installs] of Object.entries(raw.plugins ?? {})) {
-    for (const i of Array.isArray(installs) ? installs : []) {
-      if (typeof i?.installPath !== "string") continue
-      const dir = join(i.installPath, "skills")
-      out.set(dir, { dir, agent: "claude-plugin", plugin: id.split("@")[0] })
-    }
-  }
-  return [...out.values()]
+  const dirs = Object.values(raw.plugins ?? {}).flatMap((installs) =>
+    (Array.isArray(installs) ? installs : []).flatMap((i) => (typeof i?.installPath === "string" ? [join(i.installPath, "skills")] : [])),
+  )
+  return [...new Set(dirs)]
 }
 
 /** The value of one frontmatter key: plain, quoted, or a `>` / `|` block on the lines below. */
@@ -101,14 +88,6 @@ const skillsIn = (dir: string) => {
     })
 }
 
-const real = (path: string) => {
-  try {
-    return realpathSync(path)
-  } catch {
-    return path
-  }
-}
-
 const linkTarget = (path: string) => {
   try {
     return lstatSync(path).isSymbolicLink() ? resolve(dirname(path), readlinkSync(path)) : undefined
@@ -117,38 +96,20 @@ const linkTarget = (path: string) => {
   }
 }
 
-/** Of a skill folder's files, dotfiles at its top left out. */
-export const hashSkill = (dir: string) => {
-  const h = createHash("sha256")
-  const walk = (rel: string) => {
-    for (const name of readdirSync(join(dir, rel)).sort()) {
-      if (!rel && name.startsWith(".")) continue
-      const path = join(dir, rel, name)
-      const st = statSync(path)
-      if (st.isDirectory()) walk(join(rel, name))
-      else if (st.isFile()) h.update(join(rel, name)).update(readFileSync(path))
-    }
-  }
-  walk("")
-  return h.digest("hex")
-}
-
 /**
- * Every skill on this Mac by folder name: each copy, which harness loads it, and other agents' copies that
- * none does. Read only: it never changes a skill. Reads folders and SKILL.md files; hashes files only for a
- * name a harness loads from more than one place.
+ * Every skill on this Mac by folder name: each folder it's in, and which harness loads it. Other agents'
+ * folders come last, loaded by none. Read only: folders and SKILL.md files, nothing else.
  */
-export function auditSkills(readers: SkillReader[], others = agentSkillFolders(), now = Date.now()): SkillAudit {
+export function auditSkills(readers: SkillReader[], others = agentSkillFolders(), now = Date.now(), home = homedir()): SkillAudit {
   const byName = new Map<string, { copies: SkillCopy[]; description?: string }>()
   const copyAt = (folder: string, path: string, description?: string) => {
     let entry = byName.get(folder)
     if (!entry) byName.set(folder, (entry = { copies: [], description }))
-    const seen = entry.copies.find((c) => c.path === path)
-    if (seen) return seen
-    const copy: SkillCopy = { path, harnesses: [] }
-    const link = linkTarget(path)
-    if (link) copy.link = link
-    entry.copies.push(copy)
+    let copy = entry.copies.find((c) => c.path === path)
+    if (!copy) {
+      const link = linkTarget(path)
+      entry.copies.push((copy = { path, harnesses: [], ...(link ? { link } : {}) }))
+    }
     return copy
   }
 
@@ -160,26 +121,14 @@ export function auditSkills(readers: SkillReader[], others = agentSkillFolders()
       }
     }
   }
-  for (const { dir, agent, plugin } of others) {
-    for (const s of skillsIn(dir)) {
-      const copy = copyAt(s.folder, s.path, s.description)
-      if (!copy.harnesses.length) Object.assign(copy, { agent }, plugin ? { plugin } : {})
-    }
-  }
+  for (const dir of others) for (const s of skillsIn(dir)) copyAt(s.folder, s.path, s.description)
 
-  const items: AuditedSkill[] = [...byName].map(([name, { copies, description }]) => {
-    const harnesses = readers.map((r) => r.harness).filter((h) => copies.some((c) => c.harnesses.includes(h)))
-    // Links to the same folder are one copy; different folders a harness loads may hold different files.
-    const loaded = [...new Set(copies.filter((c) => c.harnesses.length).map((c) => real(c.path)))]
-    const differs = loaded.length > 1 && new Set(loaded.map(hashSkill)).size > 1
-    return {
-      name,
-      ...(description ? { description } : {}),
-      harnesses,
-      copies,
-      ...(differs ? { differs: true } : {}),
-    }
-  })
+  const items: AuditedSkill[] = [...byName].map(([name, { copies, description }]) => ({
+    name,
+    ...(description ? { description } : {}),
+    harnesses: readers.map((r) => r.harness).filter((h) => copies.some((c) => c.harnesses.includes(h))),
+    copies,
+  }))
   items.sort((a, b) => a.name.localeCompare(b.name))
-  return { scannedAt: now, harnesses: readers.map((r) => ({ harness: r.harness, folders: r.folders })), items }
+  return { scannedAt: now, home, harnesses: readers.map((r) => ({ harness: r.harness, folders: r.folders })), items }
 }

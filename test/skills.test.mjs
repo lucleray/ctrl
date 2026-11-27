@@ -1,5 +1,5 @@
 // The skills audit (src/main/skills.ts): reading SKILL.md, which harness loads each skill and from where,
-// other agents' skills, differing copies, and the `ctrl skill list / scan` handlers.
+// other agents' skills, and the `ctrl skill list / scan` handlers.
 import assert from "node:assert/strict"
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -60,8 +60,9 @@ describe("auditSkills", () => {
     symlinkSync(slack, join(f.claude, "slack"))
     skill(f.fx, "changelog")
     skill(join(f.agents, ".system"), "hidden")
-    const audit = lib.auditSkills(readers, others(), 1000)
+    const audit = lib.auditSkills(readers, others(), 1000, "/Users/me")
     assert.equal(audit.scannedAt, 1000)
+    assert.equal(audit.home, "/Users/me")
     assert.deepEqual(audit.harnesses.map((h) => h.harness), ["opencode", "fx"])
     assert.deepEqual(audit.items.map((s) => [s.name, s.harnesses.join("+")]), [
       ["changelog", "fx"],
@@ -74,7 +75,6 @@ describe("auditSkills", () => {
       [join(f.claude, "slack"), "opencode+fx", slack],
       [slack, "opencode+fx", null],
     ])
-    assert.equal(s.differs, undefined, "a link to the same folder isn't a differing copy")
   })
 
   test("other agents' skills: Codex, Cursor and installed Claude Code plugins, loaded by no harness", () => {
@@ -91,31 +91,21 @@ describe("auditSkills", () => {
       JSON.stringify({ version: 2, plugins: { "frontend@acme": [{ scope: "user", installPath: plugin }] } }),
     )
     const audit = lib.auditSkills(readers, others())
-    assert.deepEqual(audit.items.map((s) => [s.name, s.harnesses.join("+") || "-", s.copies.map((c) => c.agent ?? "harness").join(",")]), [
-      ["a11y", "-", "claude-plugin"],
-      ["pdf", "opencode+fx", "harness,codex"],
-      ["review", "-", "codex"],
-      ["storybook", "-", "cursor"],
+    assert.deepEqual(audit.items.map((s) => [s.name, s.harnesses.join("+") || "-", s.copies.map((c) => c.harnesses.length).join(",")]), [
+      ["a11y", "-", "0"],
+      ["pdf", "opencode+fx", "2,0"],
+      ["review", "-", "0"],
+      ["storybook", "-", "0"],
     ])
-    assert.equal(audit.items[0].copies[0].plugin, "frontend")
-  })
-
-  test("differs: a harness loads copies whose files differ", () => {
-    const { f, readers, skill } = home()
-    skill(f.agents, "pdf", "one")
-    skill(f.claude, "pdf", "one")
-    skill(f.agents, "review", "one")
-    skill(f.claude, "review", "two")
-    const audit = lib.auditSkills(readers, [])
-    assert.equal(audit.items.find((s) => s.name === "pdf").differs, undefined)
-    assert.equal(audit.items.find((s) => s.name === "review").differs, true)
+    assert.deepEqual(audit.items[1].copies.map((c) => c.path), [join(f.agents, "pdf"), join(root, ".codex/skills/pdf")])
+    assert.equal(audit.items[0].copies[0].path, join(plugin, "skills/a11y"))
   })
 })
 
 describe("skill handlers", () => {
   const call = (handlers, command, args) => handlers[command](args, { v: 1, command, args, caller: {} }, {})
 
-  test("list answers from the last scan, scan rescans, --partial keeps what's off", () => {
+  test("list answers from the last scan, scan rescans, --partial keeps what a harness doesn't load", () => {
     const { f, readers, skill } = home()
     skill(f.agents, "shared")
     skill(f.fx, "fx-only")

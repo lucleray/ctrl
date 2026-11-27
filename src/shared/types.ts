@@ -274,18 +274,11 @@ export type OpencodeCheck =
  */
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
-/** Other agents whose skills a scan reads, though no harness of ctrl's loads them. */
-export type SkillAgent = "codex" | "cursor" | "claude-plugin"
-
 /** One folder holding a skill (a folder with a SKILL.md). */
 export type SkillCopy = {
   path: string
-  /** The harnesses that load this copy */
+  /** The harnesses that load this copy; none for a copy in another agent's folder (Codex, Cursor, a Claude Code plugin) */
   harnesses: Harness[]
-  /** Another agent's folder, which no harness reads */
-  agent?: SkillAgent
-  /** claude-plugin: the plugin it comes with */
-  plugin?: string
   /** It's a symlink to here */
   link?: string
 }
@@ -294,18 +287,18 @@ export type SkillCopy = {
 export type AuditedSkill = {
   /** Its folder name, the name agents load it by */
   name: string
-  /** From its SKILL.md (the first copy a harness loads) */
+  /** From its SKILL.md */
   description?: string
   /** The harnesses that load it, from any copy */
   harnesses: Harness[]
   copies: SkillCopy[]
-  /** A harness loads copies whose files differ: which one it uses depends on its folder order */
-  differs?: boolean
 }
 
 /** What a skills scan found: every global skill, and where each harness looks. */
 export type SkillAudit = {
   scannedAt: number
+  /** The home folder paths are under, to show them as ~/… */
+  home: string
   /** The harnesses that report skill folders (HarnessSource.skillFolders), with those folders */
   harnesses: { harness: Harness; folders: string[] }[]
   items: AuditedSkill[]

@@ -1047,22 +1047,21 @@ ctrl skill install read-session|ctrl
 
 ### skill list
 
-Every skill on this Mac by name: its copies, and which harness loads each (from the last scan)
+Every skill on this Mac by name: the folders it's in, and which harness loads it (from the last scan)
 
 ```text
 ctrl skill list [--partial]
 ```
 
-- Read only: an audit of what agents see. Each harness reports the global folders it loads skills from: opencode ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills; fx ~/.fx/skills and the same three.
-- Copies in other agents' folders (Codex, Cursor, installed Claude Code plugins) have `agent` set and no `harnesses`: sessions don't see them.
-- `differs`: a harness loads copies of it whose files differ, so which one it uses depends on its folder order.
+- Read only. Each harness reports the global folders it loads skills from: opencode ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills; fx ~/.fx/skills and the same three.
+- A skill's `harnesses` are the ones that load it. Copies in other agents' folders (Codex, Cursor, installed Claude Code plugins) have no `harnesses`: sessions don't see them.
 - ctrl scans a few seconds after launch, when Settings opens and every 6 hours; `ctrl skill scan` scans now.
 
 | Argument | Meaning |
 |---|---|
-| `--partial / --no-partial` | Only skills some harness doesn't load, or loads in differing copies |
+| `--partial / --no-partial` | Only skills some harness doesn't load |
 
-**Returns:** `{scannedAt, harnesses:[{harness, folders}], items:[{name, description?, harnesses, copies:[{path, harnesses, agent?, plugin?, link?}], differs?}]}`
+**Returns:** `{scannedAt, home, harnesses:[{harness, folders}], items:[{name, description?, harnesses, copies:[{path, harnesses, link?}]}]}`
 
 ```bash
 ctrl skill list --partial
@@ -1078,9 +1077,9 @@ ctrl skill scan [--partial]
 
 | Argument | Meaning |
 |---|---|
-| `--partial / --no-partial` | Only skills some harness doesn't load, or loads in differing copies |
+| `--partial / --no-partial` | Only skills some harness doesn't load |
 
-**Returns:** `{scannedAt, harnesses, items}`
+**Returns:** `{scannedAt, home, harnesses, items}`
 
 ### skill uninstall
 

@@ -353,14 +353,13 @@ where it lives.
     opens the browser, then checks again), opens a page, or types a fix-it prompt into a new session. Add by hand
     (presets or custom), edit, remove, check now
   - tools.json can be edited by hand: ctrl watches it
-- Skills: a read-only audit of what agents see (`src/main/skills.ts`, `src/renderer/SkillSettings.tsx`). Every skill on
-  this Mac by folder name, with its description, where each copy lives (links shown) and which harness loads it
+- Skills: a read-only list of every skill on this Mac (`src/main/skills.ts`, `src/renderer/SkillSettings.tsx`). Each
+  row: its name (description in the tooltip), the folders it's in (a link shows where it points), and a dot per
+  harness: green when it loads the skill, orange with "<harness> does not load it" when it doesn't. Show in Finder
   - Each harness reports the global folders it reads (`HarnessSource.skillFolders`): opencode
-    `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`; fx `~/.fx/skills` and the same three
-  - Needs a look: skills only some harnesses load (with the folder every harness reads, to put them in), and
-    copies a harness loads whose files differ. Then the ones every harness loads, then other agents' skills
-    no session sees (Codex, Cursor, installed Claude Code plugins), and the folders each harness reads with
-    their skill counts. Show in Finder on every row
+    `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`; fx `~/.fx/skills` and the same three.
+    Skills in other agents' folders (`~/.codex/skills`, `~/.cursor/skills`, installed Claude Code plugins) are
+    listed too, loaded by no harness
   - Scans on its own, never notifies: a few seconds after launch, when Settings opens and every 6 hours; Scan
     does it now
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
@@ -460,7 +459,7 @@ where it lives.
 - Settings: list (typed, with allowed values and defaults), get, set, reset, as dotted keys
 - UI: what's on screen, opencode home screen with a prefilled prompt, window show / hide / raise, resources
   panel, sidebar width, Recents / Archived folding, settings page, ⌘P palette with a query, toast
-- Skills: `skill list [--partial]` (every skill, its copies and which harness loads each, from the last scan),
+- Skills: `skill list [--partial]` (every skill, the folders it's in and which harness loads it, from the last scan),
   `skill scan` (the same, scanned now)
 - Search, resources, models, MCP servers, skills, app status / launch / updates, and an NDJSON `events` stream
   (`tool.changed` when a watched tool breaks or recovers)
