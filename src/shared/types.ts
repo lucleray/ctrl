@@ -274,42 +274,41 @@ export type OpencodeCheck =
  */
 export type SkillStatus = { state: "installed" | "outdated" | "external" | "missing"; path?: string }
 
-/**
- * Where a skill folder lives (src/main/skills.ts). opencode, agents and claude: global folders both harnesses
- * read · fx: fx's own · codex, cursor, claude-plugin: other agents', which only a scan reads.
- */
-export type SkillSource = "opencode" | "agents" | "claude" | "fx" | "codex" | "cursor" | "claude-plugin"
+/** Other agents whose skills a scan reads, though no harness of ctrl's loads them. */
+export type SkillAgent = "codex" | "cursor" | "claude-plugin"
 
-/** A global skill your harnesses load (Settings → Skills, `ctrl skill list`). */
-export type SkillItem = {
-  /** Its folder name, the name agents load it by */
-  name: string
-  /** From its SKILL.md */
-  description?: string
-  /** Its folder */
+/** One folder holding a skill (a folder with a SKILL.md). */
+export type SkillCopy = {
   path: string
-  source: SkillSource
-  /** The harnesses that load it */
+  /** The harnesses that load this copy */
   harnesses: Harness[]
-  /** Other folders with a skill of that name, shadowed by this one */
-  also?: string[]
-  /** The folder is a symlink to here */
+  /** Another agent's folder, which no harness reads */
+  agent?: SkillAgent
+  /** claude-plugin: the plugin it comes with */
+  plugin?: string
+  /** It's a symlink to here */
   link?: string
-  /** One of ctrl's own skills (read-session, ctrl), managed from Settings → Agents */
-  ctrl?: boolean
-  /** Copied in by a skills scan: from where, and whether that copy still matches it */
-  imported?: { from: string; state: "current" | "changed" | "gone" }
 }
 
-/** A skill a scan found where your harnesses don't load it yet. */
-export type DetectedSkill = {
-  /** Its folder, what importSkills takes */
-  key: string
+/** A skill, by folder name, with every copy of it on this Mac (Settings → Skills, `ctrl skill list`). */
+export type AuditedSkill = {
+  /** Its folder name, the name agents load it by */
   name: string
+  /** From its SKILL.md (the first copy a harness loads) */
   description?: string
-  source: SkillSource
-  /** Both harnesses load a skill by that name already */
-  available: boolean
+  /** The harnesses that load it, from any copy */
+  harnesses: Harness[]
+  copies: SkillCopy[]
+  /** A harness loads copies whose files differ: which one it uses depends on its folder order */
+  differs?: boolean
+}
+
+/** What a skills scan found: every global skill, and where each harness looks. */
+export type SkillAudit = {
+  scannedAt: number
+  /** The harnesses that report skill folders (HarnessSource.skillFolders), with those folders */
+  harnesses: { harness: Harness; folders: string[] }[]
+  items: AuditedSkill[]
 }
 
 /**
@@ -382,6 +381,8 @@ export type AppState = {
   activeTermID: string | null
   /** Watched tools: the MCP servers and CLIs in tools.json (before it exists: opencode's MCP servers) */
   tools: ToolItem[]
+  /** The last skills scan (Settings → Skills); null until the first one, a few seconds after launch */
+  skills: SkillAudit | null
   /** tools.json exists: you went through the tools scan (onboarding or Settings) */
   toolsSetUp: boolean
   /** Git worktrees agents take with `ctrl worktree up`: repos, pool sizes, usage and background jobs (Settings → Worktrees) */
@@ -655,16 +656,8 @@ export type CtrlApi = {
   saveCliTool(config: CliToolConfig): Promise<void>
   /** Stops watching an MCP server or CLI (a scan can find it again) */
   removeTool(id: string): Promise<void>
-  /** Global skills opencode and fx load (Settings → Skills) */
-  listSkills(): Promise<SkillItem[]>
-  /** Skills in other agents' folders and fx's own that your harnesses don't share yet. Nothing changes until importSkills */
-  scanSkills(): Promise<DetectedSkill[]>
-  /** Copies the picked skills of a scan into opencode's global skills folder, which fx reads too */
-  importSkills(keys: string[]): Promise<void>
-  /** Copies an imported skill again from where it came from */
-  updateSkill(name: string): Promise<void>
-  /** Moves a skill folder to the Trash (a symlink is just removed) */
-  removeSkill(name: string): Promise<void>
+  /** Scans skill folders again (Settings → Skills → Scan); the result comes with the next state push */
+  scanSkills(): Promise<void>
   /** Changes a repo's worktree settings (Settings → Worktrees); null clears name / setup, or sizes the pool from usage */
   configureWorktreeRepo(source: string, patch: Partial<Pick<WorktreeRepoConfig, "baseBranch" | "maxTotal">> & { name?: string | null; setup?: string | null; warm?: number | null }): Promise<void>
   /** Picks a git checkout and adds it as a repo (Settings → Worktrees); resolves to its path, or null if canceled or not a repo */

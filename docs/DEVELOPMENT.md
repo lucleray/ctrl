@@ -114,7 +114,7 @@ npm run test:slow  # tests that run real git (test/slow/): the worktree pool, a 
 - `CTRL_FX_HOME=/tmp/fx` read fx sessions from there instead of `~/.fx`, and run fx with `FX_HOME` set to it
   (fx ≥ 0.0.17), so a test run's sessions stay there. Copy `~/.fx/settings.json` in to keep your sign-in
 - `CTRL_SKILLS_DIR=/tmp/skills` install the read-session skill there, ignoring the real skill folders (Settings → Skills
-  reads and imports into it in place of `~/.config/opencode/skills`)
+  reads it in place of `~/.config/opencode/skills`)
 - `CTRL_BIN_DIR=/tmp/bin` install the `ctrl` command link there instead of `~/.local/bin` (`install.sh`
   reads it too)
 - `CTRL_SOCKET_PATH=/tmp/ctrl.sock` listen for the CLI there instead of the state folder (the CLI side reads

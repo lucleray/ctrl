@@ -24,6 +24,7 @@ import {
   type ThemeInfo,
   type Toast,
   type CliToolConfig,
+  type SkillAudit,
   type UiState,
   type ResourceItem,
   type ResourceMeta,
@@ -48,7 +49,7 @@ import { isPlaceholder, placeholderID, withUnstarted } from "./unstarted"
 import { OpenCodeService } from "./opencode"
 import { checkOpencode, compareVersions } from "./opencode-bin"
 import { Skill } from "./skill"
-import { importSkills, listSkills, removeSkill, scanSkills, skillDirs, updateSkill, type SkillDirs } from "./skills"
+import { agentSkillFolders, auditSkills } from "./skills"
 import { Updater } from "./updater"
 import { Search } from "./search"
 import { loadShellEnv } from "./shell-env"
@@ -199,6 +200,7 @@ const state = (): AppState => ({
   terms: terms(),
   activeTermID: activeTermID(),
   tools: tools.items(),
+  skills: skillAudit,
   toolsSetUp: tools.setUp,
   worktrees: worktrees.view(),
   adapters: adapters.adapters,
@@ -806,19 +808,18 @@ const refreshSkill = () => {
   }
 }
 
-/** Settings → Skills (src/main/skills.ts). CTRL_SKILLS_DIR (a test hook) stands in for opencode's skills folder. */
-const skillsDirs = (): SkillDirs => {
-  const dirs = skillDirs({ configHome: process.env.XDG_CONFIG_HOME || undefined, fxHome: FX_HOME, codexHome: process.env.CODEX_HOME || undefined })
-  const override = process.env.CTRL_SKILLS_DIR
-  if (!override) return dirs
-  return { ...dirs, target: override, shared: dirs.shared.map((d) => (d.source === "opencode" ? { ...d, dir: override } : d)) }
-}
-const skillsLib = {
-  list: () => listSkills(skillsDirs()),
-  scan: () => scanSkills(skillsDirs()),
-  import: (keys: string[]) => importSkills(skillsDirs(), keys),
-  update: (name: string) => updateSkill(skillsDirs(), name),
-  remove: (name: string) => removeSkill(skillsDirs(), name, (path) => shell.trashItem(path)),
+/** Settings → Skills: the last scan of what each harness loads (src/main/skills.ts). Read only, never toasts. */
+let skillAudit: SkillAudit | null = null
+const SKILL_SCAN_EVERY = 6 * 60 * 60_000
+const scanSkills = () => {
+  try {
+    const readers = harnesses().flatMap((h) => (h.skillFolders ? [{ harness: h.harness, folders: h.skillFolders() }] : []))
+    skillAudit = auditSkills(readers, agentSkillFolders({ codexHome: process.env.CODEX_HOME || undefined }))
+    push()
+  } catch (err) {
+    console.error("[ctrl] couldn't scan skills", err)
+  }
+  return skillAudit!
 }
 
 const updater = new Updater(app.getVersion(), {
@@ -1711,31 +1712,7 @@ function registerIpc() {
   ipcMain.handle("tools:apply-scan", (_e, checked: string[]) => tools.applyScan(checked))
   ipcMain.handle("tools:save-cli", (_e, config: CliToolConfig) => tools.saveCli(config))
   ipcMain.handle("tools:remove", (_e, id: string) => void tools.remove(id))
-  ipcMain.handle("skills:list", () => skillsLib.list())
-  ipcMain.handle("skills:scan", () => skillsLib.scan())
-  ipcMain.handle("skills:import", (_e, keys: string[]) => {
-    try {
-      const names = skillsLib.import(keys)
-      if (names.length)
-        toast({ icon: "check", message: names.length === 1 ? `Imported ${names[0]}` : `Imported ${names.length} skills` })
-    } catch (err) {
-      report(err)
-    }
-  })
-  ipcMain.handle("skills:update", (_e, name: string) => {
-    try {
-      skillsLib.update(name)
-      toast({ icon: "check", message: `Updated ${name} from its source` })
-    } catch (err) {
-      report(err)
-    }
-  })
-  ipcMain.handle("skills:remove", (_e, name: string) =>
-    skillsLib.remove(name).then(
-      (s) => void toast({ icon: "trash", message: s.link && !s.also?.length ? `Removed the link to ${name}` : `Moved ${name} to the Trash` }),
-      report,
-    ),
-  )
+  ipcMain.handle("skills:scan", () => void scanSkills())
   ipcMain.handle("worktrees:configure", (_e, source: string, patch: Parameters<WorktreeService["configure"]>[1]) =>
     worktrees.configure(source, patch).then(() => undefined, report),
   )
@@ -1889,6 +1866,7 @@ function registerIpc() {
   ipcMain.handle("adapters:check", () => {
     // Settings just opened: also pick up a skill or CLI link installed or removed by hand.
     skill.refresh()
+    scanSkills()
     cliSkill.refresh()
     cliInstall.refresh()
     push()
@@ -2160,18 +2138,7 @@ const cliHost: CliHost = {
     if (action) push()
     return target.refresh()
   },
-  skills: {
-    list: () => skillsLib.list(),
-    scan: () => skillsLib.scan(),
-    import: (keys) => skillsLib.import(keys),
-    update: (name) => skillsLib.update(name),
-    removeImported: async (name) => {
-      const skill = skillsLib.list().find((s) => s.name === name)
-      if (!skill?.imported) return false
-      await skillsLib.remove(name)
-      return true
-    },
-  },
+  skills: (rescan?: boolean) => (rescan || !skillAudit ? scanSkills() : skillAudit),
   update: async (action) => {
     if (action === "check") await updater.check()
     else await updater.install()
@@ -2443,6 +2410,9 @@ app.whenReady().then(async () => {
   )
   if (!headless) companion.setEnabled(store.data.settings.companion)
   refreshSkill()
+  // Skills: a first scan once launch settles (so onboarding's Settings has it), then a few times a day.
+  setTimeout(scanSkills, 5000)
+  setInterval(scanSkills, SKILL_SCAN_EVERY)
   if (!store.data.ui.agentsPrompted) {
     win!.webContents.once("did-finish-load", () =>
       setTimeout(() => {

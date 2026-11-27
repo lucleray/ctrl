@@ -353,18 +353,16 @@ where it lives.
     opens the browser, then checks again), opens a page, or types a fix-it prompt into a new session. Add by hand
     (presets or custom), edit, remove, check now
   - tools.json can be edited by hand: ctrl watches it
-- Skills: the global skills opencode and fx load, one row each with its description, where it lives and whether
-  only fx loads it (`src/main/skills.ts`, `src/renderer/SkillSettings.tsx`). Global folders: `~/.config/opencode/skills`,
-  `~/.agents/skills`, `~/.claude/skills` (both harnesses) and `~/.fx/skills` (fx only); one row per name, the first
-  folder in that order wins
-  - Scan: finds skills neither harness shares yet, in `~/.fx/skills`, the Claude Code plugins you installed
-    (`~/.claude/plugins/installed_plugins.json`), `~/.codex/skills` and `~/.cursor/skills`. Like the tools scan: all
-    checked (Select all / none per group), names both harnesses load already shown as "Already available" without
-    a checkbox. Import copies them (links followed) into `~/.config/opencode/skills`, which fx reads too, with a
-    `.ctrl-import` marker saying where they came from
-  - An imported skill whose source changed shows Update (copies it again); a source that's gone says so
-  - Show in Finder on every row; Remove moves the folder to the Trash (a symlink is just removed, with the copies
-    it shadows; an imported copy goes alone, its source stays). ctrl's own skills are managed from Agents instead
+- Skills: a read-only audit of what agents see (`src/main/skills.ts`, `src/renderer/SkillSettings.tsx`). Every skill on
+  this Mac by folder name, with its description, where each copy lives (links shown) and which harness loads it
+  - Each harness reports the global folders it reads (`HarnessSource.skillFolders`): opencode
+    `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`; fx `~/.fx/skills` and the same three
+  - Needs a look: skills only some harnesses load (with the folder every harness reads, to put them in), and
+    copies a harness loads whose files differ. Then the ones every harness loads, then other agents' skills
+    no session sees (Codex, Cursor, installed Claude Code plugins), and the folders each harness reads with
+    their skill counts. Show in Finder on every row
+  - Scans on its own, never notifies: a few seconds after launch, when Settings opens and every 6 hours; Scan
+    does it now
 - Rebindable shortcuts (`src/renderer/ShortcutSettings.tsx`, `src/shared/shortcuts.ts`)
 - Notifications: dock badge with sessions waiting on you, macOS notifications when a background session
   needs you / finishes / fails (both toggleable) (`src/main/attention.ts`)
@@ -462,9 +460,8 @@ where it lives.
 - Settings: list (typed, with allowed values and defaults), get, set, reset, as dotted keys
 - UI: what's on screen, opencode home screen with a prefilled prompt, window show / hide / raise, resources
   panel, sidebar width, Recents / Archived folding, settings page, ⌘P palette with a query, toast
-- Skills: `skill list` (global skills, where each lives, which harness loads it), `skill scan [--apply]` (import
-  from fx, Claude Code plugins, Codex, Cursor), `skill update`, `skill remove` (imported copies only: removing
-  other skills stays in Settings → Skills)
+- Skills: `skill list [--partial]` (every skill, its copies and which harness loads each, from the last scan),
+  `skill scan` (the same, scanned now)
 - Search, resources, models, MCP servers, skills, app status / launch / updates, and an NDJSON `events` stream
   (`tool.changed` when a watched tool breaks or recovers)
 - Tools: `tools list` (MCP servers per harness and CLI checks with their state, so an agent can tell a logged-out

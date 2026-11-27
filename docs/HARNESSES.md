@@ -73,7 +73,7 @@ so ctrl keeps a process per open session and reads its files and terminal output
 | Status of sessions that aren't open | ✅ live | ⚠️ | fx: from its logs and `fx sessions --live` (running, finished), polled every 2s |
 | Notifications, sounds, dock badge | ✅ | ⚠️ | Same as status: fx's "needs you" and "failed" only for open sessions. fx's own sounds are turned off (`FX_SOUND=off`) |
 | Sessions open in another terminal | ✅ | ⚠️ | fx allows one process per session: shown, but ctrl can't open or delete them until that fx quits |
-| Skills (Settings → Skills, import from other agents) | ✅ | ✅ | Imports go to `~/.config/opencode/skills`, which both read · fx also loads `~/.fx/skills`, which opencode doesn't: those show as fx only, and a scan offers to share them |
+| Skills audit (Settings → Skills) | ✅ | ✅ | `skillFolders()`: opencode reads `~/.config/opencode/skills`, `~/.claude/skills`, `~/.agents/skills`; fx also `~/.fx/skills`, which opencode doesn't |
 | Reference a session (drag onto the terminal) | ✅ | ✅ | Works across harnesses, with the `read-session` skill |
 | Drop files from Finder | ✅ | ✅ | |
 | Drag a resource onto the terminal | ✅ | ✅ | Pastes its link, or its session mention |
@@ -118,4 +118,5 @@ simply hidden for harnesses that don't implement it.
      `src/main/opencode-chat.ts` reads opencode's client; `src/main/fx-chat.ts` runs `fx acp` and builds the
      items from its updates (`src/main/acp/`, reusable for any agent that speaks ACP). `src/main/chat.ts`
      routes the chat views to them.
+   - `skillFolders()`: the global folders it loads skills from, for its column in Settings → Skills.
 5. **Support table** above: add a column and fill in what works.

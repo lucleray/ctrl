@@ -1,6 +1,7 @@
 import { OpenCode, type ModelInfo, type PermissionRequest, type SessionInfo } from "@opencode/client"
 import { Service } from "@opencode/client/service"
 import { homedir } from "node:os"
+import { join } from "node:path"
 import { findOpencode } from "./opencode-bin"
 import { CTRL_INSTRUCTIONS } from "../shared/ctrl-instructions"
 import type { HarnessSource } from "./harness"
@@ -106,6 +107,12 @@ type Pending =
  */
 export class OpenCodeService implements HarnessSource {
   readonly harness = "opencode" as const
+
+  /** opencode's own folder (CTRL_SKILLS_DIR in tests and previews, like src/main/skill.ts), then Claude's and the shared one. */
+  skillFolders() {
+    const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+    return [process.env.CTRL_SKILLS_DIR || join(config, "opencode", "skills"), join(homedir(), ".claude", "skills"), join(homedir(), ".agents", "skills")]
+  }
   client?: Client
   sessions: SessionItem[] = []
   /** MCP servers for the TUI's folder (~), where global config applies. */

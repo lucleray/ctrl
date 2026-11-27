@@ -17,7 +17,7 @@
 - **models**: [`models list`](#models-list)
 - **mcp**: [`mcp list`](#mcp-list) · [`mcp reconnect`](#mcp-reconnect)
 - **tools**: [`tools list`](#tools-list) · [`tools check`](#tools-check) · [`tools scan`](#tools-scan) · [`tools add`](#tools-add) · [`tools remove`](#tools-remove)
-- **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill list`](#skill-list) · [`skill scan`](#skill-scan) · [`skill update`](#skill-update) · [`skill remove`](#skill-remove) · [`skill uninstall`](#skill-uninstall)
+- **skill**: [`skill status`](#skill-status) · [`skill install`](#skill-install) · [`skill list`](#skill-list) · [`skill scan`](#skill-scan) · [`skill uninstall`](#skill-uninstall)
 - **worktree**: [`worktree up`](#worktree-up) · [`worktree setup`](#worktree-setup) · [`worktree down`](#worktree-down) · [`worktree list`](#worktree-list) · [`worktree config`](#worktree-config) · [`worktree prewarm`](#worktree-prewarm) · [`worktree cleanup`](#worktree-cleanup) · [`worktree update`](#worktree-update)
 - **events**: [`events`](#events)
 
@@ -1047,69 +1047,40 @@ ctrl skill install read-session|ctrl
 
 ### skill list
 
-Every global skill opencode and fx load: where it lives, which harness loads it, and whether ctrl imported it
+Every skill on this Mac by name: its copies, and which harness loads each (from the last scan)
 
 ```text
-ctrl skill list
+ctrl skill list [--partial]
 ```
 
-- Global folders: ~/.config/opencode/skills, ~/.agents/skills and ~/.claude/skills (both harnesses), ~/.fx/skills (fx only). One item per name: the first folder in that order wins, `also` lists the ones it shadows.
-- `imported.state` is `changed` when the skill it was copied from changed since (`ctrl skill update` copies it again), `gone` when that source was removed.
+- Read only: an audit of what agents see. Each harness reports the global folders it loads skills from: opencode ~/.config/opencode/skills, ~/.claude/skills, ~/.agents/skills; fx ~/.fx/skills and the same three.
+- Copies in other agents' folders (Codex, Cursor, installed Claude Code plugins) have `agent` set and no `harnesses`: sessions don't see them.
+- `differs`: a harness loads copies of it whose files differ, so which one it uses depends on its folder order.
+- ctrl scans a few seconds after launch, when Settings opens and every 6 hours; `ctrl skill scan` scans now.
 
-**Returns:** `{items:[{name, description?, path, source, harnesses, also?, link?, ctrl?, imported?:{from, state}}]}`
+| Argument | Meaning |
+|---|---|
+| `--partial / --no-partial` | Only skills some harness doesn't load, or loads in differing copies |
+
+**Returns:** `{scannedAt, harnesses:[{harness, folders}], items:[{name, description?, harnesses, copies:[{path, harnesses, agent?, plugin?, link?}], differs?}]}`
+
+```bash
+ctrl skill list --partial
+```
 
 ### skill scan
 
-Finds skills your harnesses don't share yet: in fx's own folder, Claude Code plugins, Codex and Cursor *(changes state)*
+Scans skill folders now, then answers like `skill list`
 
 ```text
-ctrl skill scan [--apply] [--skip <skip>...]
-```
-
-- Without --apply nothing changes: `available` says both harnesses load a skill by that name already (it can't be imported).
-- --apply imports everything found except --skip keys (or names): a copy in opencode's global skills folder, which fx reads too.
-
-| Argument | Meaning |
-|---|---|
-| `--apply / --no-apply` | Import what was found |
-| `--skip <skip>` | With --apply: keys (skill folders) or names not to import (repeatable) · repeatable |
-
-**Returns:** `{items:[{key, name, description?, source, available}], imported:[name]}`
-
-```bash
-ctrl skill scan
-ctrl skill scan --apply --skip pdf
-```
-
-### skill update
-
-Copies an imported skill again from where it came from *(changes state)*
-
-```text
-ctrl skill update <name>
+ctrl skill scan [--partial]
 ```
 
 | Argument | Meaning |
 |---|---|
-| `<name>` | Skill name (`ctrl skill list`) · required |
+| `--partial / --no-partial` | Only skills some harness doesn't load, or loads in differing copies |
 
-**Returns:** `{item: Skill}`
-
-### skill remove
-
-Removes a skill ctrl imported (a scan can import it again) *(changes state)*
-
-```text
-ctrl skill remove <name>
-```
-
-- Only imported copies: removing other skills stays a human action, in Settings → Skills.
-
-| Argument | Meaning |
-|---|---|
-| `<name>` | Skill name (`ctrl skill list`) · required |
-
-**Returns:** `{name, changed}`
+**Returns:** `{scannedAt, harnesses, items}`
 
 ### skill uninstall
 

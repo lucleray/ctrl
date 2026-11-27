@@ -3985,19 +3985,32 @@ body.resizing .terminal-pane.active {
 
 /* Settings → Skills (src/renderer/SkillSettings.tsx): a skill's description, two lines at most */
 .skill-row .skill-desc {
-  max-width: 420px;
+  max-width: 460px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.skill-row .skill-source {
+.skill-row .skill-source,
+.skill-folders {
   font-size: 11.5px;
+  max-width: none;
 }
 
-.skill-row .skill-source.pending {
+.skill-row .skill-hint {
   color: #f59e0b;
+  max-width: 460px;
+}
+
+.skill-count {
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+.settings-subdesc {
+  margin: -4px 2px 8px;
+  max-width: 520px;
 }
 
 .onboarding-tools {

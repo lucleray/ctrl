@@ -49,6 +49,7 @@ const EMPTY: AppState = {
   terms: [],
   activeTermID: null,
   tools: [],
+  skills: null,
   toolsSetUp: true,
   worktrees: { root: "", repos: [], jobs: { pool: { at: null, summary: null }, cleanup: { at: null, summary: null }, update: { at: null, summary: null } } },
   adapters: [],

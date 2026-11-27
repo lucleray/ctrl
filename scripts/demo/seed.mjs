@@ -276,10 +276,11 @@ const PREVIEW_SESSIONS = [
 ]
 if (preview) SESSIONS.push(...PREVIEW_SESSIONS)
 
-/** Previews only: skills in each folder Settings → Skills lists or scans, so there's something to import. */
+/** Previews only: skills in each folder Settings → Skills reads, with one of each case it points out. */
 const PREVIEW_SKILLS = [
   [".agents/skills/release-notes", "Write release notes from the merged PRs since the last tag."],
   [".claude/skills/pdf", "Read, fill and merge PDF files."],
+  [".agents/skills/pdf", "Read and fill PDF forms (older copy)."],
   [".fx/skills/changelog", "Keep CHANGELOG.md in the Keep a Changelog format."],
   [".codex/skills/code-review", "Review a diff for bugs, missing tests and unclear names."],
   [".codex/skills/pdf", "Read, fill and merge PDF files."],
